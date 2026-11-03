@@ -19,6 +19,7 @@ use tp_backtest::{
 use tp_core::indicators::{close_values, segments};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::market::Candle;
+use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
@@ -108,6 +109,21 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 6 test: hold L times equity only while the market is in the up regime.
+    RegimeSizing {
+        /// Comma-separated assets.
+        #[arg(long, value_delimiter = ',', default_value = "BTCUSDT,ETHUSDT,SOLUSDT")]
+        assets: Vec<String>,
+        /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
+        #[arg(long)]
+        final_period: bool,
+    },
+    /// Phase 6 step 1: how much time each asset spends up, down, in range or in transition.
+    Regimes {
+        /// Comma-separated assets.
+        #[arg(long, value_delimiter = ',', default_value = "BTCUSDT,ETHUSDT,SOLUSDT")]
+        assets: Vec<String>,
+    },
     /// Phase 4 sizing test: the approved signal on a perpetual with cross margin,
     /// real funding, liquidation checks, and monthly results per position size.
     Sizing {
@@ -207,6 +223,11 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::RegimeSizing {
+            assets,
+            final_period,
+        } => cmd_regime_sizing(&cli.data_dir, &assets, final_period),
+        Command::Regimes { assets } => cmd_regimes(&cli.data_dir, &assets),
         Command::Sizing {
             assets,
             final_period,
@@ -836,7 +857,12 @@ fn cmd_sizing(data_dir: &Path, assets: &[String], final_period: bool) -> CliResu
                 };
                 let weights = donchian_ensemble_weights(&closes, &vol);
                 let r = run_leveraged(&candles, &weights, &funding, &config, start, end);
-                print_sizing_row(target, cap, &r, &config, final_period);
+                print_sizing_row(
+                    &format!("vol {:>3.0}% cap {:.0}x", target * 100.0, cap),
+                    &r,
+                    &config,
+                    final_period,
+                );
             }
         }
     }
@@ -844,8 +870,7 @@ fn cmd_sizing(data_dir: &Path, assets: &[String], final_period: bool) -> CliResu
 }
 
 fn print_sizing_row(
-    target: f64,
-    cap: f64,
+    label: &str,
     r: &tp_backtest::allocation::LeveragedResult,
     config: &LeverageConfig,
     final_period: bool,
@@ -869,9 +894,7 @@ fn print_sizing_row(
         s.sharpe >= 1.0 && s.max_drawdown <= 0.35 && s.non_losing_year_fraction >= 0.6 && safe
     };
     println!(
-        "vol {:>3.0}% cap {:.0}x | CAGR {:>+6.1}% | month avg {:>+5.2}% | months+ {:>3.0}% | worst month {:>+6.1}% | maxDD {:>5.1}% | Sharpe {:>4.2} | {} | trades {} (win {:.0}%, avg {:+.1}%) | funding {:.1}% | {}",
-        target * 100.0,
-        cap,
+        "{label} | CAGR {:>+6.1}% | month avg {:>+5.2}% | months+ {:>3.0}% | worst month {:>+6.1}% | maxDD {:>5.1}% | Sharpe {:>4.2} | {} | trades {} (win {:.0}%, avg {:+.1}%) | funding {:.1}% | {}",
         s.cagr * 100.0,
         month_avg * 100.0,
         if months.is_empty() {
@@ -893,6 +916,120 @@ fn print_sizing_row(
         r.funding_paid / config.initial_capital * 100.0,
         if passes { "PASSES" } else { "fails" }
     );
+}
+
+fn cmd_regimes(data_dir: &Path, assets: &[String]) -> CliResult {
+    let all = [Regime::Up, Regime::Down, Regime::Range, Regime::Transition];
+    for asset in assets {
+        let candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        if segments(&candles).len() > 1 {
+            return Err(format!("{asset} has gaps; regimes need continuous data").into());
+        }
+        let closes = close_values(&candles);
+        let regimes = classify(&closes);
+        let classified = regimes.iter().filter(|r| r.is_some()).count();
+        println!("=== {asset}: {classified} classified days ===");
+        println!(
+            "{:<11} {:>6} {:>12} {:>16} {:>11}",
+            "regime", "days%", "avg run (d)", "mean day return", "daily vol"
+        );
+        for regime in all {
+            let returns: Vec<f64> = (1..closes.len())
+                .filter(|&i| regimes[i - 1] == Some(regime))
+                .map(|i| closes[i] / closes[i - 1] - 1.0)
+                .collect();
+            let (mean, _) = mean_and_t(&returns);
+            let var = if returns.len() > 1 {
+                returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>()
+                    / (count_f64(returns.len()) - 1.0)
+            } else {
+                0.0
+            };
+            println!(
+                "{:<11} {:>5.1}% {:>12.1} {:>+15.3}% {:>10.2}%",
+                regime.label(),
+                count_f64(returns.len()) / count_f64(classified.max(1)) * 100.0,
+                average_run(&regimes, regime),
+                mean * 100.0,
+                var.sqrt() * 100.0
+            );
+        }
+        let mut years: BTreeMap<i32, [usize; 4]> = BTreeMap::new();
+        for (candle, regime) in candles.iter().zip(&regimes) {
+            if let Some(r) = regime {
+                let slot = all.iter().position(|x| x == r).unwrap_or(3);
+                years.entry(candle.date().year()).or_default()[slot] += 1;
+            }
+        }
+        for (year, counts) in &years {
+            let total = count_f64(counts.iter().sum::<usize>().max(1));
+            println!(
+                "  {year}: up {:>3.0}% | down {:>3.0}% | range {:>3.0}% | transition {:>3.0}%",
+                count_f64(counts[0]) / total * 100.0,
+                count_f64(counts[1]) / total * 100.0,
+                count_f64(counts[2]) / total * 100.0,
+                count_f64(counts[3]) / total * 100.0
+            );
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn load_funding(data_dir: &Path, asset: &str) -> Result<BTreeMap<NaiveDate, f64>, Box<dyn Error>> {
+    let path = data_dir
+        .join("processed")
+        .join("binance")
+        .join("funding")
+        .join(format!("{asset}.csv"));
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "{}: {e} (run python3 scripts/funding_history.py first)",
+            path.display()
+        )
+    })?;
+    Ok(parse_funding_csv(&text)?)
+}
+
+fn cmd_regime_sizing(data_dir: &Path, assets: &[String], final_period: bool) -> CliResult {
+    let (start, end) = if final_period {
+        (
+            NaiveDate::from_ymd_opt(2024, 11, 1).ok_or("invalid date")?,
+            NaiveDate::from_ymd_opt(2026, 10, 31).ok_or("invalid date")?,
+        )
+    } else {
+        (default_trend_start()?, held_out_start()?)
+    };
+    let config = LeverageConfig::crypto();
+    println!(
+        "up-regime sizing {start} to {end} ({}) | USDT perpetual, cross margin, real funding, 0.1% fee + 0.1% slippage per side",
+        if final_period {
+            "final period"
+        } else {
+            "development"
+        }
+    );
+    for asset in assets {
+        let candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        if segments(&candles).len() > 1 {
+            return Err(format!("{asset} has gaps; regimes need continuous data").into());
+        }
+        let funding = load_funding(data_dir, asset)?;
+        let closes = close_values(&candles);
+        let regimes = classify(&closes);
+        println!("=== {asset} ===");
+        let base = donchian_ensemble_weights(&closes, &VolTarget::paper_spot());
+        let r = run_leveraged(&candles, &base, &funding, &config, start, end);
+        print_sizing_row("current: Donchian vol 25%", &r, &config, final_period);
+        for level in [0.5, 1.0, 1.5, 2.0] {
+            let weights: Vec<f64> = regimes
+                .iter()
+                .map(|r| if *r == Some(Regime::Up) { level } else { 0.0 })
+                .collect();
+            let r = run_leveraged(&candles, &weights, &funding, &config, start, end);
+            print_sizing_row(&format!("up regime {level:.1}x"), &r, &config, final_period);
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {
