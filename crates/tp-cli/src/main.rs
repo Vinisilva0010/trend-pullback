@@ -1,5 +1,6 @@
 //! Command-line entry point for trend-pullback.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -8,6 +9,7 @@ use clap::{Parser, Subcommand};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
 use tp_data::history::{BuildSummary, build_all, processed_dir};
 use tp_data::month::YearMonth;
+use tp_data::universe::{ExclusionReason, UniverseResult, UniverseRules, build_and_write};
 
 #[derive(Debug, Parser)]
 #[command(name = "tp", version, about = "trend-pullback research tool")]
@@ -38,6 +40,15 @@ enum Command {
     },
     /// Join verified monthly archives into one daily CSV per symbol and write a quality report.
     BuildSeries,
+    /// Rank the most traded eligible USDT pairs at the start of each month.
+    BuildUniverse {
+        /// Number of pairs selected per month.
+        #[arg(long, default_value_t = 20)]
+        size: usize,
+        /// File with excluded base assets, one per line.
+        #[arg(long, default_value = "config/universe_exclusions.txt")]
+        exclusions: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -109,6 +120,17 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             println!("quality report: {}", report.display());
             Ok(exit_code(summary.failed.is_empty()))
         }
+        Command::BuildUniverse { size, exclusions } => {
+            let out_dir = data_dir.join("processed").join("binance");
+            let rules = UniverseRules {
+                size,
+                ..UniverseRules::default()
+            };
+            let result = build_and_write(&processed_dir(&data_dir), &exclusions, &out_dir, rules)?;
+            print_universe_summary(&result);
+            println!("written: {}", out_dir.join("universe.csv").display());
+            Ok(ExitCode::SUCCESS)
+        }
     }
 }
 
@@ -147,6 +169,49 @@ fn print_build_summary(summary: &BuildSummary) {
                 s.symbol, s.first, s.last, s.days, s.gaps
             );
         }
+    }
+}
+
+fn print_universe_summary(result: &UniverseResult) {
+    let months: BTreeSet<YearMonth> = result.entries.iter().map(|e| e.month).collect();
+    let count = |reason: ExclusionReason| {
+        result
+            .excluded
+            .values()
+            .filter(|(r, _)| *r == reason)
+            .count()
+    };
+    println!("---");
+    println!("months ranked:  {}", months.len());
+    println!("entries:        {}", result.entries.len());
+    println!(
+        "excluded:       {} listed, {} leveraged tokens, {} tokenized stocks, {} pegged prices",
+        count(ExclusionReason::Listed),
+        count(ExclusionReason::LeveragedToken),
+        count(ExclusionReason::TokenizedStock),
+        count(ExclusionReason::Pegged)
+    );
+    for (symbol, (reason, month)) in &result.excluded {
+        if *reason == ExclusionReason::Pegged {
+            let month = month.map_or_else(String::new, |m| m.to_string());
+            println!("  pegged price: {symbol} (detected {month})");
+        }
+    }
+    let mut samples: Vec<YearMonth> = ["2019-02", "2021-05", "2024-06"]
+        .iter()
+        .filter_map(|text| text.parse().ok())
+        .collect();
+    if let Some(last) = months.last() {
+        samples.push(*last);
+    }
+    for month in samples {
+        let names: Vec<&str> = result
+            .entries
+            .iter()
+            .filter(|e| e.month == month)
+            .map(|e| e.symbol.as_str())
+            .collect();
+        println!("{month}: {}", names.join(" "));
     }
 }
 

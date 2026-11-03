@@ -104,7 +104,7 @@ pub enum SeriesError {
     },
 }
 
-fn io_err(path: &Path, source: std::io::Error) -> SeriesError {
+pub(crate) fn io_err(path: &Path, source: std::io::Error) -> SeriesError {
     SeriesError::Io {
         path: path.display().to_string(),
         source,
@@ -307,7 +307,7 @@ pub fn write_series(out_dir: &Path, series: &SymbolSeries) -> Result<PathBuf, Se
     Ok(path)
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), SeriesError> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), SeriesError> {
     let mut temp = path.as_os_str().to_owned();
     temp.push(".part");
     let temp = PathBuf::from(temp);

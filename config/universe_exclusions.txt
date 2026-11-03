@@ -1,0 +1,40 @@
+# Base assets excluded from the trading universe, one per line.
+# Leveraged tokens (BTCUP, ETHDOWN, ...) and assets whose price barely moves
+# are excluded automatically and listed in universe_excluded.csv.
+
+# USD stablecoins
+USDC
+TUSD
+BUSD
+USDP
+PAX
+FDUSD
+DAI
+USDS
+USDSB
+SUSD
+USDE
+USD1
+RLUSD
+PYUSD
+BFUSD
+XUSD
+# Former algorithmic stablecoin (Terra UST, renamed USTC after the 2022 collapse)
+UST
+USTC
+# Fiat currencies and non-USD stablecoins
+EUR
+EURI
+AEUR
+GBP
+AUD
+IDRT
+BIDR
+BVND
+# Gold-backed tokens
+PAXG
+XAUT
+# Wrapped or staked duplicates of other listed assets
+WBTC
+WBETH
+BETH
