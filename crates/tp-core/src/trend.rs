@@ -12,6 +12,8 @@ use crate::indicators::{as_f64, sma};
 /// Channel lookbacks used by the paper.
 pub const DONCHIAN_LOOKBACKS: [usize; 9] = [5, 10, 20, 30, 60, 90, 150, 250, 360];
 const DAYS_PER_YEAR: f64 = 365.0;
+/// Volatility estimates below this are treated as unavailable (no position).
+const MIN_VOLATILITY: f64 = 1e-6;
 
 /// Volatility-targeting settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -90,7 +92,7 @@ pub fn realized_volatility(closes: &[f64], window: usize) -> Vec<Option<f64>> {
 
 fn scale(volatility: Option<f64>, v: &VolTarget) -> f64 {
     volatility
-        .filter(|x| *x > 0.0)
+        .filter(|x| *x > MIN_VOLATILITY)
         .map_or(0.0, |x| (v.target / x).min(v.max_per_signal))
 }
 
