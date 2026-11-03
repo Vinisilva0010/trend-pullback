@@ -303,6 +303,68 @@ pub fn study_symbol(
     }
 }
 
+/// Simple average true range over `period` days (None before enough history).
+#[must_use]
+pub fn simple_atr(candles: &[Candle], period: usize) -> Vec<Option<f64>> {
+    let tr: Vec<f64> = candles
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let range = c.high() - c.low();
+            if i == 0 {
+                range
+            } else {
+                let prev = candles[i - 1].close();
+                range
+                    .max((c.high() - prev).abs())
+                    .max((c.low() - prev).abs())
+            }
+        })
+        .collect();
+    (0..candles.len())
+        .map(|i| {
+            (period > 0 && i + 1 >= period)
+                .then(|| tr[i + 1 - period..=i].iter().sum::<f64>() / as_f64(period))
+        })
+        .collect()
+}
+
+/// Share of past days on which price travelled at least `distance_atr` ATRs
+/// up (or down) within the next `horizon` days, within continuous data.
+#[must_use]
+pub fn touch_probability(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    horizon: usize,
+    distance_atr: f64,
+    up: bool,
+) -> Option<f64> {
+    if horizon == 0 || candles.len() != atr.len() {
+        return None;
+    }
+    let (_, end) = continuous_runs(candles);
+    let mut hits = 0usize;
+    let mut total = 0usize;
+    for (t, candle) in candles.iter().enumerate() {
+        let Some(a) = atr[t].filter(|a| *a > 0.0) else {
+            continue;
+        };
+        if t + horizon > end[t] {
+            continue;
+        }
+        let ahead = &candles[t + 1..=t + horizon];
+        let close = candle.close();
+        let moved = if up {
+            (window_high(ahead) - close) / a
+        } else {
+            (close - window_low(ahead)) / a
+        };
+        total += 1;
+        hits += usize::from(moved >= distance_atr);
+    }
+    (total > 0).then(|| as_f64(hits) / as_f64(total))
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -324,6 +386,21 @@ mod tests {
             quote_volume: 1.0,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn touch_probability_on_a_steady_rise() {
+        let candles: Vec<Candle> = (0..40)
+            .map(|i| {
+                let c = 100.0 + f64::from(i);
+                bar(u64::try_from(i).unwrap(), c - 0.5, c + 0.5, c - 1.0, c)
+            })
+            .collect();
+        let atr = simple_atr(&candles, 14);
+        assert!(atr[12].is_none());
+        assert!((atr[20].unwrap() - 1.5).abs() < 1e-12);
+        assert_eq!(touch_probability(&candles, &atr, 3, 1.0, true), Some(1.0));
+        assert_eq!(touch_probability(&candles, &atr, 3, 1.0, false), Some(0.0));
     }
 
     #[test]

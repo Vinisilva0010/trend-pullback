@@ -21,9 +21,11 @@ use tp_backtest::{
 use tp_core::indicators::{close_values, segments};
 use tp_core::intraday::aggregate;
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
+use tp_core::liquidity::{round_above, round_below, simple_atr, touch_probability};
 use tp_core::market::Candle;
 use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
+use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
 use tp_data::binance::rest::fetch_daily_since;
@@ -702,6 +704,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
             "{today},{asset},{signal_date},{close},{target:.6},{held:.6},{new_held:.6},{order}"
         );
         state.insert(asset.to_owned(), (signal_date, new_held));
+        lines.extend(level_report(asset, &candles, &closes));
     }
     let header = format!(
         "trend-pullback daily signal ({today}), capital ${capital:.0}, ${sleeve:.0} per asset, USDT perpetuals with cross margin, up to 1.5x per part"
@@ -718,7 +721,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     std::fs::write(&state_path, state_csv(&state))?;
     let log_path = append_signal_log(&live_dir, &log)?;
     println!("saved: {} and {}", state_path.display(), log_path.display());
-    if notify && orders > 0 {
+    if notify {
         let env = parse_env(&std::fs::read_to_string(".env")?);
         let (Some(token), Some(chat)) =
             (env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"))
@@ -1405,6 +1408,62 @@ fn cmd_levels(data_dir: &Path, final_period: bool) -> CliResult {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn level_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(last) = candles.len().checked_sub(1) else {
+        return out;
+    };
+    let atr = simple_atr(candles, 14);
+    let Some(a) = atr[last].filter(|a| *a > 0.0) else {
+        return out;
+    };
+    let close = closes[last];
+    let votes = DONCHIAN_LOOKBACKS
+        .iter()
+        .filter(|&&l| donchian_positions(closes, l)[last])
+        .count();
+    let state = classify(closes)[last].map_or("unclassified", Regime::label);
+    out.push(format!(
+        "{asset} state: {state} ({votes}/9 long channels), daily ATR {:.1}% of price",
+        a / close * 100.0
+    ));
+    let level = |name: &str, price: f64| {
+        let up = price > close;
+        let distance = (price - close).abs() / a;
+        let chance = touch_probability(candles, &atr, 7, distance, up).unwrap_or(0.0);
+        format!(
+            "{name} {price:.2} ({:+.1}%, {distance:.1} ATR, reached within 7 days in {:.0}% of past cases)",
+            (price / close - 1.0) * 100.0,
+            chance * 100.0
+        )
+    };
+    let extremes = |days: usize| {
+        let window = &candles[last + 1 - days.min(last + 1)..=last];
+        (
+            window.iter().map(Candle::high).fold(f64::MIN, f64::max),
+            window.iter().map(Candle::low).fold(f64::MAX, f64::min),
+        )
+    };
+    let (high20, low20) = extremes(20);
+    let (high60, low60) = extremes(60);
+    out.push(format!(
+        "  {} | {}",
+        level("20d high", high20),
+        level("20d low", low20)
+    ));
+    out.push(format!(
+        "  {} | {}",
+        level("60d high", high60),
+        level("60d low", low60)
+    ));
+    out.push(format!(
+        "  {} | {}",
+        level("round above", round_above(close)),
+        level("round below", round_below(close))
+    ));
+    out
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {
