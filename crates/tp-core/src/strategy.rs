@@ -240,6 +240,11 @@ fn setup_for(frame: &Frame, date: NaiveDate, momentum: f64, p: &StrategyParams) 
         EntryMode::Ema => ema_value,
         EntryMode::Fvg => frame.fvg_entry[i]?,
     };
+    // Buy the pullback, never above the market: a limit above the close would
+    // buy a breakdown at the next open.
+    if limit >= close {
+        return None;
+    }
     let (recent_low, _) = frame.lowest_low[i]?;
     let stop = recent_low.min(limit - p.stop_atr * atr_value);
     if stop <= 0.0 || stop >= limit {
@@ -295,7 +300,7 @@ mod tests {
         StrategyParams {
             sma_fast: 5,
             sma_slow: 10,
-            ema_entry: 3,
+            ema_entry: 6,
             atr_period: 3,
             momentum_days: 3,
             momentum_top_fraction: 1.0,
@@ -312,10 +317,10 @@ mod tests {
         }
     }
 
-    /// Rises from 10 to 20, then pulls back to 18 and 17.8.
+    /// Rises from 10 to 20, then pulls back to 18.5 and 18.2.
     fn pullback_closes() -> Vec<f64> {
         let mut closes: Vec<f64> = (10..=20).map(f64::from).collect();
-        closes.extend([18.0, 17.8]);
+        closes.extend([18.5, 18.2]);
         closes
     }
 
@@ -336,8 +341,11 @@ mod tests {
         assert_eq!(setups.len(), 1);
         let s = &setups[0];
         let frame = &frames["AAAUSDT"];
-        assert!((s.limit - 18.15).abs() < 1e-9, "EMA3 by hand is 18.15");
-        assert!((s.stop - 17.8f64.min(s.limit - 1.5 * frame.atr[12].unwrap())).abs() < 1e-12);
+        assert!(
+            (s.limit - 17.904_081_632_653).abs() < 1e-9,
+            "EMA6 by hand is 17.9041"
+        );
+        assert!((s.stop - 18.0f64.min(s.limit - 1.5 * frame.atr[12].unwrap())).abs() < 1e-12);
         assert!((s.target - (s.limit + 2.0 * (s.limit - s.stop))).abs() < 1e-12);
         assert!(s.stop < s.limit && s.limit < s.target);
         assert!(setups_on(date(11), &benchmark, &frames, &universe, &p).is_empty());

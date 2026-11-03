@@ -1703,6 +1703,10 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 [[package]]
 name = "tp-backtest"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "tp-core",
+]
 
 [[package]]
 name = "tp-cli"
@@ -1711,6 +1715,7 @@ dependencies = [
  "chrono",
  "clap",
  "tokio",
+ "tp-backtest",
  "tp-core",
  "tp-data",
 ]
