@@ -36,6 +36,8 @@ pub struct BacktestConfig {
     pub max_hold_days: usize,
     /// Smallest position value worth opening.
     pub min_notional: f64,
+    /// Sell half at the target and move the stop to the entry.
+    pub take_partial: bool,
 }
 
 impl BacktestConfig {
@@ -51,6 +53,7 @@ impl BacktestConfig {
             slippage: 0.001,
             max_hold_days: 14,
             min_notional: 10.0,
+            take_partial: true,
         }
     }
 }
@@ -329,7 +332,7 @@ impl Engine {
                 self.close_all(p, date, candle.open(), reason);
                 return true;
             }
-            if !p.partial_taken && candle.open() >= p.target {
+            if self.config.take_partial && !p.partial_taken && candle.open() >= p.target {
                 self.take_partial(p, candle.open());
             }
         }
@@ -338,7 +341,7 @@ impl Engine {
             self.close_all(p, date, price, reason);
             return true;
         }
-        if !entry_day && !p.partial_taken && candle.high() >= p.target {
+        if self.config.take_partial && !entry_day && !p.partial_taken && candle.high() >= p.target {
             let target = p.target;
             self.take_partial(p, target);
             if candle.low() <= p.stop {
@@ -353,7 +356,8 @@ impl Engine {
             .checked_sub(1)
             .and_then(|j| frame.lowest_low[j])
             .map(|(low, _)| low);
-        if p.partial_taken && trail_low.is_some_and(|low| candle.close() < low) {
+        let trailing = p.partial_taken || !self.config.take_partial;
+        if trailing && trail_low.is_some_and(|low| candle.close() < low) {
             p.exit_next_open = Some(ExitReason::Trail);
         } else if p.bars_held >= self.config.max_hold_days {
             p.exit_next_open = Some(ExitReason::Time);
@@ -559,6 +563,102 @@ pub fn equity_csv(points: &[EquityPoint]) -> String {
     out
 }
 
+/// Pre-registered acceptance criteria (development period, after costs).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Criteria {
+    pub min_trades: usize,
+    pub min_average_r: f64,
+    pub min_profit_factor: f64,
+    pub max_drawdown: f64,
+    /// Minimum fraction of calendar years without a loss.
+    pub min_non_losing_years: f64,
+}
+
+impl Default for Criteria {
+    fn default() -> Self {
+        Self {
+            min_trades: 100,
+            min_average_r: 0.15,
+            min_profit_factor: 1.3,
+            max_drawdown: 0.35,
+            min_non_losing_years: 0.6,
+        }
+    }
+}
+
+/// Headline numbers plus the robustness checks and the verdict.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Evaluation {
+    pub summary: Summary,
+    pub non_losing_year_fraction: f64,
+    pub r_total: f64,
+    pub r_without_top3: f64,
+    pub r_without_best_symbol: f64,
+    pub passes: bool,
+}
+
+/// Return of each calendar year, from the equity curve.
+#[must_use]
+pub fn yearly_returns(equity: &[EquityPoint], initial_capital: f64) -> Vec<(i32, f64)> {
+    let mut out = Vec::new();
+    let mut year_start = initial_capital;
+    let mut last = initial_capital;
+    let mut current: Option<i32> = None;
+    for point in equity {
+        let year = point.date.year();
+        if current != Some(year) {
+            if let Some(previous) = current {
+                out.push((previous, last / year_start - 1.0));
+                year_start = last;
+            }
+            current = Some(year);
+        }
+        last = point.equity;
+    }
+    if let Some(year) = current {
+        out.push((year, last / year_start - 1.0));
+    }
+    out
+}
+
+/// Applies the acceptance criteria to a run.
+#[must_use]
+pub fn evaluate(result: &BacktestResult, initial_capital: f64, criteria: &Criteria) -> Evaluation {
+    let summary = summarize(result, initial_capital);
+    let years = yearly_returns(&result.equity, initial_capital);
+    let non_losing = years.iter().filter(|(_, r)| *r >= 0.0).count();
+    let non_losing_year_fraction = if years.is_empty() {
+        0.0
+    } else {
+        as_f64(non_losing) / as_f64(years.len())
+    };
+    let mut rs: Vec<f64> = result.trades.iter().map(|t| t.r_multiple).collect();
+    let r_total: f64 = rs.iter().sum();
+    rs.sort_by(|a, b| b.total_cmp(a));
+    let r_without_top3: f64 = rs.iter().skip(3).sum();
+    let mut by_symbol: BTreeMap<&str, f64> = BTreeMap::new();
+    for t in &result.trades {
+        *by_symbol.entry(t.symbol.as_str()).or_default() += t.r_multiple;
+    }
+    let best_symbol = by_symbol.values().copied().fold(0.0_f64, f64::max);
+    let r_without_best_symbol = r_total - best_symbol;
+    let passes = summary.trades >= criteria.min_trades
+        && summary.average_r >= criteria.min_average_r
+        && summary.profit_factor >= criteria.min_profit_factor
+        && summary.max_drawdown <= criteria.max_drawdown
+        && non_losing_year_fraction >= criteria.min_non_losing_years
+        && r_without_top3 > 0.0
+        && r_without_best_symbol > 0.0;
+    Evaluation {
+        summary,
+        non_losing_year_fraction,
+        r_total,
+        r_without_top3,
+        r_without_best_symbol,
+        passes,
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -643,6 +743,82 @@ mod tests {
     }
 
     const START: (f64, f64, f64, f64) = (100.0, 101.0, 99.0, 100.0);
+
+    fn trade(symbol: &str, r: f64) -> Trade {
+        Trade {
+            symbol: symbol.to_owned(),
+            signal_date: day(0),
+            entry_date: day(1),
+            exit_date: day(2),
+            entry_price: 100.0,
+            initial_stop: 90.0,
+            target: 120.0,
+            quantity: 10.0,
+            partial_taken: false,
+            pnl: r * 100.0,
+            r_multiple: r,
+            reason: ExitReason::Time,
+            signal_close: 101.0,
+            limit: 100.0,
+        }
+    }
+
+    #[test]
+    fn evaluation_applies_robustness_checks() {
+        let point = |y: i32, equity: f64| EquityPoint {
+            date: NaiveDate::from_ymd_opt(y, 12, 31).unwrap(),
+            equity,
+            cash: equity,
+            positions: 0,
+        };
+        let result = BacktestResult {
+            trades: vec![
+                trade("A", 3.0),
+                trade("A", 1.0),
+                trade("B", 1.0),
+                trade("B", -1.0),
+                trade("C", -1.0),
+                trade("C", 0.5),
+            ],
+            equity: vec![point(2024, 10_500.0), point(2025, 10_200.0)],
+            final_cash: 10_200.0,
+        };
+        let e = evaluate(&result, 10_000.0, &Criteria::default());
+        assert!((e.r_total - 3.5).abs() < 1e-12);
+        assert!((e.r_without_top3 + 1.5).abs() < 1e-12);
+        assert!((e.r_without_best_symbol + 0.5).abs() < 1e-12);
+        assert!((e.non_losing_year_fraction - 0.5).abs() < 1e-12);
+        assert!(!e.passes);
+        let years = yearly_returns(&result.equity, 10_000.0);
+        assert!((years[0].1 - 0.05).abs() < 1e-12);
+        assert!((years[1].1 - (10_200.0 / 10_500.0 - 1.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn without_partial_the_whole_position_trails_from_entry() {
+        let f = frames(vec![frame(
+            "A",
+            &[
+                START,
+                (100.0, 101.0, 99.0, 100.0),
+                (113.0, 121.0, 112.0, 118.0),
+                (118.0, 119.0, 115.0, 116.0),
+                (116.0, 117.0, 113.0, 114.0),
+                (114.0, 115.0, 108.0, 109.0),
+                (110.0, 111.0, 109.0, 110.0),
+            ],
+        )]);
+        let config = BacktestConfig {
+            take_partial: false,
+            ..no_costs()
+        };
+        let engine = simulate(config, &f, vec![order("A", 100.0, 90.0, 120.0)], 7);
+        let t = &engine.trades()[0];
+        assert!(!t.partial_taken);
+        assert_eq!(t.reason, ExitReason::Trail);
+        assert!((t.pnl - 200.0).abs() < 1e-9);
+        assert!((t.r_multiple - 1.0).abs() < 1e-9);
+    }
 
     #[test]
     fn stop_loss_costs_one_r() {

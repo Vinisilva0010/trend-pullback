@@ -8,7 +8,9 @@ use std::process::ExitCode;
 
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
-use tp_backtest::{BacktestConfig, Market, equity_csv, run, summarize, trades_csv};
+use tp_backtest::{
+    BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
+};
 use tp_core::market::Candle;
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
@@ -19,6 +21,9 @@ use tp_data::universe::{
 };
 
 type CliResult = Result<ExitCode, Box<dyn Error>>;
+
+const STOP_ATR: [f64; 3] = [1.5, 2.5, 3.5];
+const HOLD_DAYS: [usize; 3] = [14, 30, 60];
 
 #[derive(Debug, Parser)]
 #[command(name = "tp", version, about = "trend-pullback research tool")]
@@ -79,7 +84,50 @@ enum Command {
         /// Last day (YYYY-MM-DD); defaults to 2024-10-31.
         #[arg(long)]
         end: Option<NaiveDate>,
+        /// Stop distance in ATR.
+        #[arg(long, default_value_t = 1.5)]
+        stop_atr: f64,
+        /// Maximum holding days.
+        #[arg(long, default_value_t = 14)]
+        hold: usize,
+        /// Exit everything by trailing low or time, without selling half at the target.
+        #[arg(long)]
+        no_partial: bool,
     },
+    /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
+    Grid,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Variant {
+    fvg: bool,
+    stop: usize,
+    partial: bool,
+    hold: usize,
+}
+
+impl Variant {
+    fn label(self) -> String {
+        format!(
+            "{} stop {:.1}ATR {} hold {:>2}d",
+            if self.fvg { "FVG" } else { "EMA" },
+            STOP_ATR[self.stop],
+            if self.partial { "half@2R" } else { "no-half" },
+            HOLD_DAYS[self.hold]
+        )
+    }
+
+    fn distance(self, other: Self) -> usize {
+        self.stop.abs_diff(other.stop)
+            + self.hold.abs_diff(other.hold)
+            + usize::from(self.partial != other.partial)
+    }
+}
+
+struct CryptoMarket {
+    benchmark: Frame,
+    frames: BTreeMap<String, Frame>,
+    by_month: BTreeMap<(i32, u32), Vec<String>>,
 }
 
 #[tokio::main]
@@ -97,7 +145,15 @@ async fn main() -> ExitCode {
             cmd_build_universe(&cli.data_dir, size, &exclusions)
         }
         Command::Signals { date, fvg } => cmd_signals(&cli.data_dir, date, fvg),
-        Command::Backtest { fvg, start, end } => cmd_backtest(&cli.data_dir, fvg, start, end),
+        Command::Backtest {
+            fvg,
+            start,
+            end,
+            stop_atr,
+            hold,
+            no_partial,
+        } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
+        Command::Grid => cmd_grid(&cli.data_dir),
     };
     match result {
         Ok(code) => code,
@@ -114,6 +170,10 @@ fn exit_code(success: bool) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+fn held_out_start() -> Result<NaiveDate, Box<dyn Error>> {
+    Ok(NaiveDate::from_ymd_opt(2024, 10, 31).ok_or("invalid date")?)
 }
 
 async fn cmd_download(
@@ -190,14 +250,46 @@ fn cmd_build_universe(data_dir: &Path, size: usize, exclusions: &Path) -> CliRes
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_signals(data_dir: &Path, date: Option<NaiveDate>, fvg: bool) -> CliResult {
-    let processed = processed_dir(data_dir);
-    let universe_path = data_dir
+fn load_universe(data_dir: &Path) -> Result<BTreeMap<YearMonth, Vec<String>>, Box<dyn Error>> {
+    let path = data_dir
         .join("processed")
         .join("binance")
         .join("universe.csv");
-    let universe_text = std::fs::read_to_string(&universe_path)?;
-    let universe = parse_universe_csv(&universe_path.display().to_string(), &universe_text)?;
+    let text = std::fs::read_to_string(&path)?;
+    Ok(parse_universe_csv(&path.display().to_string(), &text)?)
+}
+
+fn load_crypto_market(
+    data_dir: &Path,
+    params: &StrategyParams,
+) -> Result<CryptoMarket, Box<dyn Error>> {
+    let processed = processed_dir(data_dir);
+    let universe = load_universe(data_dir)?;
+    let by_month = universe
+        .iter()
+        .map(|(month, members)| ((month.year(), month.month()), members.clone()))
+        .collect();
+    let symbols: BTreeSet<&String> = universe.values().flatten().collect();
+    let mut frames = BTreeMap::new();
+    for symbol in symbols {
+        let candles = read_series(&processed.join(format!("{symbol}.csv")))?;
+        frames.insert(symbol.clone(), Frame::new(symbol, candles, params));
+    }
+    let benchmark = Frame::new(
+        "BTCUSDT",
+        read_series(&processed.join("BTCUSDT.csv"))?,
+        params,
+    );
+    Ok(CryptoMarket {
+        benchmark,
+        frames,
+        by_month,
+    })
+}
+
+fn cmd_signals(data_dir: &Path, date: Option<NaiveDate>, fvg: bool) -> CliResult {
+    let processed = processed_dir(data_dir);
+    let universe = load_universe(data_dir)?;
     let mut params = StrategyParams::crypto();
     if fvg {
         params.entry = EntryMode::Fvg;
@@ -237,7 +329,7 @@ fn cmd_signals(data_dir: &Path, date: Option<NaiveDate>, fvg: bool) -> CliResult
     );
     for s in &setups {
         println!(
-            "{:<12} close {:>12.6} | buy limit {:>12.6} | stop {:>12.6} | target {:>12.6} | risk {:>5.1}% | momentum {:+.1}%",
+            "{:<12} close {:>14.8} | buy limit {:>14.8} | stop {:>14.8} | target {:>14.8} | risk {:>5.1}% | momentum {:+.1}%",
             s.symbol,
             s.close,
             s.limit,
@@ -255,63 +347,42 @@ fn cmd_backtest(
     fvg: bool,
     start: Option<NaiveDate>,
     end: Option<NaiveDate>,
+    stop_atr: f64,
+    hold: usize,
+    partial: bool,
 ) -> CliResult {
-    let processed = processed_dir(data_dir);
-    let universe_path = data_dir
-        .join("processed")
-        .join("binance")
-        .join("universe.csv");
-    let universe_text = std::fs::read_to_string(&universe_path)?;
-    let universe = parse_universe_csv(&universe_path.display().to_string(), &universe_text)?;
-    let by_month: BTreeMap<(i32, u32), Vec<String>> = universe
-        .iter()
-        .map(|(month, members)| ((month.year(), month.month()), members.clone()))
-        .collect();
     let mut params = StrategyParams::crypto();
+    params.stop_atr = stop_atr;
     if fvg {
         params.entry = EntryMode::Fvg;
     }
-    let symbols: BTreeSet<&String> = universe.values().flatten().collect();
-    let mut frames = BTreeMap::new();
-    for symbol in symbols {
-        let candles = read_series(&processed.join(format!("{symbol}.csv")))?;
-        frames.insert(symbol.clone(), Frame::new(symbol, candles, &params));
-    }
-    let benchmark = Frame::new(
-        "BTCUSDT",
-        read_series(&processed.join("BTCUSDT.csv"))?,
-        &params,
-    );
-    let first = benchmark
+    let m = load_crypto_market(data_dir, &params)?;
+    let first = m
+        .benchmark
         .candles
         .first()
         .map(Candle::date)
         .ok_or("no BTCUSDT data")?;
-    let held_out_from = NaiveDate::from_ymd_opt(2024, 10, 31).ok_or("invalid date")?;
-    let (start, end) = (start.unwrap_or(first), end.unwrap_or(held_out_from));
-    let config = BacktestConfig::crypto();
+    let (start, end) = (start.unwrap_or(first), end.unwrap_or(held_out_start()?));
+    let config = BacktestConfig {
+        max_hold_days: hold,
+        take_partial: partial,
+        ..BacktestConfig::crypto()
+    };
     let market = Market {
-        benchmark: &benchmark,
-        frames: &frames,
-        universe: &by_month,
+        benchmark: &m.benchmark,
+        frames: &m.frames,
+        universe: &m.by_month,
     };
     let result = run(&market, &params, &config, start, end);
-    let s = summarize(&result, config.initial_capital);
+    let e = evaluate(&result, config.initial_capital, &Criteria::default());
     let pnl: f64 = result.trades.iter().map(|t| t.pnl).sum();
     println!(
-        "period {start} to {end}, entry {}",
-        if fvg { "FVG" } else { "EMA20" }
+        "period {start} to {end}, entry {}, stop {stop_atr} ATR, hold {hold}d, {}",
+        if fvg { "FVG" } else { "EMA20" },
+        if partial { "half at 2R" } else { "no partial" }
     );
-    println!("trades:          {}", s.trades);
-    println!("win rate:        {:.1}%", s.win_rate * 100.0);
-    println!("average R:       {:+.3}", s.average_r);
-    println!("profit factor:   {:.2}", s.profit_factor);
-    println!("max drawdown:    {:.1}%", s.max_drawdown * 100.0);
-    println!(
-        "final equity:    {:.2} ({:+.1}%)",
-        s.final_equity,
-        s.total_return * 100.0
-    );
+    print_evaluation(&e);
     println!(
         "accounting check: final cash - (initial + sum of trades) = {:.9}",
         result.final_cash - (config.initial_capital + pnl)
@@ -328,6 +399,185 @@ fn cmd_backtest(
     )?;
     println!("written: reports/backtest_{suffix}_trades.csv and _equity.csv");
     Ok(ExitCode::SUCCESS)
+}
+
+fn print_evaluation(e: &Evaluation) {
+    let s = e.summary;
+    println!("trades:            {}", s.trades);
+    println!("win rate:          {:.1}%", s.win_rate * 100.0);
+    println!("average R:         {:+.3}", s.average_r);
+    println!("profit factor:     {:.2}", s.profit_factor);
+    println!("max drawdown:      {:.1}%", s.max_drawdown * 100.0);
+    println!(
+        "final equity:      {:.2} ({:+.1}%)",
+        s.final_equity,
+        s.total_return * 100.0
+    );
+    println!(
+        "non-losing years:  {:.0}%",
+        e.non_losing_year_fraction * 100.0
+    );
+    println!(
+        "R total {:+.1} | without top 3 trades {:+.1} | without best symbol {:+.1}",
+        e.r_total, e.r_without_top3, e.r_without_best_symbol
+    );
+    println!(
+        "verdict:           {}",
+        if e.passes { "PASSES" } else { "fails" }
+    );
+}
+
+fn run_variant(m: &CryptoMarket, v: Variant, start: NaiveDate, end: NaiveDate) -> Evaluation {
+    let mut params = StrategyParams::crypto();
+    params.stop_atr = STOP_ATR[v.stop];
+    if v.fvg {
+        params.entry = EntryMode::Fvg;
+    }
+    let config = BacktestConfig {
+        max_hold_days: HOLD_DAYS[v.hold],
+        take_partial: v.partial,
+        ..BacktestConfig::crypto()
+    };
+    let market = Market {
+        benchmark: &m.benchmark,
+        frames: &m.frames,
+        universe: &m.by_month,
+    };
+    let result = run(&market, &params, &config, start, end);
+    evaluate(&result, config.initial_capital, &Criteria::default())
+}
+
+fn cmd_grid(data_dir: &Path) -> CliResult {
+    let m = load_crypto_market(data_dir, &StrategyParams::crypto())?;
+    let start = m
+        .benchmark
+        .candles
+        .first()
+        .map(Candle::date)
+        .ok_or("no BTCUSDT data")?;
+    let end = held_out_start()?;
+    let mut variants = Vec::new();
+    for fvg in [false, true] {
+        for stop in 0..STOP_ATR.len() {
+            for partial in [true, false] {
+                for hold in 0..HOLD_DAYS.len() {
+                    variants.push(Variant {
+                        fvg,
+                        stop,
+                        partial,
+                        hold,
+                    });
+                }
+            }
+        }
+    }
+    println!(
+        "running {} variants from {start} to {end} (final two years stay held out)",
+        variants.len()
+    );
+    let threads = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
+    let chunk = variants.len().div_ceil(threads.max(1));
+    let market = &m;
+    let results: Vec<(Variant, Evaluation)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = variants
+            .chunks(chunk)
+            .map(|part| {
+                scope.spawn(move || {
+                    part.iter()
+                        .map(|&v| (v, run_variant(market, v, start, end)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let mut all = Vec::new();
+        for handle in handles {
+            all.extend(handle.join().map_err(|_| "a grid worker panicked")?);
+        }
+        Ok::<_, Box<dyn Error>>(all)
+    })?;
+    print_grid(&results);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn neighborhood_r(results: &[(Variant, Evaluation)], v: Variant) -> f64 {
+    let near: Vec<f64> = results
+        .iter()
+        .filter(|(other, _)| other.fvg == v.fvg && other.distance(v) <= 1)
+        .map(|(_, e)| e.summary.average_r)
+        .collect();
+    let count = f64::from(u32::try_from(near.len()).unwrap_or(u32::MAX));
+    near.iter().sum::<f64>() / count.max(1.0)
+}
+
+fn print_grid(results: &[(Variant, Evaluation)]) {
+    let mut csv = String::from(
+        "variant,trades,win_rate,average_r,profit_factor,max_drawdown,total_return,non_losing_years,r_without_top3,r_without_best_symbol,neighborhood_r,passes\n",
+    );
+    println!(
+        "{:<36} {:>6} {:>6} {:>7} {:>5} {:>6} {:>8} {:>6} {:>7} {:>7} {:>7}  verdict",
+        "variant",
+        "trades",
+        "win%",
+        "avgR",
+        "PF",
+        "maxDD",
+        "return",
+        "years",
+        "-top3",
+        "-best",
+        "nbhdR"
+    );
+    for &(v, e) in results {
+        let s = e.summary;
+        let nbhd = neighborhood_r(results, v);
+        println!(
+            "{:<36} {:>6} {:>5.1}% {:>+7.3} {:>5.2} {:>5.1}% {:>+7.1}% {:>5.0}% {:>+7.1} {:>+7.1} {:>+7.3}  {}",
+            v.label(),
+            s.trades,
+            s.win_rate * 100.0,
+            s.average_r,
+            s.profit_factor,
+            s.max_drawdown * 100.0,
+            s.total_return * 100.0,
+            e.non_losing_year_fraction * 100.0,
+            e.r_without_top3,
+            e.r_without_best_symbol,
+            nbhd,
+            if e.passes { "PASSES" } else { "fails" }
+        );
+        let _ = writeln!(
+            csv,
+            "{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{:.4},{}",
+            v.label(),
+            s.trades,
+            s.win_rate,
+            s.average_r,
+            s.profit_factor,
+            s.max_drawdown,
+            s.total_return,
+            e.non_losing_year_fraction,
+            e.r_without_top3,
+            e.r_without_best_symbol,
+            nbhd,
+            e.passes
+        );
+    }
+    let best = results
+        .iter()
+        .filter(|(_, e)| e.passes)
+        .max_by(|a, b| neighborhood_r(results, a.0).total_cmp(&neighborhood_r(results, b.0)));
+    match best {
+        Some((v, _)) => println!(
+            "selected (passes, best neighborhood): {} | neighborhood avg R {:+.3}",
+            v.label(),
+            neighborhood_r(results, *v)
+        ),
+        None => println!("no variant passes the acceptance criteria"),
+    }
+    if std::fs::create_dir_all("reports").is_ok() && std::fs::write("reports/grid.csv", csv).is_ok()
+    {
+        println!("written: reports/grid.csv");
+    }
 }
 
 fn print_build_summary(summary: &BuildSummary) {
