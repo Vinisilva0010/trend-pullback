@@ -16,6 +16,7 @@ use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
 use tp_core::indicators::{close_values, segments};
+use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::market::Candle;
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
@@ -105,6 +106,12 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 3 liquidity study: magnet test and returns after breaks and sweeps.
+    Liquidity {
+        /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
+        #[arg(long)]
+        final_period: bool,
+    },
     /// Daily live signal for BTC and ETH: recent candles, validated Donchian
     /// weights, and an order only when the weight must change.
     Daily {
@@ -188,6 +195,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Liquidity { final_period } => cmd_liquidity(&cli.data_dir, final_period),
         Command::Daily {
             capital,
             notify,
@@ -673,6 +681,79 @@ fn append_signal_log(live_dir: &Path, log: &str) -> std::io::Result<PathBuf> {
     }
     std::io::Write::write_all(&mut file, log.as_bytes())?;
     Ok(path)
+}
+
+fn cmd_liquidity(data_dir: &Path, final_period: bool) -> CliResult {
+    let m = load_crypto_market(data_dir, &StrategyParams::crypto())?;
+    let (start, end) = if final_period {
+        (
+            NaiveDate::from_ymd_opt(2024, 11, 1).ok_or("invalid date")?,
+            NaiveDate::from_ymd_opt(2026, 10, 31).ok_or("invalid date")?,
+        )
+    } else {
+        (default_trend_start()?, held_out_start()?)
+    };
+    println!(
+        "liquidity study {start} to {end} ({}), top-20 universe, daily candles",
+        if final_period {
+            "final period"
+        } else {
+            "development"
+        }
+    );
+    for horizon in [1, 3, 7, 14] {
+        let mut result = LiquidityResult::default();
+        for (symbol, frame) in &m.frames {
+            let eligible: Vec<bool> = frame
+                .candles
+                .iter()
+                .map(|c| {
+                    let d = c.date();
+                    d >= start
+                        && d <= end
+                        && m.by_month
+                            .get(&(d.year(), d.month()))
+                            .is_some_and(|members| members.iter().any(|s| s == symbol))
+                })
+                .collect();
+            study_symbol(&frame.candles, &frame.atr, &eligible, horizon, &mut result);
+        }
+        print_liquidity(horizon, &result);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_liquidity(horizon: usize, r: &LiquidityResult) {
+    println!("--- horizon {horizon} day(s) ---");
+    println!(
+        "{:<12} {:>6} {:>7} {:>10} {:>9} {:>6}",
+        "level", "n", "hit%", "expected%", "excess", "z"
+    );
+    for (kind, s) in &r.touches {
+        println!(
+            "{:<12} {:>6} {:>6.1}% {:>9.1}% {:>+7.1}pp {:>+6.1}",
+            kind.label(),
+            s.count,
+            s.hit_rate() * 100.0,
+            s.expected_rate() * 100.0,
+            (s.hit_rate() - s.expected_rate()) * 100.0,
+            s.z()
+        );
+    }
+    println!(
+        "{:<12} {:>6} {:>17} {:>6}",
+        "event", "n", "mean excess ATR", "t"
+    );
+    for (kind, values) in &r.events {
+        let (mean, t) = mean_and_t(values);
+        println!(
+            "{:<12} {:>6} {:>+17.3} {:>+6.1}",
+            kind.label(),
+            values.len(),
+            mean,
+            t
+        );
+    }
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {
