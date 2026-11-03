@@ -81,7 +81,7 @@ pub fn parse_state(text: &str) -> Result<State, LiveError> {
         let weight = weight
             .parse::<f64>()
             .ok()
-            .filter(|w| (0.0..=1.0).contains(w))
+            .filter(|w| (0.0..=3.0).contains(w))
             .ok_or_else(|| bad(format!("invalid weight {weight:?}")))?;
         state.insert(asset.to_owned(), (date, weight));
     }
@@ -166,7 +166,7 @@ mod tests {
         state.insert("BTCUSDT".to_owned(), (day(2), 0.352));
         state.insert("ETHUSDT".to_owned(), (day(2), 0.0));
         assert_eq!(parse_state(&state_csv(&state)).unwrap(), state);
-        assert!(parse_state("asset,date,weight\nBTCUSDT,2026-11-02,1.5\n").is_err());
+        assert!(parse_state("asset,date,weight\nBTCUSDT,2026-11-02,3.5\n").is_err());
         assert!(parse_state("asset,date,weight\nBTCUSDT,2026-13-02,0.5\n").is_err());
         assert!(parse_state("asset,date,weight\nBTCUSDT,2026-11-02\n").is_err());
     }

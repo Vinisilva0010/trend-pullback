@@ -634,7 +634,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     let mut lines = Vec::new();
     let mut log = String::new();
     let mut orders = 0;
-    let assets = ["BTCUSDT", "ETHUSDT"];
+    let assets = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
     let sleeve = capital / f64::from(u8::try_from(assets.len())?);
     for asset in assets {
         let mut candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
@@ -649,10 +649,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
             ));
         }
         let closes = close_values(&candles);
-        let target = donchian_ensemble_weights(&closes, &vol)
-            .last()
-            .copied()
-            .unwrap_or(0.0);
+        let target = live_weight(asset, &closes, &vol);
         let close = closes.last().copied().unwrap_or(0.0);
         let (held_date, held) = state.get(asset).copied().unwrap_or((NaiveDate::MIN, 0.0));
         if held_date >= signal_date {
@@ -687,7 +684,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         state.insert(asset.to_owned(), (signal_date, new_held));
     }
     let header = format!(
-        "trend-pullback daily signal ({today}), capital ${capital:.0}, ${sleeve:.0} per asset"
+        "trend-pullback daily signal ({today}), capital ${capital:.0}, ${sleeve:.0} per asset, USDT perpetuals with cross margin, up to 1.5x per part"
     );
     println!("{header}");
     for line in &lines {
@@ -1160,6 +1157,28 @@ fn cmd_portfolio(data_dir: &Path, final_period: bool) -> CliResult {
         );
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Approved Phase 6 portfolio: BTC and ETH Donchian at a 25% volatility
+/// target and SOL at 0.5x during the up regime, every position times 1.5.
+/// Development 2019-2024: +33% a year, 27.9% max drawdown; final period
+/// 2024-11 to 2026-10: +1.8% a year, 18.6% max drawdown.
+const PORTFOLIO_SCALE: f64 = 1.5;
+
+fn live_weight(asset: &str, closes: &[f64], vol: &VolTarget) -> f64 {
+    let base = if asset == "SOLUSDT" {
+        if classify(closes).last().copied().flatten() == Some(Regime::Up) {
+            0.5
+        } else {
+            0.0
+        }
+    } else {
+        donchian_ensemble_weights(closes, vol)
+            .last()
+            .copied()
+            .unwrap_or(0.0)
+    };
+    base * PORTFOLIO_SCALE
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {
