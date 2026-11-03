@@ -5,6 +5,7 @@ pub mod checksum;
 pub mod download;
 pub mod kline;
 pub mod listing;
+pub mod rest;
 
 use tp_core::market::Candle;
 

@@ -346,13 +346,13 @@ async fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 #[derive(Debug)]
-struct Http {
+pub(crate) struct Http {
     client: reqwest::Client,
     max_attempts: u32,
 }
 
 impl Http {
-    fn new(max_attempts: u32) -> Result<Self, DownloadError> {
+    pub(crate) fn new(max_attempts: u32) -> Result<Self, DownloadError> {
         let client = reqwest::Client::builder()
             .user_agent(concat!("trend-pullback/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(10))
@@ -365,7 +365,7 @@ impl Http {
         })
     }
 
-    async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+    pub(crate) async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, FetchError> {
         let mut attempt = 1;
         loop {
             match self.try_get(url).await {

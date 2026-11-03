@@ -6,8 +6,9 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{DateTime, Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
+use tp_backtest::allocation::needs_rebalance;
 use tp_backtest::allocation::{
     AllocationConfig, AllocationResult, AllocationStats, allocation_stats, run_allocation,
 };
@@ -19,8 +20,11 @@ use tp_core::market::Candle;
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
+use tp_data::binance::rest::fetch_daily_since;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
+use tp_data::live::{State, extend_series, parse_env, parse_state, state_csv};
 use tp_data::month::YearMonth;
+use tp_data::notify::send_telegram;
 use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
@@ -101,6 +105,19 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Daily live signal for BTC and ETH: recent candles, validated Donchian
+    /// weights, and an order only when the weight must change.
+    Daily {
+        /// Account size in USD, used to express orders in dollars.
+        #[arg(long, default_value_t = 1000.0)]
+        capital: f64,
+        /// Send a Telegram message when an order is needed (reads .env).
+        #[arg(long)]
+        notify: bool,
+        /// Show the signal without saving state or log and without sending.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Pre-registered trend-following test (Donchian ensemble and SMA family) per asset.
     Trend {
         /// Comma-separated assets.
@@ -171,6 +188,11 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Daily {
+            capital,
+            notify,
+            dry_run,
+        } => run_daily(&cli.data_dir, capital, notify, dry_run).await,
         Command::Trend { assets, start, end } => cmd_trend(&cli.data_dir, &assets, start, end),
     };
     match result {
@@ -515,6 +537,142 @@ fn cmd_grid(data_dir: &Path) -> CliResult {
     })?;
     print_grid(&results);
     Ok(ExitCode::SUCCESS)
+}
+
+async fn run_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
+    let result = cmd_daily(data_dir, capital, notify, dry_run).await;
+    let Err(error) = &result else {
+        return result;
+    };
+    if !notify || dry_run {
+        return result;
+    }
+    let message = format!(
+        "trend-pullback daily signal FAILED: {error}. No order was computed today; check the machine."
+    );
+    let Ok(text) = std::fs::read_to_string(".env") else {
+        return result;
+    };
+    let env = parse_env(&text);
+    let (Some(token), Some(chat)) = (env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"))
+    else {
+        return result;
+    };
+    if send_telegram(token, chat, &message).await.is_err() {
+        eprintln!("warning: could not send the failure alert");
+    }
+    result
+}
+
+async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
+    let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+    let now_ms = i64::try_from(since_epoch.as_millis())?;
+    let today = DateTime::from_timestamp_millis(now_ms)
+        .map(|d| d.date_naive())
+        .ok_or("invalid clock")?;
+    let live_dir = data_dir.join("live");
+    let state_path = live_dir.join("state.csv");
+    let mut state = match std::fs::read_to_string(&state_path) {
+        Ok(text) => parse_state(&text)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let vol = VolTarget::paper_spot();
+    let threshold = AllocationConfig::crypto().rebalance_threshold;
+    let mut lines = Vec::new();
+    let mut log = String::new();
+    let mut orders = 0;
+    for asset in ["BTCUSDT", "ETHUSDT"] {
+        let mut candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        let last = candles.last().map(Candle::date).ok_or("empty history")?;
+        let since = last.succ_opt().ok_or("date overflow")?;
+        let recent = fetch_daily_since(asset, since, now_ms).await?;
+        extend_series(&mut candles, &recent)?;
+        let signal_date = candles.last().map(Candle::date).ok_or("empty history")?;
+        if (today - signal_date).num_days() > 1 {
+            lines.push(format!(
+                "WARNING {asset}: last closed candle is {signal_date}; data may be stale"
+            ));
+        }
+        let closes = close_values(&candles);
+        let target = donchian_ensemble_weights(&closes, &vol)
+            .last()
+            .copied()
+            .unwrap_or(0.0);
+        let close = closes.last().copied().unwrap_or(0.0);
+        let (held_date, held) = state.get(asset).copied().unwrap_or((NaiveDate::MIN, 0.0));
+        if held_date >= signal_date {
+            lines.push(format!(
+                "{asset} {signal_date}: already processed, holding {:.1}%",
+                held * 100.0
+            ));
+            continue;
+        }
+        let order = needs_rebalance(held, target, threshold);
+        let new_held = if order { target } else { held };
+        if order {
+            orders += 1;
+            let verb = if target > held { "BUY" } else { "SELL" };
+            lines.push(format!(
+                "{asset} {signal_date}: {verb} at the next open -> hold {:.1}% of capital (was {:.1}%), change ${:+.0}, last close {close}",
+                target * 100.0,
+                held * 100.0,
+                (target - held) * capital
+            ));
+        } else {
+            lines.push(format!(
+                "{asset} {signal_date}: no order, keep {:.1}% (model {:.1}%)",
+                held * 100.0,
+                target * 100.0
+            ));
+        }
+        let _ = writeln!(
+            log,
+            "{today},{asset},{signal_date},{close},{target:.6},{held:.6},{new_held:.6},{order}"
+        );
+        state.insert(asset.to_owned(), (signal_date, new_held));
+    }
+    let header = format!("trend-pullback daily signal ({today}), capital ${capital:.0}");
+    println!("{header}");
+    for line in &lines {
+        println!("{line}");
+    }
+    if dry_run {
+        println!("dry run: nothing saved, nothing sent");
+        return Ok(ExitCode::SUCCESS);
+    }
+    std::fs::create_dir_all(&live_dir)?;
+    std::fs::write(&state_path, state_csv(&state))?;
+    let log_path = append_signal_log(&live_dir, &log)?;
+    println!("saved: {} and {}", state_path.display(), log_path.display());
+    if notify && orders > 0 {
+        let env = parse_env(&std::fs::read_to_string(".env")?);
+        let (Some(token), Some(chat)) =
+            (env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"))
+        else {
+            return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
+        };
+        send_telegram(token, chat, &format!("{header}\n{}", lines.join("\n"))).await?;
+        println!("telegram: sent");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn append_signal_log(live_dir: &Path, log: &str) -> std::io::Result<PathBuf> {
+    let path = live_dir.join("signals.csv");
+    let new_log = !path.exists();
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    if new_log {
+        std::io::Write::write_all(
+            &mut file,
+            b"run_date,asset,signal_date,close,model_weight,held_before,held_after,order\n",
+        )?;
+    }
+    std::io::Write::write_all(&mut file, log.as_bytes())?;
+    Ok(path)
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {

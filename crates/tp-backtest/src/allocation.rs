@@ -48,6 +48,16 @@ pub struct AllocationStats {
     pub non_losing_year_fraction: f64,
 }
 
+/// True when moving from weight `current` to `target` requires an order:
+/// entering, fully exiting, or a relative change above `threshold`. The
+/// simulator and the live signal both use this rule.
+#[must_use]
+pub fn needs_rebalance(current: f64, target: f64, threshold: f64) -> bool {
+    let (flat_target, flat_now) = (target <= 0.0, current <= 0.0);
+    let drift = current > 0.0 && (target - current).abs() / current > threshold;
+    flat_target != flat_now || (!flat_target && drift)
+}
+
 /// Simulates holding `weights[i]` (decided at the close of day `i`) from the
 /// next open, between `start` and `end` inclusive.
 #[must_use]
@@ -77,10 +87,7 @@ pub fn run_allocation(
             } else {
                 0.0
             };
-            let (flat_target, flat_now) = (target <= 0.0, units <= 0.0);
-            let drift =
-                current > 0.0 && (target - current).abs() / current > config.rebalance_threshold;
-            if flat_target != flat_now || (!flat_target && drift) {
+            if needs_rebalance(current, target, config.rebalance_threshold) {
                 let delta = target * value / open - units;
                 if delta > 0.0 {
                     let price = open * (1.0 + config.slippage);
@@ -210,6 +217,15 @@ mod tests {
             slippage: 0.0,
             ..AllocationConfig::crypto()
         }
+    }
+
+    #[test]
+    fn rebalance_rule() {
+        assert!(needs_rebalance(0.0, 0.3, 0.2));
+        assert!(needs_rebalance(0.3, 0.0, 0.2));
+        assert!(!needs_rebalance(0.0, 0.0, 0.2));
+        assert!(!needs_rebalance(0.30, 0.35, 0.2));
+        assert!(needs_rebalance(0.30, 0.40, 0.2));
     }
 
     #[test]
