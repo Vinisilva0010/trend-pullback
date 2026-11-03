@@ -10,7 +10,8 @@ use chrono::{DateTime, Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use tp_backtest::allocation::needs_rebalance;
 use tp_backtest::allocation::{
-    AllocationConfig, AllocationResult, AllocationStats, allocation_stats, run_allocation,
+    AllocationConfig, AllocationResult, AllocationStats, LeverageConfig, allocation_stats,
+    monthly_returns, run_allocation, run_leveraged,
 };
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
@@ -22,6 +23,7 @@ use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
 use tp_data::binance::rest::fetch_daily_since;
+use tp_data::funding::parse_funding_csv;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
 use tp_data::live::{State, extend_series, parse_env, parse_state, state_csv};
 use tp_data::month::YearMonth;
@@ -106,6 +108,16 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 4 sizing test: the approved signal on a perpetual with cross margin,
+    /// real funding, liquidation checks, and monthly results per position size.
+    Sizing {
+        /// Comma-separated assets.
+        #[arg(long, value_delimiter = ',', default_value = "BTCUSDT,ETHUSDT,SOLUSDT")]
+        assets: Vec<String>,
+        /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
+        #[arg(long)]
+        final_period: bool,
+    },
     /// Phase 3 liquidity study: magnet test and returns after breaks and sweeps.
     Liquidity {
         /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
@@ -195,6 +207,10 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Sizing {
+            assets,
+            final_period,
+        } => cmd_sizing(&cli.data_dir, &assets, final_period),
         Command::Liquidity { final_period } => cmd_liquidity(&cli.data_dir, final_period),
         Command::Daily {
             capital,
@@ -758,6 +774,125 @@ fn print_liquidity(horizon: usize, r: &LiquidityResult) {
             t
         );
     }
+}
+
+fn count_f64(n: usize) -> f64 {
+    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+fn cmd_sizing(data_dir: &Path, assets: &[String], final_period: bool) -> CliResult {
+    let (start, end) = if final_period {
+        (
+            NaiveDate::from_ymd_opt(2024, 11, 1).ok_or("invalid date")?,
+            NaiveDate::from_ymd_opt(2026, 10, 31).ok_or("invalid date")?,
+        )
+    } else {
+        (default_trend_start()?, held_out_start()?)
+    };
+    let config = LeverageConfig::crypto();
+    println!(
+        "sizing test {start} to {end} ({}) | USDT perpetual, cross margin, real Binance funding, 0.1% fee + 0.1% slippage per side",
+        if final_period {
+            "final period"
+        } else {
+            "development"
+        }
+    );
+    if final_period {
+        println!(
+            "criteria: Sharpe > 0, maxDD <= 35%, never liquidated, liquidation always >= 50% below price"
+        );
+    } else {
+        println!(
+            "criteria: Sharpe >= 1.0, maxDD <= 35%, non-losing years >= 60%, never liquidated, liquidation always >= 50% below price"
+        );
+    }
+    for asset in assets {
+        let candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        if segments(&candles).len() > 1 {
+            return Err(format!("{asset} has gaps; trend models need continuous data").into());
+        }
+        let funding_path = data_dir
+            .join("processed")
+            .join("binance")
+            .join("funding")
+            .join(format!("{asset}.csv"));
+        let text = std::fs::read_to_string(&funding_path).map_err(|e| {
+            format!(
+                "{}: {e} (run python3 scripts/funding_history.py first)",
+                funding_path.display()
+            )
+        })?;
+        let funding = parse_funding_csv(&text)?;
+        let closes = close_values(&candles);
+        println!("=== {asset} ===");
+        for target in [0.25, 0.5, 0.75] {
+            for cap in [1.0_f64, 2.0, 3.0] {
+                let vol = VolTarget {
+                    target,
+                    window: 90,
+                    max_per_signal: cap.max(2.0),
+                    max_total: cap,
+                };
+                let weights = donchian_ensemble_weights(&closes, &vol);
+                let r = run_leveraged(&candles, &weights, &funding, &config, start, end);
+                print_sizing_row(target, cap, &r, &config, final_period);
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_sizing_row(
+    target: f64,
+    cap: f64,
+    r: &tp_backtest::allocation::LeveragedResult,
+    config: &LeverageConfig,
+    final_period: bool,
+) {
+    let s = allocation_stats(&r.equity, config.initial_capital);
+    let months = monthly_returns(&r.equity, config.initial_capital);
+    let (month_avg, _) = mean_and_t(&months);
+    let positive = months.iter().filter(|m| **m > 0.0).count();
+    let worst = months.iter().copied().fold(0.0_f64, f64::min);
+    let (trade_avg, _) = mean_and_t(&r.round_trips);
+    let wins = r.round_trips.iter().filter(|t| **t > 0.0).count();
+    let liquidation = match r.liquidated_on {
+        Some(day) => format!("LIQUIDATED {day}"),
+        None if r.min_liquidation_distance >= 1.0 => "liq at zero".to_owned(),
+        None => format!("liq {:.0}% below", r.min_liquidation_distance * 100.0),
+    };
+    let safe = r.liquidated_on.is_none() && r.min_liquidation_distance >= 0.5;
+    let passes = if final_period {
+        s.sharpe > 0.0 && s.max_drawdown <= 0.35 && safe
+    } else {
+        s.sharpe >= 1.0 && s.max_drawdown <= 0.35 && s.non_losing_year_fraction >= 0.6 && safe
+    };
+    println!(
+        "vol {:>3.0}% cap {:.0}x | CAGR {:>+6.1}% | month avg {:>+5.2}% | months+ {:>3.0}% | worst month {:>+6.1}% | maxDD {:>5.1}% | Sharpe {:>4.2} | {} | trades {} (win {:.0}%, avg {:+.1}%) | funding {:.1}% | {}",
+        target * 100.0,
+        cap,
+        s.cagr * 100.0,
+        month_avg * 100.0,
+        if months.is_empty() {
+            0.0
+        } else {
+            count_f64(positive) / count_f64(months.len()) * 100.0
+        },
+        worst * 100.0,
+        s.max_drawdown * 100.0,
+        s.sharpe,
+        liquidation,
+        r.round_trips.len(),
+        if r.round_trips.is_empty() {
+            0.0
+        } else {
+            count_f64(wins) / count_f64(r.round_trips.len()) * 100.0
+        },
+        trade_avg * 100.0,
+        r.funding_paid / config.initial_capital * 100.0,
+        if passes { "PASSES" } else { "fails" }
+    );
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {
