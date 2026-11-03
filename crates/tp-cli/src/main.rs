@@ -13,10 +13,12 @@ use tp_backtest::allocation::{
     AllocationConfig, AllocationResult, AllocationStats, LeverageConfig, allocation_stats,
     monthly_returns, run_allocation, run_leveraged,
 };
+use tp_backtest::range::{RangeCosts, RangeParams, RangeResult, run_range};
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
 use tp_core::indicators::{close_values, segments};
+use tp_core::intraday::aggregate;
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::market::Candle;
 use tp_core::regime::{Regime, average_run, classify};
@@ -26,6 +28,7 @@ use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_
 use tp_data::binance::rest::fetch_daily_since;
 use tp_data::funding::parse_funding_csv;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
+use tp_data::intraday::parse_bars_csv;
 use tp_data::live::{State, extend_series, parse_env, parse_state, state_csv};
 use tp_data::month::YearMonth;
 use tp_data::notify::send_telegram;
@@ -109,6 +112,13 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 6 range module: fade Bollinger bands with limit orders on 1h and 4h
+    /// futures bars, only after a range day.
+    Range {
+        /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
+        #[arg(long)]
+        final_period: bool,
+    },
     /// Phase 6 test: BTC, ETH and SOL sleeves in one account, with all positions scaled by k.
     Portfolio {
         /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
@@ -229,6 +239,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
         Command::Portfolio { final_period } => cmd_portfolio(&cli.data_dir, final_period),
         Command::RegimeSizing {
             assets,
@@ -1179,6 +1190,136 @@ fn live_weight(asset: &str, closes: &[f64], vol: &VolTarget) -> f64 {
             .unwrap_or(0.0)
     };
     base * PORTFOLIO_SCALE
+}
+
+fn cmd_range(data_dir: &Path, final_period: bool) -> CliResult {
+    let (start, end) = if final_period {
+        (
+            NaiveDate::from_ymd_opt(2024, 11, 1).ok_or("invalid date")?,
+            NaiveDate::from_ymd_opt(2026, 10, 31).ok_or("invalid date")?,
+        )
+    } else {
+        (default_trend_start()?, held_out_start()?)
+    };
+    println!(
+        "range module {start} to {end} ({}) | limit orders 0.02%, stops 0.05% + 0.05% slippage, real funding, 1% risk per trade, at most 1x",
+        if final_period {
+            "final period"
+        } else {
+            "development"
+        }
+    );
+    if final_period {
+        println!("criteria: Sharpe > 0 and profit factor > 1.0");
+    } else {
+        println!(
+            "criteria: >= 200 trades, profit factor >= 1.2, Sharpe >= 1.0, maxDD <= 20%, non-losing years >= 60%"
+        );
+    }
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        let daily = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        let classes = classify(&close_values(&daily));
+        let regimes: BTreeMap<NaiveDate, Regime> = daily
+            .iter()
+            .zip(&classes)
+            .filter_map(|(c, r)| r.map(|r| (c.date(), r)))
+            .collect();
+        let path = data_dir
+            .join("processed")
+            .join("binance")
+            .join("futures_1h")
+            .join(format!("{asset}.csv"));
+        let text = std::fs::read_to_string(&path).map_err(|e| {
+            format!(
+                "{}: {e} (run python3 scripts/futures_1h.py first)",
+                path.display()
+            )
+        })?;
+        let hourly = parse_bars_csv(&text)?;
+        let funding = load_funding(data_dir, asset)?;
+        println!("=== {asset} ===");
+        for bar_hours in [1_i64, 4] {
+            let bars = if bar_hours == 1 {
+                hourly.clone()
+            } else {
+                aggregate(&hourly, bar_hours)
+            };
+            for window in [24_usize, 48, 96] {
+                for band in [2.0, 2.5] {
+                    let params = RangeParams {
+                        bar_hours,
+                        window,
+                        band,
+                        stop_extra: 1.5,
+                        risk: 0.01,
+                        max_hold: window,
+                    };
+                    let r = run_range(
+                        &bars,
+                        &regimes,
+                        &funding,
+                        &params,
+                        &RangeCosts::binance_futures(),
+                        start,
+                        end,
+                        10_000.0,
+                    );
+                    print_range_row(&params, &r, final_period);
+                }
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_range_row(p: &RangeParams, r: &RangeResult, final_period: bool) {
+    let s = allocation_stats(&r.equity, 10_000.0);
+    let months = monthly_returns(&r.equity, 10_000.0);
+    let (month_avg, _) = mean_and_t(&months);
+    let worst = months.iter().copied().fold(0.0_f64, f64::min);
+    let (trade_avg, _) = mean_and_t(&r.trade_returns);
+    let trades = r.trade_returns.len();
+    let wins = r.trade_returns.iter().filter(|t| **t > 0.0).count();
+    let pf = r.profit_factor();
+    let passes = if final_period {
+        s.sharpe > 0.0 && pf > 1.0
+    } else {
+        trades >= 200
+            && pf >= 1.2
+            && s.sharpe >= 1.0
+            && s.max_drawdown <= 0.2
+            && s.non_losing_year_fraction >= 0.6
+    };
+    println!(
+        "{}h win {:>2} band {:.1} | trades {:>5} ({:>4.1}/month, win {:>3.0}%, avg {:+.3}%) | PF {:>4.2} | CAGR {:>+6.1}% | month avg {:>+5.2}% | worst month {:>+5.1}% | maxDD {:>4.1}% | Sharpe {:>5.2} | in market {:>3.0}% | {}",
+        p.bar_hours,
+        p.window,
+        p.band,
+        trades,
+        if months.is_empty() {
+            0.0
+        } else {
+            count_f64(trades) / count_f64(months.len())
+        },
+        if trades == 0 {
+            0.0
+        } else {
+            count_f64(wins) / count_f64(trades) * 100.0
+        },
+        trade_avg * 100.0,
+        pf,
+        s.cagr * 100.0,
+        month_avg * 100.0,
+        worst * 100.0,
+        s.max_drawdown * 100.0,
+        s.sharpe,
+        if r.bars_total == 0 {
+            0.0
+        } else {
+            count_f64(r.bars_in_market) / count_f64(r.bars_total) * 100.0
+        },
+        if passes { "PASSES" } else { "fails" }
+    );
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {

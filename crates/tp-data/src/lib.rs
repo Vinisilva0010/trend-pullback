@@ -3,6 +3,7 @@
 pub mod binance;
 pub mod funding;
 pub mod history;
+pub mod intraday;
 pub mod live;
 pub mod month;
 pub mod notify;
