@@ -655,7 +655,6 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     let threshold = AllocationConfig::crypto().rebalance_threshold;
     let mut lines = Vec::new();
     let mut log = String::new();
-    let mut orders = 0;
     let assets = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
     let sleeve = capital / f64::from(u8::try_from(assets.len())?);
     for asset in assets {
@@ -684,7 +683,6 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         let order = needs_rebalance(held, target, threshold);
         let new_held = if order { target } else { held };
         if order {
-            orders += 1;
             let verb = if target > held { "BUY" } else { "SELL" };
             lines.push(format!(
                 "{asset} {signal_date}: {verb} at the next open -> hold {:.1}% of its ${sleeve:.0} part (was {:.1}%), change ${:+.0}, last close {close}",
