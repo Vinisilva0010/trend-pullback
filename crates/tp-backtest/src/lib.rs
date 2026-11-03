@@ -9,13 +9,15 @@
 //! be stopped out. Close-based exits (trailing low, time limit) execute at the
 //! next open. Every buy and sell pays slippage and a fee.
 
+pub mod allocation;
+
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use chrono::{Datelike, NaiveDate};
 use tp_core::strategy::{Frame, Setup, StrategyParams, setups_on};
 
-fn as_f64(n: usize) -> f64 {
+pub(crate) fn as_f64(n: usize) -> f64 {
     f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 

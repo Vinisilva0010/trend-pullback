@@ -8,11 +8,16 @@ use std::process::ExitCode;
 
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
+use tp_backtest::allocation::{
+    AllocationConfig, AllocationResult, AllocationStats, allocation_stats, run_allocation,
+};
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
+use tp_core::indicators::{close_values, segments};
 use tp_core::market::Candle;
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
+use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
 use tp_data::month::YearMonth;
@@ -96,6 +101,18 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Pre-registered trend-following test (Donchian ensemble and SMA family) per asset.
+    Trend {
+        /// Comma-separated assets.
+        #[arg(long, value_delimiter = ',', default_value = "BTCUSDT,ETHUSDT")]
+        assets: Vec<String>,
+        /// First day (YYYY-MM-DD); defaults to 2019-01-01.
+        #[arg(long)]
+        start: Option<NaiveDate>,
+        /// Last day (YYYY-MM-DD); defaults to 2024-10-31 (final two years held out).
+        #[arg(long)]
+        end: Option<NaiveDate>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -154,6 +171,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Trend { assets, start, end } => cmd_trend(&cli.data_dir, &assets, start, end),
     };
     match result {
         Ok(code) => code,
@@ -496,6 +514,87 @@ fn cmd_grid(data_dir: &Path) -> CliResult {
         Ok::<_, Box<dyn Error>>(all)
     })?;
     print_grid(&results);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {
+    Ok(NaiveDate::from_ymd_opt(2019, 1, 1).ok_or("invalid date")?)
+}
+
+fn print_trend_row(
+    asset: &str,
+    model: &str,
+    r: &AllocationResult,
+    s: &AllocationStats,
+    passes: Option<bool>,
+) {
+    println!(
+        "{asset:<8} {model:<18} CAGR {:>+6.1}% | Sharpe {:>5.2} | maxDD {:>5.1}% | non-losing years {:>3.0}% | exposure {:>4.0}% | trades {:>4} | {}",
+        s.cagr * 100.0,
+        s.sharpe,
+        s.max_drawdown * 100.0,
+        s.non_losing_year_fraction * 100.0,
+        r.average_exposure * 100.0,
+        r.trades,
+        passes.map_or("benchmark", |p| if p { "PASSES" } else { "fails" })
+    );
+}
+
+fn cmd_trend(
+    data_dir: &Path,
+    assets: &[String],
+    start: Option<NaiveDate>,
+    end: Option<NaiveDate>,
+) -> CliResult {
+    let processed = processed_dir(data_dir);
+    let start = start.map_or_else(default_trend_start, Ok)?;
+    let end = end.map_or_else(held_out_start, Ok)?;
+    let config = AllocationConfig::crypto();
+    let vol = VolTarget::paper_spot();
+    println!(
+        "period {start} to {end} | 0.1% fee + 0.1% slippage per side | 25% vol target, 90-day vol | rebalance threshold 20%"
+    );
+    println!(
+        "criteria: Sharpe >= 1.0, maxDD <= 25%, non-losing years >= 60%, Sharpe above buy & hold"
+    );
+    for asset in assets {
+        let candles = read_series(&processed.join(format!("{asset}.csv")))?;
+        if segments(&candles).len() > 1 {
+            return Err(format!("{asset} has gaps; trend models need continuous data").into());
+        }
+        let closes = close_values(&candles);
+        let hold = run_allocation(&candles, &vec![1.0; closes.len()], &config, start, end);
+        let hold_stats = allocation_stats(&hold.equity, config.initial_capital);
+        print_trend_row(asset, "buy & hold", &hold, &hold_stats, None);
+        let mut models = vec![(
+            "Donchian ensemble".to_owned(),
+            donchian_ensemble_weights(&closes, &vol),
+        )];
+        for period in [40, 50, 100, 150] {
+            models.push((
+                format!("close > SMA{period}"),
+                sma_trend_weights(&closes, period, &vol),
+            ));
+        }
+        let mut sma_sharpes = Vec::new();
+        for (name, weights) in &models {
+            let r = run_allocation(&candles, weights, &config, start, end);
+            let s = allocation_stats(&r.equity, config.initial_capital);
+            if name.starts_with("close") {
+                sma_sharpes.push(s.sharpe);
+            }
+            let passes = s.sharpe >= 1.0
+                && s.max_drawdown <= 0.25
+                && s.non_losing_year_fraction >= 0.6
+                && s.sharpe > hold_stats.sharpe;
+            print_trend_row(asset, name, &r, &s, Some(passes));
+        }
+        let robust = sma_sharpes.iter().all(|s| *s >= 0.8);
+        println!(
+            "{asset}: SMA family robustness (every Sharpe >= 0.8): {}",
+            if robust { "yes" } else { "no" }
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
 
