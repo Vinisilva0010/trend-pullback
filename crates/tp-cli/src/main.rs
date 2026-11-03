@@ -13,6 +13,7 @@ use tp_backtest::allocation::{
     AllocationConfig, AllocationResult, AllocationStats, LeverageConfig, allocation_stats,
     monthly_returns, run_allocation, run_leveraged,
 };
+use tp_backtest::levels::{EdgeEvent, LevelParams, run_levels};
 use tp_backtest::range::{RangeCosts, RangeParams, RangeResult, run_range};
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
@@ -112,6 +113,13 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 6 level module: horizontal ranges from repeated touches, trading
+    /// breakouts and failed breakouts on 1h and 4h futures bars.
+    Levels {
+        /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
+        #[arg(long)]
+        final_period: bool,
+    },
     /// Phase 6 range module: fade Bollinger bands with limit orders on 1h and 4h
     /// futures bars, only after a range day.
     Range {
@@ -239,6 +247,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
         Command::Portfolio { final_period } => cmd_portfolio(&cli.data_dir, final_period),
         Command::RegimeSizing {
@@ -1264,7 +1273,14 @@ fn cmd_range(data_dir: &Path, final_period: bool) -> CliResult {
                         end,
                         10_000.0,
                     );
-                    print_range_row(&params, &r, final_period);
+                    print_range_row(
+                        &format!(
+                            "{}h win {:>2} band {:.1}",
+                            params.bar_hours, params.window, params.band
+                        ),
+                        &r,
+                        final_period,
+                    );
                 }
             }
         }
@@ -1272,7 +1288,7 @@ fn cmd_range(data_dir: &Path, final_period: bool) -> CliResult {
     Ok(ExitCode::SUCCESS)
 }
 
-fn print_range_row(p: &RangeParams, r: &RangeResult, final_period: bool) {
+fn print_range_row(label: &str, r: &RangeResult, final_period: bool) {
     let s = allocation_stats(&r.equity, 10_000.0);
     let months = monthly_returns(&r.equity, 10_000.0);
     let (month_avg, _) = mean_and_t(&months);
@@ -1291,10 +1307,7 @@ fn print_range_row(p: &RangeParams, r: &RangeResult, final_period: bool) {
             && s.non_losing_year_fraction >= 0.6
     };
     println!(
-        "{}h win {:>2} band {:.1} | trades {:>5} ({:>4.1}/month, win {:>3.0}%, avg {:+.3}%) | PF {:>4.2} | CAGR {:>+6.1}% | month avg {:>+5.2}% | worst month {:>+5.1}% | maxDD {:>4.1}% | Sharpe {:>5.2} | in market {:>3.0}% | {}",
-        p.bar_hours,
-        p.window,
-        p.band,
+        "{label} | trades {:>5} ({:>4.1}/month, win {:>3.0}%, avg {:+.3}%) | PF {:>4.2} | CAGR {:>+6.1}% | month avg {:>+5.2}% | worst month {:>+5.1}% | maxDD {:>4.1}% | Sharpe {:>5.2} | in market {:>3.0}% | {}",
         trades,
         if months.is_empty() {
             0.0
@@ -1320,6 +1333,78 @@ fn print_range_row(p: &RangeParams, r: &RangeResult, final_period: bool) {
         },
         if passes { "PASSES" } else { "fails" }
     );
+}
+
+fn cmd_levels(data_dir: &Path, final_period: bool) -> CliResult {
+    let (start, end) = if final_period {
+        (
+            NaiveDate::from_ymd_opt(2024, 11, 1).ok_or("invalid date")?,
+            NaiveDate::from_ymd_opt(2026, 10, 31).ok_or("invalid date")?,
+        )
+    } else {
+        (default_trend_start()?, held_out_start()?)
+    };
+    println!(
+        "level module {start} to {end} ({}) | entries at next open 0.05% + 0.05% slippage, targets 0.02%, real funding, 1% risk per trade, at most 1x",
+        if final_period {
+            "final period"
+        } else {
+            "development"
+        }
+    );
+    if final_period {
+        println!("criteria: Sharpe > 0 and profit factor > 1.0");
+    } else {
+        println!(
+            "criteria: >= 200 trades, profit factor >= 1.2, Sharpe >= 1.0, maxDD <= 20%, non-losing years >= 60%"
+        );
+    }
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        let path = data_dir
+            .join("processed")
+            .join("binance")
+            .join("futures_1h")
+            .join(format!("{asset}.csv"));
+        let text = std::fs::read_to_string(&path).map_err(|e| {
+            format!(
+                "{}: {e} (run python3 scripts/futures_1h.py first)",
+                path.display()
+            )
+        })?;
+        let hourly = parse_bars_csv(&text)?;
+        let funding = load_funding(data_dir, asset)?;
+        println!("=== {asset} ===");
+        for bar_hours in [1_i64, 4] {
+            let bars = if bar_hours == 1 {
+                hourly.clone()
+            } else {
+                aggregate(&hourly, bar_hours)
+            };
+            for lookback in [30_usize, 60] {
+                for (event, name) in [
+                    (EdgeEvent::Breakout, "breakout"),
+                    (EdgeEvent::Failure, "failed break"),
+                ] {
+                    let params = LevelParams::new(bar_hours, lookback, event);
+                    let r = run_levels(
+                        &bars,
+                        &funding,
+                        &params,
+                        &RangeCosts::binance_futures(),
+                        start,
+                        end,
+                        10_000.0,
+                    );
+                    print_range_row(
+                        &format!("{bar_hours}h range {lookback:>2} {name:<12}"),
+                        &r,
+                        final_period,
+                    );
+                }
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {

@@ -10,6 +10,7 @@
 //! next open. Every buy and sell pays slippage and a fee.
 
 pub mod allocation;
+pub mod levels;
 pub mod range;
 
 use std::collections::BTreeMap;
