@@ -380,6 +380,50 @@ pub fn build_and_write(
     Ok(result)
 }
 
+/// Parses `universe.csv` into the ordered members of each month.
+///
+/// # Errors
+///
+/// Returns [`SeriesError::Processed`] on a wrong header or a malformed row.
+pub fn parse_universe_csv(
+    label: &str,
+    text: &str,
+) -> Result<BTreeMap<YearMonth, Vec<String>>, SeriesError> {
+    let bad = |line: usize, reason: String| SeriesError::Processed {
+        path: label.to_owned(),
+        line,
+        reason,
+    };
+    let mut lines = text.lines().enumerate();
+    let header_ok = lines
+        .next()
+        .is_some_and(|(_, header)| header.starts_with("month,rank,symbol"));
+    if !header_ok {
+        return Err(bad(1, "missing or wrong header".to_owned()));
+    }
+    let mut out: BTreeMap<YearMonth, Vec<String>> = BTreeMap::new();
+    for (index, raw) in lines {
+        let row = raw.trim();
+        if row.is_empty() {
+            continue;
+        }
+        let mut fields = row.split(',');
+        let (Some(month), Some(_rank), Some(symbol)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            return Err(bad(index + 1, "expected month,rank,symbol".to_owned()));
+        };
+        let month: YearMonth = month
+            .parse()
+            .map_err(|_| bad(index + 1, format!("invalid month {month:?}")))?;
+        if !is_valid_symbol(symbol) {
+            return Err(bad(index + 1, format!("invalid symbol {symbol:?}")));
+        }
+        out.entry(month).or_default().push(symbol.to_owned());
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

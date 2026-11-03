@@ -1708,8 +1708,10 @@ version = "0.1.0"
 name = "tp-cli"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "tokio",
+ "tp-core",
  "tp-data",
 ]
 

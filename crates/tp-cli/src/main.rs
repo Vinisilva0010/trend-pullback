@@ -1,15 +1,23 @@
 //! Command-line entry point for trend-pullback.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
+use tp_core::market::Candle;
+use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
-use tp_data::history::{BuildSummary, build_all, processed_dir};
+use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
 use tp_data::month::YearMonth;
-use tp_data::universe::{ExclusionReason, UniverseResult, UniverseRules, build_and_write};
+use tp_data::universe::{
+    ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
+};
+
+type CliResult = Result<ExitCode, Box<dyn Error>>;
 
 #[derive(Debug, Parser)]
 #[command(name = "tp", version, about = "trend-pullback research tool")]
@@ -49,87 +57,38 @@ enum Command {
         #[arg(long, default_value = "config/universe_exclusions.txt")]
         exclusions: PathBuf,
     },
+    /// Show the setups of one day (crypto), with the order for the next day.
+    Signals {
+        /// Signal date (YYYY-MM-DD); defaults to the last day with BTCUSDT data.
+        #[arg(long)]
+        date: Option<NaiveDate>,
+        /// Use the fair value gap entry instead of the EMA.
+        #[arg(long)]
+        fvg: bool,
+    },
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    match run(cli).await {
-        Ok(code) => code,
-        Err(error) => {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let Cli { data_dir, command } = cli;
-    match command {
+    let result = match cli.command {
         Command::DownloadBinance {
             from,
             to,
             symbols,
             concurrency,
-        } => {
-            if from > to {
-                return Err("--from must not be after --to".into());
-            }
-            let config = DownloadConfig {
-                data_dir: data_dir.clone(),
-                from,
-                to,
-                symbols,
-                concurrency: usize::from(concurrency),
-                max_attempts: 5,
-            };
-            println!(
-                "downloading Binance spot daily klines {from} to {to} into {}",
-                data_dir.display()
-            );
-            let summary = download_spot_daily(&config, |done, total, report| {
-                println!(
-                    "[{done}/{total}] {}: {} files, {} new, {} already valid, {} failed",
-                    report.symbol,
-                    report.files_available,
-                    report.downloaded,
-                    report.already_valid,
-                    report.failures.len()
-                );
-            })
-            .await?;
-            print_download_summary(&summary);
-            let failures_path = write_failures(&data_dir, &summary)?;
-            println!("failure list: {}", failures_path.display());
-            Ok(exit_code(summary.failures.is_empty()))
-        }
-        Command::BuildSeries => {
-            let source = kline_dir(&data_dir);
-            let out_dir = processed_dir(&data_dir);
-            let report = data_dir
-                .join("processed")
-                .join("binance")
-                .join("quality_report.csv");
-            println!(
-                "building daily series from {} into {}",
-                source.display(),
-                out_dir.display()
-            );
-            let summary = build_all(&source, &out_dir, &report)?;
-            print_build_summary(&summary);
-            println!("quality report: {}", report.display());
-            Ok(exit_code(summary.failed.is_empty()))
-        }
+        } => cmd_download(&cli.data_dir, from, to, symbols, concurrency).await,
+        Command::BuildSeries => cmd_build_series(&cli.data_dir),
         Command::BuildUniverse { size, exclusions } => {
-            let out_dir = data_dir.join("processed").join("binance");
-            let rules = UniverseRules {
-                size,
-                ..UniverseRules::default()
-            };
-            let result = build_and_write(&processed_dir(&data_dir), &exclusions, &out_dir, rules)?;
-            print_universe_summary(&result);
-            println!("written: {}", out_dir.join("universe.csv").display());
-            Ok(ExitCode::SUCCESS)
+            cmd_build_universe(&cli.data_dir, size, &exclusions)
+        }
+        Command::Signals { date, fvg } => cmd_signals(&cli.data_dir, date, fvg),
+    };
+    match result {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
         }
     }
 }
@@ -142,13 +101,138 @@ fn exit_code(success: bool) -> ExitCode {
     }
 }
 
-fn print_download_summary(summary: &DownloadSummary) {
+async fn cmd_download(
+    data_dir: &Path,
+    from: YearMonth,
+    to: YearMonth,
+    symbols: Option<Vec<String>>,
+    concurrency: u16,
+) -> CliResult {
+    if from > to {
+        return Err("--from must not be after --to".into());
+    }
+    let config = DownloadConfig {
+        data_dir: data_dir.to_path_buf(),
+        from,
+        to,
+        symbols,
+        concurrency: usize::from(concurrency),
+        max_attempts: 5,
+    };
+    println!(
+        "downloading Binance spot daily klines {from} to {to} into {}",
+        data_dir.display()
+    );
+    let summary = download_spot_daily(&config, |done, total, report| {
+        println!(
+            "[{done}/{total}] {}: {} files, {} new, {} already valid, {} failed",
+            report.symbol,
+            report.files_available,
+            report.downloaded,
+            report.already_valid,
+            report.failures.len()
+        );
+    })
+    .await?;
     println!("---");
     println!("symbols:         {}", summary.symbols);
     println!("files available: {}", summary.files_available);
     println!("downloaded now:  {}", summary.downloaded);
     println!("already valid:   {}", summary.already_valid);
     println!("failed:          {}", summary.failures.len());
+    let failures_path = write_failures(data_dir, &summary)?;
+    println!("failure list: {}", failures_path.display());
+    Ok(exit_code(summary.failures.is_empty()))
+}
+
+fn cmd_build_series(data_dir: &Path) -> CliResult {
+    let source = kline_dir(data_dir);
+    let out_dir = processed_dir(data_dir);
+    let report = data_dir
+        .join("processed")
+        .join("binance")
+        .join("quality_report.csv");
+    println!(
+        "building daily series from {} into {}",
+        source.display(),
+        out_dir.display()
+    );
+    let summary = build_all(&source, &out_dir, &report)?;
+    print_build_summary(&summary);
+    println!("quality report: {}", report.display());
+    Ok(exit_code(summary.failed.is_empty()))
+}
+
+fn cmd_build_universe(data_dir: &Path, size: usize, exclusions: &Path) -> CliResult {
+    let out_dir = data_dir.join("processed").join("binance");
+    let rules = UniverseRules {
+        size,
+        ..UniverseRules::default()
+    };
+    let result = build_and_write(&processed_dir(data_dir), exclusions, &out_dir, rules)?;
+    print_universe_summary(&result);
+    println!("written: {}", out_dir.join("universe.csv").display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_signals(data_dir: &Path, date: Option<NaiveDate>, fvg: bool) -> CliResult {
+    let processed = processed_dir(data_dir);
+    let universe_path = data_dir
+        .join("processed")
+        .join("binance")
+        .join("universe.csv");
+    let universe_text = std::fs::read_to_string(&universe_path)?;
+    let universe = parse_universe_csv(&universe_path.display().to_string(), &universe_text)?;
+    let mut params = StrategyParams::crypto();
+    if fvg {
+        params.entry = EntryMode::Fvg;
+    }
+    let btc = read_series(&processed.join("BTCUSDT.csv"))?;
+    let date = date
+        .or_else(|| btc.last().map(Candle::date))
+        .ok_or("no BTCUSDT data")?;
+    let month = YearMonth::new(date.year(), date.month())?;
+    let members = universe
+        .get(&month)
+        .ok_or("no universe for that month; run build-universe")?;
+    let benchmark = Frame::new("BTCUSDT", btc, &params);
+    let mut frames = BTreeMap::new();
+    for symbol in members {
+        let candles = read_series(&processed.join(format!("{symbol}.csv")))?;
+        frames.insert(symbol.clone(), Frame::new(symbol, candles, &params));
+    }
+    if let Some(i) = benchmark.index_of(date) {
+        let slow = benchmark.sma_slow[i].map_or_else(|| "-".to_owned(), |v| format!("{v:.2}"));
+        println!(
+            "{date}: BTCUSDT close {:.2}, SMA{} {slow}, market filter {}",
+            benchmark.candles[i].close(),
+            params.sma_slow,
+            if market_ok(&benchmark, date) {
+                "ON"
+            } else {
+                "OFF"
+            }
+        );
+    }
+    let setups = setups_on(date, &benchmark, &frames, members, &params);
+    println!(
+        "universe {month}: {} pairs, setups: {}",
+        members.len(),
+        setups.len()
+    );
+    for s in &setups {
+        println!(
+            "{:<12} close {:>12.6} | buy limit {:>12.6} | stop {:>12.6} | target {:>12.6} | risk {:>5.1}% | momentum {:+.1}%",
+            s.symbol,
+            s.close,
+            s.limit,
+            s.stop,
+            s.target,
+            (s.limit - s.stop) / s.limit * 100.0,
+            s.momentum * 100.0
+        );
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn print_build_summary(summary: &BuildSummary) {

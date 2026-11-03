@@ -2,3 +2,4 @@
 
 pub mod indicators;
 pub mod market;
+pub mod strategy;

@@ -378,6 +378,16 @@ pub fn build_all(
     Ok(summary)
 }
 
+/// Reads one processed daily CSV.
+///
+/// # Errors
+///
+/// Returns [`SeriesError`] when the file cannot be read or is invalid.
+pub fn read_series(path: &Path) -> Result<Vec<Candle>, SeriesError> {
+    let text = fs::read_to_string(path).map_err(|e| io_err(path, e))?;
+    from_csv(&path.display().to_string(), &text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
