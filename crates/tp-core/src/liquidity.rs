@@ -365,6 +365,53 @@ pub fn touch_probability(
     (total > 0).then(|| as_f64(hits) / as_f64(total))
 }
 
+/// Historical odds after a daily close beyond the prior 20-day extreme: the
+/// share of those days on which price then travelled at least `distance_atr`
+/// ATRs further in the same direction within `horizon` days, and the number
+/// of such days.
+#[must_use]
+pub fn odds_after_break(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    up: bool,
+    horizon: usize,
+    distance_atr: f64,
+) -> Option<(f64, usize)> {
+    if horizon == 0 || candles.len() != atr.len() {
+        return None;
+    }
+    let (start, end) = continuous_runs(candles);
+    let mut hits = 0usize;
+    let mut total = 0usize;
+    for (t, candle) in candles.iter().enumerate() {
+        if t < start[t] + SHORT || t + horizon > end[t] {
+            continue;
+        }
+        let Some(a) = atr[t].filter(|a| *a > 0.0) else {
+            continue;
+        };
+        let prior = &candles[t - SHORT..t];
+        let close = candle.close();
+        let broke = if up {
+            close > window_high(prior)
+        } else {
+            close < window_low(prior)
+        };
+        if !broke {
+            continue;
+        }
+        let ahead = &candles[t + 1..=t + horizon];
+        let moved = if up {
+            (window_high(ahead) - close) / a
+        } else {
+            (close - window_low(ahead)) / a
+        };
+        total += 1;
+        hits += usize::from(moved >= distance_atr);
+    }
+    (total > 0).then(|| (as_f64(hits) / as_f64(total), total))
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -401,6 +448,21 @@ mod tests {
         assert!((atr[20].unwrap() - 1.5).abs() < 1e-12);
         assert_eq!(touch_probability(&candles, &atr, 3, 1.0, true), Some(1.0));
         assert_eq!(touch_probability(&candles, &atr, 3, 1.0, false), Some(0.0));
+    }
+
+    #[test]
+    fn odds_after_break_on_a_steady_rise() {
+        let candles: Vec<Candle> = (0..60)
+            .map(|i| {
+                let c = 100.0 + f64::from(i);
+                bar(u64::try_from(i).unwrap(), c - 0.5, c + 0.5, c - 1.0, c)
+            })
+            .collect();
+        let atr = simple_atr(&candles, 14);
+        let (p, n) = odds_after_break(&candles, &atr, true, 3, 1.0).unwrap();
+        assert_eq!(p, 1.0);
+        assert!(n > 0);
+        assert!(odds_after_break(&candles, &atr, false, 3, 1.0).is_none());
     }
 
     #[test]

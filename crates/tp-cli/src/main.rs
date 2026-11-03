@@ -21,14 +21,16 @@ use tp_backtest::{
 use tp_core::indicators::{close_values, segments};
 use tp_core::intraday::aggregate;
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
-use tp_core::liquidity::{round_above, round_below, simple_atr, touch_probability};
+use tp_core::liquidity::{
+    odds_after_break, round_above, round_below, simple_atr, touch_probability,
+};
 use tp_core::market::Candle;
 use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
-use tp_data::binance::rest::fetch_daily_since;
+use tp_data::binance::rest::{fetch_daily_since, fetch_recent_hourly};
 use tp_data::funding::parse_funding_csv;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
 use tp_data::intraday::parse_bars_csv;
@@ -115,6 +117,16 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
+    /// low, with the next liquidity levels and their historical odds.
+    Alerts {
+        /// Send the alerts on Telegram (reads .env).
+        #[arg(long)]
+        notify: bool,
+        /// Show the alerts without saving or sending.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Phase 6 level module: horizontal ranges from repeated touches, trading
     /// breakouts and failed breakouts on 1h and 4h futures bars.
     Levels {
@@ -249,6 +261,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
         Command::Portfolio { final_period } => cmd_portfolio(&cli.data_dir, final_period),
@@ -1462,6 +1475,185 @@ fn level_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> 
         level("round below", round_below(close))
     ));
     out
+}
+
+fn fmt_price(v: f64) -> String {
+    if v >= 1000.0 {
+        format!("{v:.0}")
+    } else if v >= 1.0 {
+        format!("{v:.2}")
+    } else {
+        format!("{v:.6}")
+    }
+}
+
+#[allow(clippy::too_many_lines)] // one pass per asset: data, levels, targets, message
+async fn alert_for(
+    data_dir: &Path,
+    asset: &str,
+    now_ms: i64,
+) -> Result<Option<(String, String)>, Box<dyn Error>> {
+    let mut daily = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+    let last = daily.last().map(Candle::date).ok_or("empty history")?;
+    let since = last.succ_opt().ok_or("date overflow")?;
+    let recent = fetch_daily_since(asset, since, now_ms).await?;
+    extend_series(&mut daily, &recent)?;
+    let hourly = fetch_recent_hourly(asset, 3, now_ms).await?;
+    let n = daily.len();
+    let Some(price) = hourly.last().map(|b| b.close) else {
+        return Ok(None);
+    };
+    if n < 120 {
+        return Ok(None);
+    }
+    let atr = simple_atr(&daily, 14);
+    let Some(a) = atr[n - 1].filter(|a| *a > 0.0) else {
+        return Ok(None);
+    };
+    let extremes = |days: usize| {
+        let w = &daily[n - days..];
+        (
+            w.iter().map(Candle::high).fold(f64::MIN, f64::max),
+            w.iter().map(Candle::low).fold(f64::MAX, f64::min),
+        )
+    };
+    let (high20, low20) = extremes(20);
+    let (high60, low60) = extremes(60);
+    let (far_high, far_low) = extremes(120);
+    let crossed = |level: f64, up: bool| {
+        hourly.windows(2).any(|w| {
+            if up {
+                w[0].close <= level && w[1].close > level
+            } else {
+                w[0].close >= level && w[1].close < level
+            }
+        })
+    };
+    let breaks = [
+        ("máxima de 60 dias", high60, true),
+        ("máxima de 20 dias", high20, true),
+        ("mínima de 60 dias", low60, false),
+        ("mínima de 20 dias", low20, false),
+    ];
+    let Some(&(name, level, up)) = breaks.iter().find(|(_, l, u)| crossed(*l, *u)) else {
+        println!(
+            "{asset} {}: sem rompimento (máxima de 20 dias {}, mínima de 20 dias {})",
+            fmt_price(price),
+            fmt_price(high20),
+            fmt_price(low20)
+        );
+        return Ok(None);
+    };
+    let mut targets: Vec<(&str, f64)> = if up {
+        let r = round_above(price);
+        vec![
+            ("máxima de 60 dias", high60),
+            ("máxima de 120 dias", far_high),
+            ("número redondo", r),
+            ("número redondo", round_above(r)),
+        ]
+    } else {
+        let r = round_below(price);
+        vec![
+            ("mínima de 60 dias", low60),
+            ("mínima de 120 dias", far_low),
+            ("número redondo", r),
+            ("número redondo", round_below(r)),
+        ]
+    };
+    targets.retain(|(_, l)| {
+        if up {
+            *l > price
+        } else {
+            *l < price && *l > 0.0
+        }
+    });
+    targets.sort_by(|x, y| {
+        if up {
+            x.1.total_cmp(&y.1)
+        } else {
+            y.1.total_cmp(&x.1)
+        }
+    });
+    targets.dedup_by(|x, y| (x.1 - y.1).abs() <= 1e-9 * y.1.abs());
+    let (_, cases) = odds_after_break(&daily, &atr, up, 7, 0.0).unwrap_or((0.0, 0));
+    let mut msg = format!(
+        "{asset} rompeu a {name} ({}). Último fechamento de 1 hora: {}.\nPróximos pontos de liquidez {} e quantas vezes o preço chegou lá em até 7 dias depois de romper a {} de 20 dias ({cases} casos no histórico):",
+        fmt_price(level),
+        fmt_price(price),
+        if up { "acima" } else { "abaixo" },
+        if up { "máxima" } else { "mínima" }
+    );
+    for (label, target) in targets.iter().take(4) {
+        let distance = (target - price).abs() / a;
+        let (p, _) = odds_after_break(&daily, &atr, up, 7, distance).unwrap_or((0.0, 0));
+        let _ = write!(
+            msg,
+            "\n  {label} {} ({:+.1}%): {:.0}%",
+            fmt_price(*target),
+            (target / price - 1.0) * 100.0,
+            p * 100.0
+        );
+    }
+    if !up {
+        msg.push_str(
+            "\n  atenção: nos testes, romper a mínima de 20 dias não levou a queda extra na média",
+        );
+    }
+    Ok(Some((name.to_owned(), msg)))
+}
+
+async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
+    let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+    let now_ms = i64::try_from(since_epoch.as_millis())?;
+    let today = DateTime::from_timestamp_millis(now_ms)
+        .map(|d| d.date_naive())
+        .ok_or("invalid clock")?;
+    let path = data_dir.join("live").join("alerts_sent.csv");
+    let sent: BTreeSet<String> = match std::fs::read_to_string(&path) {
+        Ok(text) => text.lines().map(str::to_owned).collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let mut messages = Vec::new();
+    let mut keys = String::new();
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        let Some((name, msg)) = alert_for(data_dir, asset, now_ms).await? else {
+            continue;
+        };
+        let key = format!("{today},{asset},{name}");
+        if sent.contains(&key) {
+            println!("{asset}: {name} já avisado hoje");
+            continue;
+        }
+        println!("{msg}");
+        messages.push(msg);
+        let _ = writeln!(keys, "{key}");
+    }
+    if dry_run {
+        println!("dry run: nothing saved, nothing sent");
+        return Ok(ExitCode::SUCCESS);
+    }
+    if messages.is_empty() {
+        return Ok(ExitCode::SUCCESS);
+    }
+    if notify {
+        let env = parse_env(&std::fs::read_to_string(".env")?);
+        let (Some(token), Some(chat)) =
+            (env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"))
+        else {
+            return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
+        };
+        send_telegram(token, chat, &messages.join("\n\n")).await?;
+        println!("telegram: sent");
+    }
+    std::fs::create_dir_all(data_dir.join("live"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    std::io::Write::write_all(&mut file, keys.as_bytes())?;
+    Ok(ExitCode::SUCCESS)
 }
 
 fn default_trend_start() -> Result<NaiveDate, Box<dyn Error>> {

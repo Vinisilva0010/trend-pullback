@@ -3,6 +3,7 @@
 
 use chrono::{DateTime, NaiveDate, NaiveTime};
 use serde_json::Value;
+use tp_core::intraday::Bar;
 use tp_core::market::{Candle, CandleFields};
 
 use super::download::{DownloadError, Http};
@@ -101,6 +102,79 @@ pub async fn fetch_daily_since(
     parse_klines_json(&text, now_ms)
 }
 
+/// Parses an hourly klines JSON response, keeping bars that closed before `now_ms`.
+///
+/// # Errors
+///
+/// Returns [`RestError`] on malformed JSON or rows, inconsistent prices, or
+/// times that do not increase.
+pub fn parse_hourly_json(text: &str, now_ms: i64) -> Result<Vec<Bar>, RestError> {
+    let rows: Vec<Vec<Value>> = serde_json::from_str(text)?;
+    let mut out: Vec<Bar> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let bad = |reason: &str| RestError::Row {
+            row: index,
+            reason: reason.to_owned(),
+        };
+        let (Some(open_time), Some(close_time)) = (
+            row.first().and_then(Value::as_i64),
+            row.get(6).and_then(Value::as_i64),
+        ) else {
+            return Err(bad("missing open or close time"));
+        };
+        if close_time >= now_ms {
+            continue;
+        }
+        let number = |i: usize, name: &str| -> Result<f64, RestError> {
+            row.get(i)
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<f64>().ok())
+                .filter(|x| x.is_finite())
+                .ok_or_else(|| bad(&format!("invalid {name}")))
+        };
+        let bar = Bar {
+            open_time_ms: open_time,
+            open: number(1, "open")?,
+            high: number(2, "high")?,
+            low: number(3, "low")?,
+            close: number(4, "close")?,
+        };
+        if !(bar.low > 0.0
+            && bar.low <= bar.open.min(bar.close)
+            && bar.high >= bar.open.max(bar.close))
+        {
+            return Err(bad("inconsistent prices"));
+        }
+        if out.last().is_some_and(|p| p.open_time_ms >= open_time) {
+            return Err(bad("times are not increasing"));
+        }
+        out.push(bar);
+    }
+    Ok(out)
+}
+
+/// Fetches the closed hourly bars of `symbol` from the last `hours` hours.
+///
+/// # Errors
+///
+/// Returns [`RestError`] for an invalid symbol, a failed request, or an
+/// invalid response.
+pub async fn fetch_recent_hourly(
+    symbol: &str,
+    hours: i64,
+    now_ms: i64,
+) -> Result<Vec<Bar>, RestError> {
+    if !is_valid_symbol(symbol) {
+        return Err(RestError::Symbol(symbol.to_owned()));
+    }
+    let start_ms = now_ms - hours * 3_600_000;
+    let url = format!("{API_URL}?symbol={symbol}&interval=1h&startTime={start_ms}&limit=1000");
+    let http = Http::new(5)?;
+    let body = http.get_bytes(&url).await.map_err(DownloadError::from)?;
+    let text = String::from_utf8(body).map_err(|_| DownloadError::Utf8)?;
+    parse_hourly_json(&text, now_ms)
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -108,6 +182,21 @@ mod tests {
 
     const DAY1: &str = r#"[1761955200000,"110000.0","111000.0","109000.0","110500.0","100.0",1762041599999,"11000000.0",1000,"50.0","5500000.0","0"]"#;
     const DAY2: &str = r#"[1762041600000,"110500.0","112000.0","110000.0","111500.0","120.0",1762127999999,"13000000.0",1200,"60.0","6500000.0","0"]"#;
+
+    #[test]
+    fn parses_hourly_bars() {
+        let h1 = r#"[1761955200000,"100.0","101.0","99.0","100.5","1.0",1761958799999,"100.0",1,"0","0","0"]"#;
+        let h2 = r#"[1761958800000,"100.5","102.0","100.0","101.5","1.0",1761962399999,"100.0",1,"0","0","0"]"#;
+        let both = format!("[{h1},{h2}]");
+        let bars = parse_hourly_json(&both, 1_761_962_400_000).unwrap();
+        assert_eq!(bars.len(), 2);
+        assert_eq!(bars[1].close, 101.5);
+        assert_eq!(
+            parse_hourly_json(&both, 1_761_960_000_000).unwrap().len(),
+            1
+        );
+        assert!(parse_hourly_json(&format!("[{h2},{h1}]"), i64::MAX).is_err());
+    }
 
     #[test]
     fn keeps_only_closed_candles() {
