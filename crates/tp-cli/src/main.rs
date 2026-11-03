@@ -109,6 +109,12 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 6 test: BTC, ETH and SOL sleeves in one account, with all positions scaled by k.
+    Portfolio {
+        /// Use the final period (2024-11-01 to 2026-10-31) instead of development.
+        #[arg(long)]
+        final_period: bool,
+    },
     /// Phase 6 test: hold L times equity only while the market is in the up regime.
     RegimeSizing {
         /// Comma-separated assets.
@@ -223,6 +229,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::Portfolio { final_period } => cmd_portfolio(&cli.data_dir, final_period),
         Command::RegimeSizing {
             assets,
             final_period,
@@ -1028,6 +1035,129 @@ fn cmd_regime_sizing(data_dir: &Path, assets: &[String], final_period: bool) -> 
             let r = run_leveraged(&candles, &weights, &funding, &config, start, end);
             print_sizing_row(&format!("up regime {level:.1}x"), &r, &config, final_period);
         }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Sums sleeve equity curves day by day; before a sleeve has data it holds
+/// its starting cash.
+fn combine_sleeves(
+    sleeves: &[Vec<tp_backtest::EquityPoint>],
+    initial_each: f64,
+) -> Vec<tp_backtest::EquityPoint> {
+    let maps: Vec<BTreeMap<NaiveDate, f64>> = sleeves
+        .iter()
+        .map(|curve| curve.iter().map(|p| (p.date, p.equity)).collect())
+        .collect();
+    let dates: BTreeSet<NaiveDate> = maps.iter().flat_map(|m| m.keys().copied()).collect();
+    let mut last = vec![initial_each; maps.len()];
+    dates
+        .into_iter()
+        .map(|date| {
+            for (value, map) in last.iter_mut().zip(&maps) {
+                if let Some(v) = map.get(&date) {
+                    *value = *v;
+                }
+            }
+            let equity: f64 = last.iter().sum();
+            tp_backtest::EquityPoint {
+                date,
+                equity,
+                cash: equity,
+                positions: 0,
+            }
+        })
+        .collect()
+}
+
+fn cmd_portfolio(data_dir: &Path, final_period: bool) -> CliResult {
+    let (start, end) = if final_period {
+        (
+            NaiveDate::from_ymd_opt(2024, 11, 1).ok_or("invalid date")?,
+            NaiveDate::from_ymd_opt(2026, 10, 31).ok_or("invalid date")?,
+        )
+    } else {
+        (default_trend_start()?, held_out_start()?)
+    };
+    let total = 10_000.0;
+    let config = LeverageConfig {
+        initial_capital: total / 3.0,
+        ..LeverageConfig::crypto()
+    };
+    println!(
+        "portfolio {start} to {end} ({}) | BTC and ETH Donchian vol 25%, SOL up regime 0.5x, equal thirds, positions times k",
+        if final_period {
+            "final period"
+        } else {
+            "development"
+        }
+    );
+    let mut inputs = Vec::new();
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        let candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        if segments(&candles).len() > 1 {
+            return Err(format!("{asset} has gaps").into());
+        }
+        let closes = close_values(&candles);
+        let base: Vec<f64> = if asset == "SOLUSDT" {
+            classify(&closes)
+                .iter()
+                .map(|r| if *r == Some(Regime::Up) { 0.5 } else { 0.0 })
+                .collect()
+        } else {
+            donchian_ensemble_weights(&closes, &VolTarget::paper_spot())
+        };
+        inputs.push((candles, base, load_funding(data_dir, asset)?));
+    }
+    for k in [1.0, 1.5, 2.0, 3.0] {
+        let mut curves = Vec::new();
+        let mut liquidated = false;
+        let mut min_distance = 1.0_f64;
+        let mut funding = 0.0;
+        for (candles, base, funding_map) in &inputs {
+            let weights: Vec<f64> = base.iter().map(|w| w * k).collect();
+            let r = run_leveraged(candles, &weights, funding_map, &config, start, end);
+            liquidated |= r.liquidated_on.is_some();
+            min_distance = min_distance.min(r.min_liquidation_distance);
+            funding += r.funding_paid;
+            curves.push(r.equity);
+        }
+        let combined = combine_sleeves(&curves, config.initial_capital);
+        let s = allocation_stats(&combined, total);
+        let months = monthly_returns(&combined, total);
+        let (month_avg, _) = mean_and_t(&months);
+        let positive = months.iter().filter(|m| **m > 0.0).count();
+        let worst = months.iter().copied().fold(0.0_f64, f64::min);
+        let safe = !liquidated && min_distance >= 0.5;
+        let passes = if final_period {
+            s.sharpe > 0.0 && s.max_drawdown <= 0.35 && safe
+        } else {
+            s.sharpe >= 1.0 && s.max_drawdown <= 0.35 && s.non_losing_year_fraction >= 0.6 && safe
+        };
+        let liquidation = if liquidated {
+            "LIQUIDATED".to_owned()
+        } else if min_distance >= 1.0 {
+            "liq at zero".to_owned()
+        } else {
+            format!("liq {:.0}% below", min_distance * 100.0)
+        };
+        println!(
+            "k {k:.1}x | CAGR {:>+6.1}% | month avg {:>+5.2}% | months+ {:>3.0}% | worst month {:>+6.1}% | maxDD {:>5.1}% | Sharpe {:>4.2} | years {:>3.0}% | {} | funding {:.1}% | {}",
+            s.cagr * 100.0,
+            month_avg * 100.0,
+            if months.is_empty() {
+                0.0
+            } else {
+                count_f64(positive) / count_f64(months.len()) * 100.0
+            },
+            worst * 100.0,
+            s.max_drawdown * 100.0,
+            s.sharpe,
+            s.non_losing_year_fraction * 100.0,
+            liquidation,
+            funding / total * 100.0,
+            if passes { "PASSES" } else { "fails" }
+        );
     }
     Ok(ExitCode::SUCCESS)
 }
