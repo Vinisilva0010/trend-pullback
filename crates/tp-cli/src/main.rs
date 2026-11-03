@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily};
+use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
+use tp_data::history::{BuildSummary, build_all, processed_dir};
 use tp_data::month::YearMonth;
 
 #[derive(Debug, Parser)]
@@ -35,6 +36,8 @@ enum Command {
         #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u16).range(1..=32))]
         concurrency: u16,
     },
+    /// Join verified monthly archives into one daily CSV per symbol and write a quality report.
+    BuildSeries,
 }
 
 #[tokio::main]
@@ -84,25 +87,67 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                 );
             })
             .await?;
-            print_summary(&summary);
+            print_download_summary(&summary);
             let failures_path = write_failures(&data_dir, &summary)?;
             println!("failure list: {}", failures_path.display());
-            Ok(if summary.failures.is_empty() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            })
+            Ok(exit_code(summary.failures.is_empty()))
+        }
+        Command::BuildSeries => {
+            let source = kline_dir(&data_dir);
+            let out_dir = processed_dir(&data_dir);
+            let report = data_dir
+                .join("processed")
+                .join("binance")
+                .join("quality_report.csv");
+            println!(
+                "building daily series from {} into {}",
+                source.display(),
+                out_dir.display()
+            );
+            let summary = build_all(&source, &out_dir, &report)?;
+            print_build_summary(&summary);
+            println!("quality report: {}", report.display());
+            Ok(exit_code(summary.failed.is_empty()))
         }
     }
 }
 
-fn print_summary(summary: &DownloadSummary) {
+fn exit_code(success: bool) -> ExitCode {
+    if success {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn print_download_summary(summary: &DownloadSummary) {
     println!("---");
     println!("symbols:         {}", summary.symbols);
     println!("files available: {}", summary.files_available);
     println!("downloaded now:  {}", summary.downloaded);
     println!("already valid:   {}", summary.already_valid);
     println!("failed:          {}", summary.failures.len());
+}
+
+fn print_build_summary(summary: &BuildSummary) {
+    let rows: usize = summary.built.iter().map(|s| s.days).sum();
+    let with_gaps = summary.built.iter().filter(|s| s.gaps > 0).count();
+    println!("---");
+    println!("series built:     {}", summary.built.len());
+    println!("total daily rows: {rows}");
+    println!("series with gaps: {with_gaps}");
+    println!("failed:           {}", summary.failed.len());
+    for (symbol, reason) in &summary.failed {
+        println!("  FAILED {symbol}: {reason}");
+    }
+    for symbol in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        if let Some(s) = summary.built.iter().find(|s| s.symbol == symbol) {
+            println!(
+                "{}: {} to {}, {} days, {} gaps",
+                s.symbol, s.first, s.last, s.days, s.gaps
+            );
+        }
+    }
 }
 
 fn write_failures(data_dir: &Path, summary: &DownloadSummary) -> std::io::Result<PathBuf> {
