@@ -37,7 +37,9 @@ pub enum ParseError {
 }
 
 /// Parses a daily kline CSV into validated candles in strictly increasing
-/// date order. A header row on the first line is skipped.
+/// date order. A header row on the first line is skipped, and a row that
+/// exactly repeats the previous row is dropped (this occurs in real Binance
+/// archives). Two different rows for the same date are still rejected.
 ///
 /// # Errors
 ///
@@ -46,12 +48,17 @@ pub enum ParseError {
 /// holds no candles.
 pub fn parse_daily_klines(csv: &str) -> Result<Vec<Candle>, ParseError> {
     let mut candles: Vec<Candle> = Vec::new();
+    let mut previous_text: Option<&str> = None;
     for (index, raw_line) in csv.lines().enumerate() {
         let line = index + 1;
         let text = raw_line.trim();
         if text.is_empty() {
             continue;
         }
+        if previous_text == Some(text) {
+            continue;
+        }
+        previous_text = Some(text);
         let fields: Vec<&str> = text.split(',').map(str::trim).collect();
         let &[
             open_time,
@@ -230,10 +237,18 @@ mod tests {
             parse_daily_klines(&format!("{DEC_02}\n{DEC_01}")),
             Err(ParseError::Order { line: 2, .. })
         ));
+        let altered = DEC_01.replacen("97185.18000000", "97185.19000000", 1);
         assert!(matches!(
-            parse_daily_klines(&format!("{DEC_01}\n{DEC_01}")),
+            parse_daily_klines(&format!("{DEC_01}\n{altered}")),
             Err(ParseError::Order { line: 2, .. })
         ));
+    }
+
+    #[test]
+    fn drops_exact_duplicate_row() {
+        let candles = parse_daily_klines(&format!("{DEC_01}\n{DEC_01}\n{DEC_02}")).unwrap();
+        assert_eq!(candles.len(), 2);
+        assert_eq!(candles[1].date(), date(2024, 12, 2));
     }
 
     #[test]
