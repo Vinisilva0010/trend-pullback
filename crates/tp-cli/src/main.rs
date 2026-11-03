@@ -590,7 +590,9 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     let mut lines = Vec::new();
     let mut log = String::new();
     let mut orders = 0;
-    for asset in ["BTCUSDT", "ETHUSDT"] {
+    let assets = ["BTCUSDT", "ETHUSDT"];
+    let sleeve = capital / f64::from(u8::try_from(assets.len())?);
+    for asset in assets {
         let mut candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
         let last = candles.last().map(Candle::date).ok_or("empty history")?;
         let since = last.succ_opt().ok_or("date overflow")?;
@@ -622,10 +624,10 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
             orders += 1;
             let verb = if target > held { "BUY" } else { "SELL" };
             lines.push(format!(
-                "{asset} {signal_date}: {verb} at the next open -> hold {:.1}% of capital (was {:.1}%), change ${:+.0}, last close {close}",
+                "{asset} {signal_date}: {verb} at the next open -> hold {:.1}% of its ${sleeve:.0} part (was {:.1}%), change ${:+.0}, last close {close}",
                 target * 100.0,
                 held * 100.0,
-                (target - held) * capital
+                (target - held) * sleeve
             ));
         } else {
             lines.push(format!(
@@ -640,7 +642,9 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         );
         state.insert(asset.to_owned(), (signal_date, new_held));
     }
-    let header = format!("trend-pullback daily signal ({today}), capital ${capital:.0}");
+    let header = format!(
+        "trend-pullback daily signal ({today}), capital ${capital:.0}, ${sleeve:.0} per asset"
+    );
     println!("{header}");
     for line in &lines {
         println!("{line}");
