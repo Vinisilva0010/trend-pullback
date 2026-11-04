@@ -164,7 +164,7 @@ pub fn mean_and_t(values: &[f64]) -> (f64, f64) {
     (mean, t)
 }
 
-fn continuous_runs(candles: &[Candle]) -> (Vec<usize>, Vec<usize>) {
+pub(crate) fn continuous_runs(candles: &[Candle]) -> (Vec<usize>, Vec<usize>) {
     let mut start = Vec::with_capacity(candles.len());
     let mut current = 0;
     for (i, candle) in candles.iter().enumerate() {

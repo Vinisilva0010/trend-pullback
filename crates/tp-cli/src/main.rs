@@ -21,10 +21,9 @@ use tp_backtest::{
 use tp_core::indicators::{close_values, segments};
 use tp_core::intraday::aggregate;
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
-use tp_core::liquidity::{
-    odds_after_break, round_above, round_below, simple_atr, touch_probability,
-};
+use tp_core::liquidity::{odds_after_break, round_above, round_below, simple_atr};
 use tp_core::market::Candle;
+use tp_core::odds::{Forward, Shape, forward_stats, touch_odds, weekly, wick_shares};
 use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
@@ -178,10 +177,11 @@ enum Command {
         #[arg(long)]
         final_period: bool,
     },
-    /// Daily live signal for BTC and ETH: recent candles, validated Donchian
-    /// weights, and an order only when the weight must change.
+    /// Daily report in Portuguese for BTC, ETH and SOL: trend, candle reading,
+    /// touch chances from history and what to do; also records the model weights.
     Daily {
-        /// Account size in USD, used to express orders in dollars.
+        /// Kept so the scheduled script keeps working; the report no longer
+        /// sizes orders.
         #[arg(long, default_value_t = 1000.0)]
         capital: f64,
         /// Send a Telegram message when an order is needed (reads .env).
@@ -276,10 +276,10 @@ async fn main() -> ExitCode {
         } => cmd_sizing(&cli.data_dir, &assets, final_period),
         Command::Liquidity { final_period } => cmd_liquidity(&cli.data_dir, final_period),
         Command::Daily {
-            capital,
+            capital: _,
             notify,
             dry_run,
-        } => run_daily(&cli.data_dir, capital, notify, dry_run).await,
+        } => run_daily(&cli.data_dir, notify, dry_run).await,
         Command::Trend { assets, start, end } => cmd_trend(&cli.data_dir, &assets, start, end),
     };
     match result {
@@ -626,8 +626,8 @@ fn cmd_grid(data_dir: &Path) -> CliResult {
     Ok(ExitCode::SUCCESS)
 }
 
-async fn run_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
-    let result = cmd_daily(data_dir, capital, notify, dry_run).await;
+async fn run_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
+    let result = cmd_daily(data_dir, notify, dry_run).await;
     let Err(error) = &result else {
         return result;
     };
@@ -635,7 +635,7 @@ async fn run_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         return result;
     }
     let message = format!(
-        "trend-pullback daily signal FAILED: {error}. No order was computed today; check the machine."
+        "trend-pullback: o relatório diário FALHOU ({error}). Nada foi calculado hoje; confira o computador."
     );
     let Ok(text) = std::fs::read_to_string(".env") else {
         return result;
@@ -651,7 +651,7 @@ async fn run_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     result
 }
 
-async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
+async fn cmd_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
     let now_ms = i64::try_from(since_epoch.as_millis())?;
     let today = DateTime::from_timestamp_millis(now_ms)
@@ -666,60 +666,44 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     };
     let vol = VolTarget::paper_spot();
     let threshold = AllocationConfig::crypto().rebalance_threshold;
-    let mut lines = Vec::new();
+    let mut sections = Vec::new();
     let mut log = String::new();
-    let assets = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
-    let sleeve = capital / f64::from(u8::try_from(assets.len())?);
-    for asset in assets {
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         let mut candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
         let last = candles.last().map(Candle::date).ok_or("empty history")?;
         let since = last.succ_opt().ok_or("date overflow")?;
         let recent = fetch_daily_since(asset, since, now_ms).await?;
         extend_series(&mut candles, &recent)?;
         let signal_date = candles.last().map(Candle::date).ok_or("empty history")?;
+        let mut lines = Vec::new();
         if (today - signal_date).num_days() > 1 {
             lines.push(format!(
-                "WARNING {asset}: last closed candle is {signal_date}; data may be stale"
+                "AVISO {}: o último candle fechado é de {}; os dados podem estar atrasados",
+                asset_name(asset),
+                signal_date.format("%d/%m")
             ));
         }
         let closes = close_values(&candles);
-        let target = live_weight(asset, &closes, &vol);
-        let close = closes.last().copied().unwrap_or(0.0);
+        lines.extend(daily_report(asset, &candles, &closes));
+        sections.push(lines.join("\n"));
+        // The tested model weight is still tracked for the record and the
+        // paper account; it is no longer part of the message.
         let (held_date, held) = state.get(asset).copied().unwrap_or((NaiveDate::MIN, 0.0));
         if held_date >= signal_date {
-            lines.push(format!(
-                "{asset} {signal_date}: already processed, holding {:.1}%",
-                held * 100.0
-            ));
             continue;
         }
+        let target = live_weight(asset, &closes, &vol);
+        let close = closes.last().copied().unwrap_or(0.0);
         let order = needs_rebalance(held, target, threshold);
         let new_held = if order { target } else { held };
-        if order {
-            let verb = if target > held { "BUY" } else { "SELL" };
-            lines.push(format!(
-                "{asset} {signal_date}: {verb} at the next open -> hold {:.1}% of its ${sleeve:.0} part (was {:.1}%), change ${:+.0}, last close {close}",
-                target * 100.0,
-                held * 100.0,
-                (target - held) * sleeve
-            ));
-        } else {
-            lines.push(format!(
-                "{asset} {signal_date}: no order, keep {:.1}% (model {:.1}%)",
-                held * 100.0,
-                target * 100.0
-            ));
-        }
         let _ = writeln!(
             log,
             "{today},{asset},{signal_date},{close},{target:.6},{held:.6},{new_held:.6},{order}"
         );
         state.insert(asset.to_owned(), (signal_date, new_held));
-        lines.extend(level_report(asset, &candles, &closes));
     }
-    let header = format!(
-        "trend-pullback daily signal ({today}), capital ${capital:.0}, ${sleeve:.0} per asset, USDT perpetuals with cross margin, up to 1.5x per part"
-    );
+    let header = "Relatório diário (candle fechado às 21h de Brasília). Chance = quantas vezes aconteceu no histórico da moeda; não é certeza.".to_owned();
+    let lines = sections;
     println!("{header}");
     for line in &lines {
         println!("{line}");
@@ -739,7 +723,15 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         else {
             return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
         };
-        send_telegram(token, chat, &format!("{header}\n{}", lines.join("\n"))).await?;
+        // One message per asset keeps each under Telegram's 4096-character limit.
+        for (i, section) in lines.iter().enumerate() {
+            let text = if i == 0 {
+                format!("{header}\n\n{section}")
+            } else {
+                section.clone()
+            };
+            send_telegram(token, chat, &text).await?;
+        }
         println!("telegram: sent");
     }
     Ok(ExitCode::SUCCESS)
@@ -1421,59 +1413,286 @@ fn cmd_levels(data_dir: &Path, final_period: bool) -> CliResult {
     Ok(ExitCode::SUCCESS)
 }
 
-fn level_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> {
+/// Horizons, in days, of the touch chances in the daily report.
+const REPORT_HORIZONS: [usize; 3] = [1, 3, 7];
+/// Past days in today's trend state needed before the touch chances use only them.
+const MIN_SAME_TREND_DAYS: usize = 200;
+/// Days after a daily candle used for its forward result.
+const CANDLE_HORIZON: usize = 7;
+/// Weeks after a weekly candle used for its forward result.
+const WEEK_HORIZON: usize = 2;
+
+fn asset_name(asset: &str) -> &str {
+    asset.strip_suffix("USDT").unwrap_or(asset)
+}
+
+/// Price in Brazilian notation: comma for decimals, dot for thousands.
+fn fmt_pt(v: f64) -> String {
+    let text = fmt_price(v);
+    let (int, frac) = text.split_once('.').unwrap_or((text.as_str(), ""));
+    let digits: Vec<char> = int.chars().collect();
+    let mut grouped = String::new();
+    for (i, d) in digits.iter().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            grouped.push('.');
+        }
+        grouped.push(*d);
+    }
+    if frac.is_empty() {
+        grouped
+    } else {
+        format!("{grouped},{frac}")
+    }
+}
+
+fn pct_pt(v: f64) -> String {
+    format!("{v:+.1}%").replace('.', ",")
+}
+
+fn trend_pt(regime: Option<Regime>) -> &'static str {
+    match regime {
+        Some(Regime::Up) => "alta",
+        Some(Regime::Down) => "queda",
+        Some(Regime::Range) => "lateral",
+        Some(Regime::Transition) => "indefinida",
+        None => "sem dados suficientes",
+    }
+}
+
+fn forward_line(what: &str, horizon: &str, f: Option<Forward>) -> String {
+    let Some(f) = f else {
+        return format!("  Histórico de {what}: poucos casos para medir");
+    };
+    let verdict = if !f.is_edge() {
+        "Sem vantagem: igual a um dia qualquer."
+    } else if f.mean_atr > 0.0 {
+        "Vantagem de alta comprovada (mais que um dia qualquer)."
+    } else {
+        "Vantagem de queda comprovada (pior que um dia qualquer)."
+    };
+    format!(
+        "  Histórico de {what} ({} casos): {horizon} depois, subiu em {:.0}% das vezes (em qualquer dia: {:.0}%). {verdict}",
+        f.cases,
+        f.up_rate * 100.0,
+        f.base_up_rate * 100.0
+    )
+}
+
+/// Highest high and lowest low of the `days` candles that end at `last` (inclusive).
+fn extremes_until(candles: &[Candle], last: usize, days: usize) -> (f64, f64) {
+    let w = &candles[last + 1 - days.min(last + 1)..=last];
+    (
+        w.iter().map(Candle::high).fold(f64::MIN, f64::max),
+        w.iter().map(Candle::low).fold(f64::MAX, f64::min),
+    )
+}
+
+/// Signal lines from the 20-day channel: confirmed breakout, failed breakout,
+/// close below the low, or nothing; always ends with what to do.
+fn signal_lines(candles: &[Candle], atr: &[Option<f64>], last: usize) -> Vec<String> {
+    let prior = |t: usize| extremes_until(candles, t - 1, 20);
+    let mask = |test: &dyn Fn(usize) -> bool| -> Vec<bool> {
+        (0..candles.len()).map(|t| t > 20 && test(t)).collect()
+    };
+    let broke_up = |t: usize| candles[t].close() > prior(t).0;
+    let failed_up = |t: usize| candles[t].high() > prior(t).0 && candles[t].close() <= prior(t).0;
+    let broke_down = |t: usize| candles[t].close() < prior(t).1;
+    let (high20, low20) = prior(last);
+    let (next_high, _) = extremes_until(candles, last, 20);
+    let today = &candles[last];
     let mut out = Vec::new();
-    let Some(last) = candles.len().checked_sub(1) else {
+    if broke_up(last) {
+        out.push(format!(
+            "Sinal: fechou acima da máxima de 20 dias ({}).",
+            fmt_pt(high20)
+        ));
+        out.push(forward_line(
+            "fechamentos acima da máxima de 20 dias",
+            "7 dias",
+            forward_stats(candles, atr, &mask(&broke_up), CANDLE_HORIZON),
+        ));
+        out.push("O que fazer: sinal de compra confirmado no fechamento.".to_owned());
+    } else if failed_up(last) {
+        out.push(format!(
+            "Rompeu a máxima de 20 dias ({}) durante o dia, mas fechou abaixo: rompimento não confirmado.",
+            fmt_pt(high20)
+        ));
+        out.push(forward_line(
+            "rompimentos que não fecharam acima",
+            "7 dias",
+            forward_stats(candles, atr, &mask(&failed_up), CANDLE_HORIZON),
+        ));
+        out.push(format!(
+            "O que fazer: esperar. Compra só se um dia fechar acima de {}.",
+            fmt_pt(next_high)
+        ));
+    } else if broke_down(last) {
+        out.push(format!(
+            "Fechou abaixo da mínima de 20 dias ({}).",
+            fmt_pt(low20)
+        ));
+        out.push(forward_line(
+            "fechamentos abaixo da mínima de 20 dias",
+            "7 dias",
+            forward_stats(candles, atr, &mask(&broke_down), CANDLE_HORIZON),
+        ));
+        out.push(format!(
+            "O que fazer: sem sinal de compra. Compra só se um dia fechar acima de {}.",
+            fmt_pt(next_high)
+        ));
+    } else {
+        out.push(format!(
+            "O que fazer: sem sinal. Compra só se um dia fechar acima de {} (máxima de 20 dias, {} do fechamento).",
+            fmt_pt(next_high),
+            pct_pt((next_high / today.close() - 1.0) * 100.0)
+        ));
+    }
+    out
+}
+
+/// Touch chances for the two nearest levels above and below the close.
+fn touch_lines(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    regimes: &[Option<Regime>],
+    last: usize,
+    a: f64,
+) -> Vec<String> {
+    let close = candles[last].close();
+    let regime = regimes[last];
+    let same: Vec<bool> = regimes
+        .iter()
+        .map(|r| r.is_some() && *r == regime)
+        .collect();
+    let usable = same.iter().filter(|s| **s).count();
+    let (mask, basis) = if regime.is_some() && usable >= MIN_SAME_TREND_DAYS {
+        (
+            same,
+            format!("contando só dias de tendência de {}", trend_pt(regime)),
+        )
+    } else {
+        (
+            vec![true; candles.len()],
+            "contando todos os dias".to_owned(),
+        )
+    };
+    let (high20, low20) = extremes_until(candles, last, 20);
+    let (high60, low60) = extremes_until(candles, last, 60);
+    let mut above = vec![
+        ("máxima de 20 dias", high20),
+        ("máxima de 60 dias", high60),
+        ("número redondo", round_above(close)),
+    ];
+    let mut below = vec![
+        ("mínima de 20 dias", low20),
+        ("mínima de 60 dias", low60),
+        ("número redondo", round_below(close)),
+    ];
+    above.retain(|(_, p)| *p > close);
+    below.retain(|(_, p)| *p < close && *p > 0.0);
+    above.sort_by(|x, y| x.1.total_cmp(&y.1));
+    below.sort_by(|x, y| y.1.total_cmp(&x.1));
+    above.dedup_by(|x, y| (x.1 - y.1).abs() <= 1e-9 * y.1.abs());
+    below.dedup_by(|x, y| (x.1 - y.1).abs() <= 1e-9 * y.1.abs());
+    let mut out = vec![format!("Chance de tocar em 1 / 3 / 7 dias ({basis}):")];
+    for (up, levels) in [(true, &above), (false, &below)] {
+        for (label, price) in levels.iter().take(2) {
+            let distance = (price - close).abs() / a;
+            let chances: Vec<String> = REPORT_HORIZONS
+                .iter()
+                .map(|&h| {
+                    touch_odds(candles, atr, &mask, h, distance, up)
+                        .map_or_else(|| "-".to_owned(), |(p, _)| format!("{:.0}%", p * 100.0))
+                })
+                .collect();
+            out.push(format!(
+                "  {} {label} {} ({}): {}",
+                if up { "acima:" } else { "abaixo:" },
+                fmt_pt(*price),
+                pct_pt((price / close - 1.0) * 100.0),
+                chances.join(" / ")
+            ));
+        }
+    }
+    out
+}
+
+/// Weekly candle reading, shown when the day that closed is a Sunday.
+fn weekly_lines(candles: &[Candle], last: usize) -> Vec<String> {
+    let date = candles[last].date();
+    if date.weekday() != chrono::Weekday::Sun {
+        return Vec::new();
+    }
+    let weeks = weekly(&candles[..=last]);
+    let Some(week) = weeks.last().filter(|w| w.date() == date) else {
+        return Vec::new();
+    };
+    let watr = simple_atr(&weeks, 14);
+    let shape = Shape::of(week);
+    let (upper, lower) = wick_shares(week);
+    let same: Vec<bool> = weeks.iter().map(|w| Shape::of(w) == shape).collect();
+    let change = (week.close() / week.open() - 1.0) * 100.0;
+    vec![
+        format!(
+            "Candle da semana: {} ({}), pavio em cima {:.0}% e embaixo {:.0}% da semana",
+            shape.label_pt(),
+            pct_pt(change),
+            upper * 100.0,
+            lower * 100.0
+        ),
+        forward_line(
+            "semanas assim",
+            "2 semanas",
+            forward_stats(&weeks, &watr, &same, WEEK_HORIZON),
+        ),
+    ]
+}
+
+fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
         return out;
     };
     let atr = simple_atr(candles, 14);
     let Some(a) = atr[last].filter(|a| *a > 0.0) else {
         return out;
     };
-    let close = closes[last];
+    let today = &candles[last];
+    let close = today.close();
+    let regimes = classify(closes);
     let votes = DONCHIAN_LOOKBACKS
         .iter()
         .filter(|&&l| donchian_positions(closes, l)[last])
         .count();
-    let state = classify(closes)[last].map_or("unclassified", Regime::label);
     out.push(format!(
-        "{asset} state: {state} ({votes}/9 long channels), daily ATR {:.1}% of price",
-        a / close * 100.0
-    ));
-    let level = |name: &str, price: f64| {
-        let up = price > close;
-        let distance = (price - close).abs() / a;
-        let chance = touch_probability(candles, &atr, 7, distance, up).unwrap_or(0.0);
-        format!(
-            "{name} {price:.2} ({:+.1}%, {distance:.1} ATR, reached within 7 days in {:.0}% of past cases)",
-            (price / close - 1.0) * 100.0,
-            chance * 100.0
-        )
-    };
-    let extremes = |days: usize| {
-        let window = &candles[last + 1 - days.min(last + 1)..=last];
-        (
-            window.iter().map(Candle::high).fold(f64::MIN, f64::max),
-            window.iter().map(Candle::low).fold(f64::MAX, f64::min),
-        )
-    };
-    let (high20, low20) = extremes(20);
-    let (high60, low60) = extremes(60);
-    out.push(format!(
-        "  {} | {}",
-        level("20d high", high20),
-        level("20d low", low20)
+        "{} — fechou {} em {} ({} no dia)",
+        asset_name(asset),
+        today.date().format("%d/%m"),
+        fmt_pt(close),
+        pct_pt((close / candles[last - 1].close() - 1.0) * 100.0)
     ));
     out.push(format!(
-        "  {} | {}",
-        level("60d high", high60),
-        level("60d low", low60)
+        "Tendência: {} ({votes} de 9 canais para cima)",
+        trend_pt(regimes[last])
     ));
+    let shape = Shape::of(today);
+    let (upper, lower) = wick_shares(today);
     out.push(format!(
-        "  {} | {}",
-        level("round above", round_above(close)),
-        level("round below", round_below(close))
+        "Candle do dia: {}, pavio em cima {:.0}% e embaixo {:.0}% do dia, tamanho {} ATR",
+        shape.label_pt(),
+        upper * 100.0,
+        lower * 100.0,
+        format!("{:.1}", (today.high() - today.low()) / a).replace('.', ",")
     ));
+    let same_shape: Vec<bool> = candles.iter().map(|c| Shape::of(c) == shape).collect();
+    out.push(forward_line(
+        "candles assim",
+        "7 dias",
+        forward_stats(candles, &atr, &same_shape, CANDLE_HORIZON),
+    ));
+    out.extend(weekly_lines(candles, last));
+    out.extend(touch_lines(candles, &atr, &regimes, last, a));
+    out.extend(signal_lines(candles, &atr, last));
     out
 }
 
@@ -1899,4 +2118,68 @@ fn write_failures(data_dir: &Path, summary: &DownloadSummary) -> std::io::Result
     }
     std::fs::write(&path, text)?;
     Ok(path)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use chrono::Days;
+    use tp_core::market::CandleFields;
+
+    fn walk(days: u64) -> Vec<Candle> {
+        // Deterministic zig-zag drift so every report branch has data.
+        let start = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        let mut price = 100.0_f64;
+        (0..days)
+            .map(|i| {
+                let step = f64::from(u32::try_from((i * 7919) % 13).unwrap()) - 6.0;
+                let open = price;
+                price = (price * (1.0 + step / 200.0)).max(1.0);
+                Candle::try_new(CandleFields {
+                    date: start.checked_add_days(Days::new(i)).unwrap(),
+                    open,
+                    high: open.max(price) * 1.01,
+                    low: open.min(price) * 0.99,
+                    close: price,
+                    volume: 1.0,
+                    quote_volume: 1.0,
+                })
+                .unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn prices_use_brazilian_notation() {
+        assert_eq!(fmt_pt(77_453.86), "77.454");
+        assert_eq!(fmt_pt(1_234_567.0), "1.234.567");
+        assert_eq!(fmt_pt(95.5), "95,50");
+        assert_eq!(fmt_pt(0.5), "0,500000");
+        assert_eq!(pct_pt(-2.04), "-2,0%");
+        assert_eq!(asset_name("SOLUSDT"), "SOL");
+    }
+
+    #[test]
+    fn daily_report_covers_trend_candle_odds_and_action() {
+        let candles = walk(900);
+        let closes = close_values(&candles);
+        let report = daily_report("SOLUSDT", &candles, &closes);
+        println!("{}", report.join("\n"));
+        assert!(report[0].starts_with("SOL — fechou "));
+        assert!(report[1].starts_with("Tendência: "));
+        assert!(report.iter().any(|l| l.starts_with("Candle do dia: ")));
+        assert!(report.iter().any(|l| l.starts_with("Chance de tocar")));
+        assert!(
+            report.last().unwrap().contains("O que fazer")
+                || report.iter().any(|l| l.starts_with("O que fazer"))
+        );
+    }
+
+    #[test]
+    fn daily_report_needs_enough_history() {
+        let candles = walk(30);
+        let closes = close_values(&candles);
+        assert!(daily_report("BTCUSDT", &candles, &closes).is_empty());
+    }
 }
