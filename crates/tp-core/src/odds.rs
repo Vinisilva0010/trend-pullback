@@ -204,6 +204,119 @@ pub fn touch_odds(
     (total > 0).then(|| (as_f64(hits) / as_f64(total), total))
 }
 
+/// Which side a price reached first after an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Race {
+    /// Entries where the target above was reached before the stop below.
+    pub up_first: usize,
+    /// Entries where the stop below was reached first (or both on the same day).
+    pub down_first: usize,
+    /// Entries where neither was reached within the horizon.
+    pub neither: usize,
+}
+
+impl Race {
+    /// Entries that reached one side.
+    #[must_use]
+    pub fn decided(&self) -> usize {
+        self.up_first + self.down_first
+    }
+
+    /// All entries.
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.decided() + self.neither
+    }
+
+    /// z-score of up-first against down-first under a 50/50 null
+    /// (0 when nothing was decided).
+    #[must_use]
+    pub fn z(&self) -> f64 {
+        let n = self.decided();
+        if n == 0 {
+            return 0.0;
+        }
+        (as_f64(self.up_first) - as_f64(self.down_first)) / as_f64(n).sqrt()
+    }
+}
+
+/// Where an entry is filled on a given day.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Entry {
+    /// A limit buy filled during the day at this price; the rest of that
+    /// day can still hit the stop.
+    Intraday(f64),
+    /// A buy at the day's close; the race starts on the next day.
+    AtClose(f64),
+}
+
+/// Races a target `distance_atr` ATRs above the entry against a stop the same
+/// distance below, for `horizon` days, on every past day with an entry where
+/// `mask` is true. Daily bars cannot tell the order inside a day, so a day
+/// that touches both sides counts as the stop first, and on an intraday entry
+/// day only the stop is checked. Entries do not overlap: after one, the next
+/// `horizon` days are skipped. Days whose window crosses a gap are skipped.
+#[must_use]
+pub fn race_odds(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    entries: &[Option<Entry>],
+    mask: &[bool],
+    horizon: usize,
+    distance_atr: f64,
+) -> Option<Race> {
+    let n = candles.len();
+    if horizon == 0
+        || distance_atr <= 0.0
+        || atr.len() != n
+        || entries.len() != n
+        || mask.len() != n
+    {
+        return None;
+    }
+    let (_, end) = continuous_runs(candles);
+    let mut race = Race {
+        up_first: 0,
+        down_first: 0,
+        neither: 0,
+    };
+    let mut next_free = 0usize;
+    for t in 0..n {
+        if t < next_free || !mask[t] || t + horizon > end[t] {
+            continue;
+        }
+        let (Some(entry), Some(a)) = (entries[t], atr[t].filter(|a| *a > 0.0)) else {
+            continue;
+        };
+        let price = match entry {
+            Entry::Intraday(p) | Entry::AtClose(p) => p,
+        };
+        let target = price + distance_atr * a;
+        let stop = price - distance_atr * a;
+        let mut outcome = None;
+        if matches!(entry, Entry::Intraday(_)) && candles[t].low() <= stop {
+            outcome = Some(false);
+        }
+        for c in &candles[t + 1..=t + horizon] {
+            if outcome.is_some() {
+                break;
+            }
+            if c.low() <= stop {
+                outcome = Some(false);
+            } else if c.high() >= target {
+                outcome = Some(true);
+            }
+        }
+        match outcome {
+            Some(true) => race.up_first += 1,
+            Some(false) => race.down_first += 1,
+            None => race.neither += 1,
+        }
+        next_free = t + horizon + 1;
+    }
+    (race.total() > 0).then_some(race)
+}
+
 /// Complete Monday-to-Sunday weeks built from consecutive daily candles.
 /// Each weekly candle is dated on its Sunday. Weeks with a missing day are
 /// skipped, and so is the current week until its Sunday closes.
@@ -386,5 +499,51 @@ mod tests {
             weeks[0].date(),
             NaiveDate::from_ymd_opt(2024, 1, 14).unwrap()
         );
+    }
+
+    #[test]
+    fn race_counts_which_side_comes_first() {
+        let candles = vec![
+            bar(0, 10.0, 10.5, 9.5, 10.0),
+            bar(1, 10.0, 11.5, 9.8, 11.0),
+            bar(2, 11.0, 11.2, 10.8, 11.0),
+            bar(3, 11.0, 11.2, 8.5, 9.0),
+            bar(4, 9.0, 9.5, 8.8, 9.0),
+            bar(5, 9.0, 9.5, 8.8, 9.0),
+        ];
+        let atr = vec![Some(1.0); 6];
+        let mask = [true; 6];
+        // Close entry on day 0: day 1 reaches 11 before any drop to 9.
+        let mut entries = vec![None; 6];
+        entries[0] = Some(Entry::AtClose(10.0));
+        let r = race_odds(&candles, &atr, &entries, &mask, 2, 1.0).unwrap();
+        assert_eq!((r.up_first, r.down_first, r.neither), (1, 0, 0));
+        // Intraday entry on day 3 at 10: the same day falls to 8.5, below 9.
+        let mut entries = vec![None; 6];
+        entries[3] = Some(Entry::Intraday(10.0));
+        let r = race_odds(&candles, &atr, &entries, &mask, 2, 1.0).unwrap();
+        assert_eq!((r.up_first, r.down_first, r.neither), (0, 1, 0));
+        // Close entry on day 4 at 9: nothing moves 1 ATR within 1 day.
+        let mut entries = vec![None; 6];
+        entries[4] = Some(Entry::AtClose(9.0));
+        let r = race_odds(&candles, &atr, &entries, &mask, 1, 1.0).unwrap();
+        assert_eq!((r.up_first, r.down_first, r.neither), (0, 0, 1));
+        assert_eq!(r.z(), 0.0);
+    }
+
+    #[test]
+    fn race_counts_a_two_sided_day_as_stop_first_and_skips_overlaps() {
+        let candles = vec![
+            bar(0, 10.0, 10.2, 9.8, 10.0),
+            bar(1, 10.0, 11.5, 8.5, 10.0),
+            bar(2, 10.0, 10.2, 9.8, 10.0),
+            bar(3, 10.0, 10.2, 9.8, 10.0),
+        ];
+        let atr = vec![Some(1.0); 4];
+        let entries = vec![Some(Entry::AtClose(10.0)); 4];
+        let r = race_odds(&candles, &atr, &entries, &[true; 4], 1, 1.0).unwrap();
+        // Day 0 races day 1 (both sides: stop first); day 1 is skipped as
+        // overlapping; day 2 races day 3 (neither).
+        assert_eq!((r.up_first, r.down_first, r.neither), (0, 1, 1));
     }
 }
