@@ -11,6 +11,7 @@
 
 pub mod allocation;
 pub mod levels;
+pub mod paper;
 pub mod range;
 
 use std::collections::BTreeMap;

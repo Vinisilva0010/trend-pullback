@@ -14,6 +14,7 @@ use tp_backtest::allocation::{
     monthly_returns, run_allocation, run_leveraged,
 };
 use tp_backtest::levels::{EdgeEvent, LevelParams, run_levels};
+use tp_backtest::paper::{DayBar, Event, Order, Paper, Signal, trade_csv};
 use tp_backtest::range::{RangeCosts, RangeParams, RangeResult, run_range};
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
@@ -181,8 +182,7 @@ enum Command {
     /// Daily report in Portuguese for BTC, ETH and SOL: trend, candle reading,
     /// touch chances from history and what to do; also records the model weights.
     Daily {
-        /// Kept so the scheduled script keeps working; the report no longer
-        /// sizes orders.
+        /// Starting money of the paper account (used only on its first day).
         #[arg(long, default_value_t = 1000.0)]
         capital: f64,
         /// Send a Telegram message when an order is needed (reads .env).
@@ -277,10 +277,10 @@ async fn main() -> ExitCode {
         } => cmd_sizing(&cli.data_dir, &assets, final_period),
         Command::Liquidity { final_period } => cmd_liquidity(&cli.data_dir, final_period),
         Command::Daily {
-            capital: _,
+            capital,
             notify,
             dry_run,
-        } => run_daily(&cli.data_dir, notify, dry_run).await,
+        } => run_daily(&cli.data_dir, capital, notify, dry_run).await,
         Command::Trend { assets, start, end } => cmd_trend(&cli.data_dir, &assets, start, end),
     };
     match result {
@@ -627,8 +627,8 @@ fn cmd_grid(data_dir: &Path) -> CliResult {
     Ok(ExitCode::SUCCESS)
 }
 
-async fn run_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
-    let result = cmd_daily(data_dir, notify, dry_run).await;
+async fn run_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
+    let result = cmd_daily(data_dir, capital, notify, dry_run).await;
     let Err(error) = &result else {
         return result;
     };
@@ -652,7 +652,7 @@ async fn run_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     result
 }
 
-async fn cmd_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
+async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
     let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
     let now_ms = i64::try_from(since_epoch.as_millis())?;
     let today = DateTime::from_timestamp_millis(now_ms)
@@ -669,6 +669,7 @@ async fn cmd_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let threshold = AllocationConfig::crypto().rebalance_threshold;
     let mut sections = Vec::new();
     let mut log = String::new();
+    let mut market: BTreeMap<String, (Vec<Candle>, Analysis)> = BTreeMap::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         let mut candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
         let last = candles.last().map(Candle::date).ok_or("empty history")?;
@@ -685,24 +686,26 @@ async fn cmd_daily(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
             ));
         }
         let closes = close_values(&candles);
-        lines.extend(daily_report(asset, &candles, &closes));
+        let analysis = daily_report(asset, &candles, &closes);
+        lines.extend(analysis.lines.iter().cloned());
         sections.push(lines.join("\n"));
         // The tested model weight is still tracked for the record and the
         // paper account; it is no longer part of the message.
         let (held_date, held) = state.get(asset).copied().unwrap_or((NaiveDate::MIN, 0.0));
-        if held_date >= signal_date {
-            continue;
+        if held_date < signal_date {
+            let target = live_weight(asset, &closes, &vol);
+            let close = closes.last().copied().unwrap_or(0.0);
+            let order = needs_rebalance(held, target, threshold);
+            let new_held = if order { target } else { held };
+            let _ = writeln!(
+                log,
+                "{today},{asset},{signal_date},{close},{target:.6},{held:.6},{new_held:.6},{order}"
+            );
+            state.insert(asset.to_owned(), (signal_date, new_held));
         }
-        let target = live_weight(asset, &closes, &vol);
-        let close = closes.last().copied().unwrap_or(0.0);
-        let order = needs_rebalance(held, target, threshold);
-        let new_held = if order { target } else { held };
-        let _ = writeln!(
-            log,
-            "{today},{asset},{signal_date},{close},{target:.6},{held:.6},{new_held:.6},{order}"
-        );
-        state.insert(asset.to_owned(), (signal_date, new_held));
+        market.insert(asset.to_owned(), (candles, analysis));
     }
+    sections.push(run_paper(&live_dir, capital, &market, dry_run)?);
     let header = "Relatório diário (candle fechado às 21h de Brasília). Chance = quantas vezes aconteceu no histórico da moeda; não é certeza.".to_owned();
     let lines = sections;
     println!("{header}");
@@ -1548,7 +1551,7 @@ fn support_lines(
     regimes: &[Option<Regime>],
     last: usize,
     a: f64,
-) -> (Vec<String>, Verdict) {
+) -> (Vec<String>, Option<Race>) {
     let close = candles[last].close();
     let (_, low20) = extremes_until(candles, last, 20);
     let (mask, same_trend) = trend_mask(regimes, last);
@@ -1591,7 +1594,7 @@ fn support_lines(
             low20,
         ),
     ];
-    (lines, verdict(race))
+    (lines, race)
 }
 
 /// Lines for buying on a daily close above the 20-day high.
@@ -1602,7 +1605,7 @@ fn breakout_lines(
     regimes: &[Option<Regime>],
     last: usize,
     a: f64,
-) -> (Vec<String>, Verdict) {
+) -> (Vec<String>, Option<Race>) {
     let close = candles[last].close();
     let (high20, _) = extremes_until(candles, last, 20);
     let (trend_days, same_trend) = trend_mask(regimes, last);
@@ -1663,7 +1666,7 @@ fn breakout_lines(
             high20,
         ),
     ];
-    (lines, verdict(race))
+    (lines, race)
 }
 
 /// Candle reading, only when that shape changed the following days in the past.
@@ -1803,7 +1806,7 @@ fn level_lines(
     regimes: &[Option<Regime>],
     last: usize,
     a: f64,
-) -> Option<(Vec<String>, Verdict, String)> {
+) -> Option<(Vec<String>, Option<Race>, String, f64)> {
     let close = candles[last].close();
     let levels = horizontal_levels(
         candles,
@@ -1840,8 +1843,9 @@ fn level_lines(
     ];
     Some((
         lines,
-        verdict(race),
+        race,
         format!("ordem limite no suporte em {}", fmt_pt(s.price)),
+        s.price,
     ))
 }
 
@@ -1853,7 +1857,7 @@ fn gap_lines(
     regimes: &[Option<Regime>],
     last: usize,
     a: f64,
-) -> Option<(Vec<String>, Verdict, String)> {
+) -> Option<(Vec<String>, Option<Race>, String, f64)> {
     let close = candles[last].close();
     let g = open_gap_below(candles, last, LEVEL_LOOKBACK, close)?;
     let (trend_days, same_trend) = trend_mask(regimes, last);
@@ -1885,19 +1889,22 @@ fn gap_lines(
     ];
     Some((
         lines,
-        verdict(race),
+        race,
         format!("ordem limite no gap em {}", fmt_pt(g.top)),
+        g.top,
     ))
 }
 
-fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> {
+/// Report lines for the last candle and the entries with an edge, as
+/// signals for the paper account.
+fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
     let mut out = Vec::new();
     let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
-        return out;
+        return Analysis::default();
     };
     let atr = simple_atr(candles, 14);
     let Some(a) = atr[last].filter(|a| *a > 0.0) else {
-        return out;
+        return Analysis::default();
     };
     let name = asset_name(asset);
     let today = &candles[last];
@@ -1927,47 +1934,306 @@ fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> 
         forward_stats(candles, &atr, &same_shape, CANDLE_HORIZON),
     ));
     out.extend(weekly_line(candles, last));
-    let mut choices: Vec<(Verdict, String)> = Vec::new();
-    for block in [
+    let mut choices: Vec<(Option<Race>, String, Order)> = Vec::new();
+    for (lines, race, label, price) in [
         level_lines(name, candles, &atr, &regimes, last, a),
         gap_lines(name, candles, &atr, &regimes, last, a),
     ]
     .into_iter()
     .flatten()
     {
-        let (lines, v, label) = block;
         out.extend(lines);
-        choices.push((v, label));
+        choices.push((race, label, Order::Limit(price)));
     }
-    let (_, low20) = extremes_until(candles, last, 20);
-    let (high20, _) = extremes_until(candles, last, 20);
-    let (support, support_v) = support_lines(name, candles, &atr, &regimes, last, a);
+    let (high20, low20) = extremes_until(candles, last, 20);
+    let (support, support_race) = support_lines(name, candles, &atr, &regimes, last, a);
     out.extend(support);
     choices.push((
-        support_v,
+        support_race,
         format!("ordem limite na mínima de 20 dias em {}", fmt_pt(low20)),
+        Order::Limit(low20),
     ));
-    let (breakout, breakout_v) = breakout_lines(name, candles, &atr, &regimes, last, a);
+    let (breakout, breakout_race) = breakout_lines(name, candles, &atr, &regimes, last, a);
     out.extend(breakout);
+    let broke_today = today.close() > extremes_until(candles, last - 1, 20).0;
     choices.push((
-        breakout_v,
-        format!("compra se um dia fechar acima de {}", fmt_pt(high20)),
+        breakout_race,
+        if broke_today {
+            "compra agora: o dia fechou acima da máxima de 20 dias".to_owned()
+        } else {
+            format!("compra se um dia fechar acima de {}", fmt_pt(high20))
+        },
+        Order::AtClose,
     ));
-    let winners: Vec<&str> = choices
+    let winners: Vec<&(Option<Race>, String, Order)> = choices
         .iter()
-        .filter(|(v, _)| *v == Verdict::Up)
-        .map(|(_, label)| label.as_str())
+        .filter(|(race, _, _)| verdict(*race) == Verdict::Up)
         .collect();
     let action = if winners.is_empty() {
         "O que fazer: esperar. Nenhum lugar de entrada tem vantagem agora.".to_owned()
     } else {
         format!(
             "O que fazer: só estes lugares subiram mais do que caíram no histórico: {}.",
-            winners.join("; ")
+            winners
+                .iter()
+                .map(|(_, label, _)| label.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
         )
     };
     out.push(action);
-    out
+    let signals = winners
+        .iter()
+        .filter(|(_, _, order)| *order != Order::AtClose || broke_today)
+        .map(|(race, label, order)| Signal {
+            asset: asset.to_owned(),
+            label: label.clone(),
+            order: *order,
+            atr: a,
+            z: race.map_or(0.0, |r| r.z()),
+        })
+        .collect();
+    Analysis {
+        lines: out,
+        signals,
+    }
+}
+
+/// Days the paper account replays at most when the machine missed some runs.
+const PAPER_MAX_REPLAY: i64 = 30;
+
+fn date_pt(d: NaiveDate) -> String {
+    d.format("%d/%m").to_string()
+}
+
+fn money_pt(v: f64) -> String {
+    let sign = if v < 0.0 { "-" } else { "" };
+    format!("{sign}${}", fmt_pt(v.abs()))
+}
+
+/// Runs the paper account over every closed day it has not seen yet and
+/// returns its Telegram section. Saves the state and the trade journal unless
+/// `dry_run`.
+fn run_paper(
+    live_dir: &Path,
+    capital: f64,
+    market: &BTreeMap<String, (Vec<Candle>, Analysis)>,
+    dry_run: bool,
+) -> Result<String, Box<dyn Error>> {
+    let latest = market
+        .values()
+        .filter_map(|(c, _)| c.last().map(Candle::date))
+        .min()
+        .ok_or("no market data")?;
+    let state_path = live_dir.join("paper.txt");
+    let mut paper = match std::fs::read_to_string(&state_path) {
+        Ok(text) => Paper::from_text(&text)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Paper::new(capital, latest.pred_opt().ok_or("date overflow")?)
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let first = paper
+        .last
+        .succ_opt()
+        .ok_or("date overflow")?
+        .max(latest - chrono::Duration::days(PAPER_MAX_REPLAY - 1));
+    let mut events: Vec<(NaiveDate, Event)> = Vec::new();
+    let mut day = first;
+    while day <= latest {
+        let mut bars = BTreeMap::new();
+        let mut signals = Vec::new();
+        for (asset, (candles, analysis)) in market {
+            let i = candles.partition_point(|c| c.date() < day);
+            let Some(c) = candles.get(i).filter(|c| c.date() == day) else {
+                continue;
+            };
+            bars.insert(
+                asset.clone(),
+                DayBar {
+                    open: c.open(),
+                    high: c.high(),
+                    low: c.low(),
+                    close: c.close(),
+                },
+            );
+            if day == latest {
+                signals.extend(analysis.signals.iter().cloned());
+            } else {
+                let past = &candles[..=i];
+                signals.extend(daily_report(asset, past, &close_values(past)).signals);
+            }
+        }
+        for e in paper.step(day, &bars, &signals) {
+            events.push((day, e));
+        }
+        day = day.succ_opt().ok_or("date overflow")?;
+    }
+    let closes: BTreeMap<String, f64> = market
+        .iter()
+        .filter_map(|(a, (c, _))| c.last().map(|c| (a.clone(), c.close())))
+        .collect();
+    let journal_path = live_dir.join("paper_trades.csv");
+    let mut journal = match std::fs::read_to_string(&journal_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let mut new_rows = String::new();
+    if journal.is_empty() {
+        new_rows.push_str(
+            "asset,entry,entry_date,entry_price,exit_date,exit_price,quantity,pnl,reason\n",
+        );
+    }
+    for (_, e) in &events {
+        if let Event::Sold(t) = e {
+            let _ = writeln!(new_rows, "{}", trade_csv(t));
+        }
+    }
+    journal.push_str(&new_rows);
+    let section = paper_section(&paper, &events, &closes, market, &journal, latest);
+    if !dry_run {
+        std::fs::create_dir_all(live_dir)?;
+        std::fs::write(&state_path, paper.to_text())?;
+        if !new_rows.is_empty() {
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&journal_path)?;
+            std::io::Write::write_all(&mut file, new_rows.as_bytes())?;
+        }
+    }
+    Ok(section)
+}
+
+fn event_pt(day: NaiveDate, e: &Event) -> String {
+    match e {
+        Event::Bought(p) => format!(
+            "{}: comprou {} a {} ({}). Alvo {}, stop {}, sai em no máximo 7 dias.",
+            date_pt(day),
+            asset_name(&p.asset),
+            fmt_pt(p.entry_price),
+            p.label,
+            fmt_pt(p.target),
+            fmt_pt(p.stop)
+        ),
+        Event::Placed(o) => format!(
+            "{}: deixou ordem limite de compra de {} em {} para o dia seguinte ({}).",
+            date_pt(day),
+            asset_name(&o.asset),
+            fmt_pt(o.price),
+            o.label
+        ),
+        Event::Expired(o) => format!(
+            "{}: a ordem de {} em {} não executou e foi cancelada.",
+            date_pt(day),
+            asset_name(&o.asset),
+            fmt_pt(o.price)
+        ),
+        Event::Sold(t) => format!(
+            "{}: vendeu {} a {} ({}). Resultado do trade: {} ({}).",
+            date_pt(day),
+            asset_name(&t.asset),
+            fmt_pt(t.exit_price),
+            t.reason.label_pt(),
+            money_pt(t.pnl),
+            pct_pt((t.exit_price / t.entry_price - 1.0) * 100.0)
+        ),
+    }
+}
+
+/// Trades in the journal text (header and blank lines skipped): exit date and profit.
+fn journal_results(journal: &str) -> Vec<(NaiveDate, f64)> {
+    journal
+        .lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split(',').collect();
+            Some((f.get(4)?.parse().ok()?, f.get(7)?.parse().ok()?))
+        })
+        .collect()
+}
+
+fn paper_section(
+    paper: &Paper,
+    events: &[(NaiveDate, Event)],
+    closes: &BTreeMap<String, f64>,
+    market: &BTreeMap<String, (Vec<Candle>, Analysis)>,
+    journal: &str,
+    latest: NaiveDate,
+) -> String {
+    let equity = paper.equity(closes);
+    let results = journal_results(journal);
+    let wins = results.iter().filter(|(_, p)| *p > 0.0).count();
+    let mut out = vec![format!(
+        "Conta fictícia (começou em {} com {}): vale {} hoje ({}). Trades fechados: {}, no lucro: {}.",
+        date_pt(paper.start),
+        money_pt(paper.capital),
+        money_pt(equity),
+        pct_pt((equity / paper.capital - 1.0) * 100.0),
+        results.len(),
+        wins
+    )];
+    for (day, e) in events {
+        out.push(event_pt(*day, e));
+    }
+    match (&paper.position, &paper.pending) {
+        (Some(p), _) => {
+            let now = closes.get(&p.asset).copied().unwrap_or(p.entry_price);
+            out.push(format!(
+                "Posição aberta: {} comprado a {}, agora {} ({}). Alvo {}, stop {}, dia {} de 7.",
+                asset_name(&p.asset),
+                fmt_pt(p.entry_price),
+                fmt_pt(now),
+                pct_pt((now / p.entry_price - 1.0) * 100.0),
+                fmt_pt(p.target),
+                fmt_pt(p.stop),
+                p.days
+            ));
+        }
+        (None, Some(o)) => out.push(format!(
+            "Ordem esperando: compra de {} em {} amanhã.",
+            asset_name(&o.asset),
+            fmt_pt(o.price)
+        )),
+        (None, None) => out.push("Sem posição: dinheiro parado em USDT.".to_owned()),
+    }
+    if let Some((candles, _)) = market.get("SOLUSDT") {
+        let at = |d: NaiveDate| {
+            let i = candles.partition_point(|c| c.date() < d);
+            candles.get(i).filter(|c| c.date() == d).map(Candle::close)
+        };
+        if let (Some(start), Some(now)) = (at(paper.start), at(latest)) {
+            let held = paper.capital * now / start;
+            out.push(format!(
+                "Comparação: só segurando SOL desde o início, teria {} ({}).",
+                money_pt(held),
+                pct_pt((now / start - 1.0) * 100.0)
+            ));
+        }
+    }
+    if latest.weekday() == chrono::Weekday::Sun {
+        let week_start = latest - chrono::Duration::days(6);
+        let week: Vec<f64> = results
+            .iter()
+            .filter(|(d, _)| *d >= week_start)
+            .map(|(_, p)| *p)
+            .collect();
+        out.push(format!(
+            "Resumo da semana: {} trades fechados, {} no lucro, resultado {}.",
+            week.len(),
+            week.iter().filter(|p| **p > 0.0).count(),
+            money_pt(week.iter().sum())
+        ));
+    }
+    out.join("\n")
+}
+
+/// Daily report of one asset.
+#[derive(Debug, Default)]
+struct Analysis {
+    lines: Vec<String>,
+    signals: Vec<Signal>,
 }
 
 fn fmt_price(v: f64) -> String {
@@ -2395,7 +2661,7 @@ fn write_failures(data_dir: &Path, summary: &DownloadSummary) -> std::io::Result
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {
     use super::*;
     use chrono::Days;
@@ -2438,7 +2704,7 @@ mod tests {
     fn daily_report_covers_trend_candle_odds_and_action() {
         let candles = walk(900);
         let closes = close_values(&candles);
-        let report = daily_report("SOLUSDT", &candles, &closes);
+        let report = daily_report("SOLUSDT", &candles, &closes).lines;
         println!("{}", report.join("\n"));
         assert!(report[0].starts_with("SOL — dia fechado em "));
         assert!(report[1].starts_with("Tendência: "));
@@ -2458,7 +2724,7 @@ mod tests {
     fn daily_report_needs_enough_history() {
         let candles = walk(30);
         let closes = close_values(&candles);
-        assert!(daily_report("BTCUSDT", &candles, &closes).is_empty());
+        assert!(daily_report("BTCUSDT", &candles, &closes).lines.is_empty());
     }
 
     fn path(points: &[(u64, f64)]) -> Vec<Candle> {
@@ -2517,12 +2783,88 @@ mod tests {
         ]);
         let candles = path(&points);
         let closes = close_values(&candles);
-        let report = daily_report("SOLUSDT", &candles, &closes);
+        let report = daily_report("SOLUSDT", &candles, &closes).lines;
         println!("{}", report.join("\n"));
         assert!(
             report
                 .iter()
                 .any(|l| l.starts_with("Comprar no suporte do último ano"))
         );
+    }
+
+    #[test]
+    fn paper_runs_over_new_days_and_saves_state() {
+        let mut points = vec![(0, 90.0)];
+        for k in 0..12 {
+            points.push((10 + k * 20, if k % 2 == 0 { 80.0 } else { 95.0 }));
+        }
+        points.extend([
+            (260, 81.0),
+            (280, 62.0),
+            (300, 76.0),
+            (330, 74.0),
+            (336, 108.0),
+            (380, 124.0),
+            (420, 92.0),
+        ]);
+        let candles = path(&points);
+        let dir = std::env::temp_dir().join(format!("tp-paper-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let split = candles.len() - 5;
+        let market_at = |n: usize| {
+            let c = candles[..n].to_vec();
+            let a = daily_report("SOLUSDT", &c, &close_values(&c));
+            BTreeMap::from([("SOLUSDT".to_owned(), (c, a))])
+        };
+        let first = run_paper(&dir, 2200.0, &market_at(split), false).unwrap();
+        println!("{first}");
+        assert!(first.starts_with("Conta fictícia (começou em "));
+        let saved =
+            Paper::from_text(&std::fs::read_to_string(dir.join("paper.txt")).unwrap()).unwrap();
+        assert_eq!(saved.last, candles[split - 1].date());
+        let second = run_paper(&dir, 2200.0, &market_at(candles.len()), false).unwrap();
+        println!("{second}");
+        let saved =
+            Paper::from_text(&std::fs::read_to_string(dir.join("paper.txt")).unwrap()).unwrap();
+        assert_eq!(saved.last, candles[candles.len() - 1].date());
+        assert_eq!(saved.capital, 2200.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn journal_results_read_exit_date_and_profit() {
+        let text = "asset,entry,entry_date,entry_price,exit_date,exit_price,quantity,pnl,reason\nSOLUSDT,x,2026-11-01,90,2026-11-03,94,10,39.50,alvo\n";
+        assert_eq!(
+            journal_results(text),
+            vec![(NaiveDate::from_ymd_opt(2026, 11, 3).unwrap(), 39.5)]
+        );
+    }
+
+    #[test]
+    fn paper_events_read_in_portuguese() {
+        let day = NaiveDate::from_ymd_opt(2026, 11, 5).unwrap();
+        let mut paper = Paper::new(2200.0, day.pred_opt().unwrap());
+        let bars = BTreeMap::from([(
+            "SOLUSDT".to_owned(),
+            DayBar {
+                open: 108.0,
+                high: 111.0,
+                low: 107.0,
+                close: 110.0,
+            },
+        )]);
+        let signal = Signal {
+            asset: "SOLUSDT".to_owned(),
+            label: "compra agora: o dia fechou acima da máxima de 20 dias".to_owned(),
+            order: Order::AtClose,
+            atr: 4.0,
+            z: 2.8,
+        };
+        let events = paper.step(day, &bars, &[signal]);
+        assert_eq!(
+            event_pt(day, &events[0]),
+            "05/11: comprou SOL a 110,00 (compra agora: o dia fechou acima da máxima de 20 dias). Alvo 114,00, stop 106,00, sai em no máximo 7 dias."
+        );
+        assert_eq!(money_pt(-12.5), "-$12,50");
     }
 }

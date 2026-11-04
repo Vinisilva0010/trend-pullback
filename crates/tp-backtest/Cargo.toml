@@ -10,4 +10,5 @@ workspace = true
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+thiserror = "2.0.21"
 tp-core = { version = "0.1.0", path = "../tp-core" }
