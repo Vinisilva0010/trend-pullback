@@ -26,6 +26,7 @@ use tp_core::market::Candle;
 use tp_core::odds::{Entry, Forward, Race, Shape, forward_stats, race_odds, touch_odds, weekly};
 use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
+use tp_core::support::{horizontal_levels, open_gap_below, support_below};
 use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
@@ -1700,6 +1701,195 @@ fn weekly_line(candles: &[Candle], last: usize) -> Option<String> {
     )
 }
 
+/// Candles of history used to find horizontal levels and open gaps.
+const LEVEL_LOOKBACK: usize = 365;
+/// Candles needed on each side of a swing point.
+const SWING_WING: usize = 5;
+/// Swing points within this many ATRs of each other form one level.
+const LEVEL_TOLERANCE_ATR: f64 = 0.5;
+/// Turning points a level needs before it counts as support.
+const MIN_LEVEL_TOUCHES: usize = 2;
+/// Longer horizon, in days, for the chance of reaching a far level.
+const FAR_HORIZON: usize = 30;
+
+/// Per day: the support level visible the day before (from data up to then),
+/// filled as a limit buy when the day's low reaches it.
+fn support_entries(candles: &[Candle], atr: &[Option<f64>]) -> Vec<Option<Entry>> {
+    (0..candles.len())
+        .map(|t| {
+            if t < 120 {
+                return None;
+            }
+            let a = atr[t - 1].filter(|a| *a > 0.0)?;
+            let levels = horizontal_levels(
+                candles,
+                t - 1,
+                LEVEL_LOOKBACK,
+                SWING_WING,
+                LEVEL_TOLERANCE_ATR * a,
+            );
+            let s = support_below(&levels, candles[t - 1].close(), MIN_LEVEL_TOUCHES)?;
+            (candles[t].low() <= s.price).then(|| Entry::Intraday(s.price.min(candles[t].open())))
+        })
+        .collect()
+}
+
+/// Per day: the top of the open gap visible the day before, filled as a limit
+/// buy when the day's low reaches it.
+fn gap_entries(candles: &[Candle]) -> Vec<Option<Entry>> {
+    (0..candles.len())
+        .map(|t| {
+            if t < 120 {
+                return None;
+            }
+            let g = open_gap_below(candles, t - 1, LEVEL_LOOKBACK, candles[t - 1].close())?;
+            (candles[t].low() <= g.top).then(|| Entry::Intraday(g.top.min(candles[t].open())))
+        })
+        .collect()
+}
+
+/// Race over the days in today's trend, or over every day (with a note) when
+/// that gives too few decided cases.
+fn race_in_trend(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    entries: &[Option<Entry>],
+    trend_days: &[bool],
+    same_trend: bool,
+    same_label: &str,
+) -> (Option<Race>, String) {
+    let race = race_odds(candles, atr, entries, trend_days, REPORT_HORIZON, 1.0);
+    if same_trend && race.is_some_and(|r| r.decided() >= MIN_RACES) {
+        return (race, same_label.to_owned());
+    }
+    let all = race_odds(
+        candles,
+        atr,
+        entries,
+        &vec![true; candles.len()],
+        REPORT_HORIZON,
+        1.0,
+    );
+    let label = if same_trend {
+        "em qualquer tendência (poucos casos numa tendência igual)"
+    } else {
+        "em qualquer tendência"
+    };
+    (all, label.to_owned())
+}
+
+fn reach_sentence(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    trend_days: &[bool],
+    distance_atr: f64,
+    up: bool,
+) -> String {
+    let chance = |h: usize| {
+        touch_odds(candles, atr, trend_days, h, distance_atr, up).map_or(0.0, |(p, _)| p) * 100.0
+    };
+    format!(
+        "  Chance de o preço chegar lá: {:.0}% em {REPORT_HORIZON} dias, {:.0}% em {FAR_HORIZON} dias.",
+        chance(REPORT_HORIZON),
+        chance(FAR_HORIZON)
+    )
+}
+
+/// Lines for buying at the nearest horizontal support of the past year.
+fn level_lines(
+    name: &str,
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    regimes: &[Option<Regime>],
+    last: usize,
+    a: f64,
+) -> Option<(Vec<String>, Verdict, String)> {
+    let close = candles[last].close();
+    let levels = horizontal_levels(
+        candles,
+        last,
+        LEVEL_LOOKBACK,
+        SWING_WING,
+        LEVEL_TOLERANCE_ATR * a,
+    );
+    let s = support_below(&levels, close, MIN_LEVEL_TOUCHES)?;
+    let (trend_days, same_trend) = trend_mask(regimes, last);
+    let entries = support_entries(candles, atr);
+    let (race, trend) = race_in_trend(
+        candles,
+        atr,
+        &entries,
+        &trend_days,
+        same_trend,
+        &format!("numa {} como agora", trend_pt(regimes[last])),
+    );
+    let lines = vec![
+        format!(
+            "Comprar no suporte do último ano, com ordem limite em {} ({} do preço; o preço virou nessa região {} vezes):",
+            fmt_pt(s.price),
+            pct_pt((s.price / close - 1.0) * 100.0),
+            s.touches
+        ),
+        reach_sentence(candles, atr, &trend_days, (close - s.price) / a, false),
+        race_sentence(
+            &format!("a {name} chegou num suporte assim {trend}"),
+            race,
+            a,
+            s.price,
+        ),
+    ];
+    Some((
+        lines,
+        verdict(race),
+        format!("ordem limite no suporte em {}", fmt_pt(s.price)),
+    ))
+}
+
+/// Lines for buying at the top of the nearest open gap below the price.
+fn gap_lines(
+    name: &str,
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    regimes: &[Option<Regime>],
+    last: usize,
+    a: f64,
+) -> Option<(Vec<String>, Verdict, String)> {
+    let close = candles[last].close();
+    let g = open_gap_below(candles, last, LEVEL_LOOKBACK, close)?;
+    let (trend_days, same_trend) = trend_mask(regimes, last);
+    let entries = gap_entries(candles);
+    let (race, trend) = race_in_trend(
+        candles,
+        atr,
+        &entries,
+        &trend_days,
+        same_trend,
+        &format!("numa {} como agora", trend_pt(regimes[last])),
+    );
+    let lines = vec![
+        format!(
+            "Comprar no gap aberto embaixo, com ordem limite em {} (gap de {} a {}, formado em {}; {} do preço):",
+            fmt_pt(g.top),
+            fmt_pt(g.bottom),
+            fmt_pt(g.top),
+            candles[g.formed].date().format("%d/%m/%Y"),
+            pct_pt((g.top / close - 1.0) * 100.0)
+        ),
+        reach_sentence(candles, atr, &trend_days, (close - g.top) / a, false),
+        race_sentence(
+            &format!("a {name} voltou num gap aberto {trend}"),
+            race,
+            a,
+            g.top,
+        ),
+    ];
+    Some((
+        lines,
+        verdict(race),
+        format!("ordem limite no gap em {}", fmt_pt(g.top)),
+    ))
+}
+
 fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> {
     let mut out = Vec::new();
     let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
@@ -1737,27 +1927,44 @@ fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Vec<String> 
         forward_stats(candles, &atr, &same_shape, CANDLE_HORIZON),
     ));
     out.extend(weekly_line(candles, last));
-    let (support, support_v) = support_lines(name, candles, &atr, &regimes, last, a);
-    let (breakout, breakout_v) = breakout_lines(name, candles, &atr, &regimes, last, a);
-    out.extend(support);
-    out.extend(breakout);
+    let mut choices: Vec<(Verdict, String)> = Vec::new();
+    for block in [
+        level_lines(name, candles, &atr, &regimes, last, a),
+        gap_lines(name, candles, &atr, &regimes, last, a),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let (lines, v, label) = block;
+        out.extend(lines);
+        choices.push((v, label));
+    }
     let (_, low20) = extremes_until(candles, last, 20);
     let (high20, _) = extremes_until(candles, last, 20);
-    let action = match (support_v, breakout_v) {
-        (Verdict::Up, Verdict::Up) => format!(
-            "O que fazer: os dois lugares têm vantagem. Ordem limite em {} ou compra se fechar acima de {}.",
-            fmt_pt(low20),
-            fmt_pt(high20)
-        ),
-        (Verdict::Up, _) => format!(
-            "O que fazer: comprar embaixo tem vantagem. Ordem limite em {}.",
-            fmt_pt(low20)
-        ),
-        (_, Verdict::Up) => format!(
-            "O que fazer: esperar. Só o rompimento tem vantagem: compra se um dia fechar acima de {}.",
-            fmt_pt(high20)
-        ),
-        _ => "O que fazer: esperar. Nenhum dos dois lugares tem vantagem agora.".to_owned(),
+    let (support, support_v) = support_lines(name, candles, &atr, &regimes, last, a);
+    out.extend(support);
+    choices.push((
+        support_v,
+        format!("ordem limite na mínima de 20 dias em {}", fmt_pt(low20)),
+    ));
+    let (breakout, breakout_v) = breakout_lines(name, candles, &atr, &regimes, last, a);
+    out.extend(breakout);
+    choices.push((
+        breakout_v,
+        format!("compra se um dia fechar acima de {}", fmt_pt(high20)),
+    ));
+    let winners: Vec<&str> = choices
+        .iter()
+        .filter(|(v, _)| *v == Verdict::Up)
+        .map(|(_, label)| label.as_str())
+        .collect();
+    let action = if winners.is_empty() {
+        "O que fazer: esperar. Nenhum lugar de entrada tem vantagem agora.".to_owned()
+    } else {
+        format!(
+            "O que fazer: só estes lugares subiram mais do que caíram no histórico: {}.",
+            winners.join("; ")
+        )
     };
     out.push(action);
     out
@@ -2252,5 +2459,70 @@ mod tests {
         let candles = walk(30);
         let closes = close_values(&candles);
         assert!(daily_report("BTCUSDT", &candles, &closes).is_empty());
+    }
+
+    fn path(points: &[(u64, f64)]) -> Vec<Candle> {
+        // Piecewise path through (day, price) points with a daily wiggle.
+        let start = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        let mut out = Vec::new();
+        let mut prev = points[0].1;
+        for w in points.windows(2) {
+            let (d0, p0) = w[0];
+            let (d1, p1) = w[1];
+            for d in d0..d1 {
+                let f = f64::from(u32::try_from(d - d0).unwrap())
+                    / f64::from(u32::try_from(d1 - d0).unwrap());
+                let wiggle = if d % 3 == 0 {
+                    1.02
+                } else if d % 3 == 1 {
+                    0.985
+                } else {
+                    1.0
+                };
+                let close = (p0 + (p1 - p0) * f) * wiggle;
+                let open = prev;
+                out.push(
+                    Candle::try_new(CandleFields {
+                        date: start.checked_add_days(Days::new(d)).unwrap(),
+                        open,
+                        high: open.max(close) * 1.01,
+                        low: open.min(close) * 0.99,
+                        close,
+                        volume: 1.0,
+                        quote_volume: 1.0,
+                    })
+                    .unwrap(),
+                );
+                prev = close;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn report_sees_old_support_and_open_gap() {
+        let mut points = vec![(0, 90.0)];
+        // A long range between 80 and 95, a drop, a base, a jump and a pullback.
+        for k in 0..12 {
+            points.push((10 + k * 20, if k % 2 == 0 { 80.0 } else { 95.0 }));
+        }
+        points.extend([
+            (260, 81.0),
+            (280, 62.0),
+            (300, 76.0),
+            (330, 74.0),
+            (336, 108.0),
+            (380, 124.0),
+            (420, 92.0),
+        ]);
+        let candles = path(&points);
+        let closes = close_values(&candles);
+        let report = daily_report("SOLUSDT", &candles, &closes);
+        println!("{}", report.join("\n"));
+        assert!(
+            report
+                .iter()
+                .any(|l| l.starts_with("Comprar no suporte do último ano"))
+        );
     }
 }

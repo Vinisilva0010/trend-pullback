@@ -7,4 +7,5 @@ pub mod market;
 pub mod odds;
 pub mod regime;
 pub mod strategy;
+pub mod support;
 pub mod trend;
