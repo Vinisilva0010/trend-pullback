@@ -19,8 +19,9 @@ use tp_backtest::range::{RangeCosts, RangeParams, RangeResult, run_range};
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
+use tp_core::anomaly::{ANOMALY_RATIO, FOLLOW_HOURS, Spike, follow_after_spikes, spike_at};
 use tp_core::indicators::{close_values, segments};
-use tp_core::intraday::aggregate;
+use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::liquidity::{odds_after_break, round_above, round_below, simple_atr};
 use tp_core::market::Candle;
@@ -1897,6 +1898,7 @@ fn gap_lines(
 
 /// Report lines for the last candle and the entries with an edge, as
 /// signals for the paper account.
+#[allow(clippy::too_many_lines)] // one report: header, entry blocks, action, signals
 fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
     let mut out = Vec::new();
     let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
@@ -1993,9 +1995,17 @@ fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
             z: race.map_or(0.0, |r| r.z()),
         })
         .collect();
+    let levels = choices
+        .iter()
+        .filter_map(|(race, label, order)| match order {
+            Order::Limit(price) => Some((level_name(label), *price, verdict(*race))),
+            Order::AtClose => None,
+        })
+        .collect();
     Analysis {
         lines: out,
         signals,
+        levels,
     }
 }
 
@@ -2229,11 +2239,24 @@ fn paper_section(
     out.join("\n")
 }
 
+/// Short name of a buy level from its order label.
+fn level_name(label: &str) -> String {
+    if label.contains("suporte") {
+        "do suporte do último ano".to_owned()
+    } else if label.contains("gap") {
+        "do gap aberto".to_owned()
+    } else {
+        "da mínima de 20 dias".to_owned()
+    }
+}
+
 /// Daily report of one asset.
 #[derive(Debug, Default)]
 struct Analysis {
     lines: Vec<String>,
     signals: Vec<Signal>,
+    /// Buy levels below the price: name, price and historical result.
+    levels: Vec<(String, f64, Verdict)>,
 }
 
 fn fmt_price(v: f64) -> String {
@@ -2246,29 +2269,128 @@ fn fmt_price(v: f64) -> String {
     }
 }
 
-#[allow(clippy::too_many_lines)] // one pass per asset: data, levels, targets, message
-async fn alert_for(
+/// Hours of recent bars fetched each run: the 30-day baseline plus a margin.
+const ALERT_FETCH_HOURS: i64 = 760;
+/// Recent hours checked for a crossed 20- or 60-day level.
+const CROSS_HOURS: usize = 3;
+/// How close (share of price) an hourly low must come to a level to count as reaching it.
+const NEAR_LEVEL: f64 = 0.005;
+
+/// Every alert for one asset this hour, as (dedup name, message).
+async fn alerts_for(
     data_dir: &Path,
     asset: &str,
     now_ms: i64,
-) -> Result<Option<(String, String)>, Box<dyn Error>> {
+) -> Result<Vec<(String, String)>, Box<dyn Error>> {
     let mut daily = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
     let last = daily.last().map(Candle::date).ok_or("empty history")?;
     let since = last.succ_opt().ok_or("date overflow")?;
     let recent = fetch_daily_since(asset, since, now_ms).await?;
     extend_series(&mut daily, &recent)?;
-    let hourly = fetch_recent_hourly(asset, 3, now_ms).await?;
-    let n = daily.len();
-    let Some(price) = hourly.last().map(|b| b.close) else {
-        return Ok(None);
+    let hourly = fetch_recent_hourly(asset, ALERT_FETCH_HOURS, now_ms).await?;
+    let mut out = Vec::new();
+    let cross = &hourly[hourly.len().saturating_sub(CROSS_HOURS)..];
+    out.extend(alert_for(&daily, cross, asset));
+    let history_path = data_dir
+        .join("processed/binance/futures_1h")
+        .join(format!("{asset}.csv"));
+    let history = std::fs::read_to_string(&history_path)
+        .ok()
+        .and_then(|t| parse_bars_csv(&t).ok());
+    out.extend(anomaly_alert(asset, &hourly, history.as_deref()));
+    let closes = close_values(&daily);
+    let analysis = daily_report(asset, &daily, &closes);
+    out.extend(level_alerts(asset, &analysis, cross));
+    Ok(out)
+}
+
+/// Alert when the last closed hour is abnormal, with what followed such
+/// hours in the asset's hourly history.
+fn anomaly_alert(asset: &str, hourly: &[Bar], history: Option<&[Bar]>) -> Option<(String, String)> {
+    let i = hourly.len().checked_sub(1)?;
+    let spike = spike_at(hourly, i).filter(Spike::is_abnormal)?;
+    let bar = hourly[i];
+    let name = asset_name(asset);
+    let brt = |ms: i64| {
+        DateTime::from_timestamp_millis(ms - 3 * HOUR_MS)
+            .map_or_else(String::new, |d| d.format("%Hh").to_string())
     };
-    if n < 120 {
-        return Ok(None);
+    let change = (bar.close / bar.open - 1.0) * 100.0;
+    let mut msg = format!(
+        "{name}: vela de 1 hora fora do normal ({} às {}, horário de Brasília): {} {}, tamanho {} vezes o normal de uma hora, volume {} vezes o normal.",
+        brt(bar.open_time_ms),
+        brt(bar.open_time_ms + HOUR_MS),
+        if spike.up { "subiu" } else { "caiu" },
+        format!("{:.1}%", change.abs()).replace('.', ","),
+        format!("{:.1}", spike.range_ratio).replace('.', ","),
+        format!("{:.1}", spike.volume_ratio).replace('.', ",")
+    );
+    if spike.range_ratio < ANOMALY_RATIO {
+        msg.push_str(" Só o volume está fora do normal; o tamanho da vela não, então o histórico de velas grandes não se aplica.");
+    } else if let Some(h) = history {
+        let f = follow_after_spikes(h, spike.up);
+        let n = f.total();
+        if n > 0 {
+            let pct = |k: usize| as_share(k) / as_share(n) * 100.0;
+            let range_pct =
+                format!("{:.1}%", (bar.high - bar.low) / bar.close * 100.0).replace('.', ",");
+            let decided = f.continued + f.reversed;
+            let verdict = if decided < MIN_RACES {
+                "Conclusão: poucos casos para dizer."
+            } else if f.z() >= RACE_Z {
+                "Conclusão: costuma continuar."
+            } else if f.z() <= -RACE_Z {
+                "Conclusão: costuma voltar."
+            } else {
+                "Conclusão: empate, igual cara ou coroa."
+            };
+            let _ = write!(
+                msg,
+                " Nas {n} vezes em que apareceu uma vela assim no histórico, nas {FOLLOW_HOURS} horas seguintes o preço andou mais um tamanho de vela (~{range_pct}) na mesma direção antes de devolver a vela inteira em {:.0}% das vezes, e devolveu primeiro em {:.0}%. {verdict}",
+                pct(f.continued),
+                pct(f.reversed)
+            );
+        }
     }
-    let atr = simple_atr(&daily, 14);
-    let Some(a) = atr[n - 1].filter(|a| *a > 0.0) else {
-        return Ok(None);
+    Some((format!("anomalia-{}", bar.open_time_ms), msg))
+}
+
+/// Alert when an hourly low in the last hours reached (or came within
+/// [`NEAR_LEVEL`] of) one of the report's buy levels, with that level's result.
+fn level_alerts(asset: &str, analysis: &Analysis, recent: &[Bar]) -> Vec<(String, String)> {
+    let Some(low) = recent.iter().map(|b| b.low).reduce(f64::min) else {
+        return Vec::new();
     };
+    let price = recent.last().map_or(low, |b| b.close);
+    let name = asset_name(asset);
+    analysis
+        .levels
+        .iter()
+        .filter(|(_, level, _)| low <= level * (1.0 + NEAR_LEVEL))
+        .map(|(label, level, v)| {
+            (
+                format!("nivel-{label}"),
+                format!(
+                    "{name} chegou perto {label} em {} (mínima das últimas horas {}, agora {}). No histórico, comprar ali: {}",
+                    fmt_pt(*level),
+                    fmt_pt(low),
+                    fmt_pt(price),
+                    verdict_pt(*v).trim_start_matches("Conclusão: ")
+                ),
+            )
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_lines)] // one pass per asset: levels, targets, message
+fn alert_for(daily: &[Candle], hourly: &[Bar], asset: &str) -> Option<(String, String)> {
+    let n = daily.len();
+    let price = hourly.last().map(|b| b.close)?;
+    if n < 120 {
+        return None;
+    }
+    let atr = simple_atr(daily, 14);
+    let a = atr[n - 1].filter(|a| *a > 0.0)?;
     let extremes = |days: usize| {
         let w = &daily[n - days..];
         (
@@ -2301,7 +2423,7 @@ async fn alert_for(
             fmt_price(high20),
             fmt_price(low20)
         );
-        return Ok(None);
+        return None;
     };
     let mut targets: Vec<(&str, f64)> = if up {
         let r = round_above(price);
@@ -2335,7 +2457,7 @@ async fn alert_for(
         }
     });
     targets.dedup_by(|x, y| (x.1 - y.1).abs() <= 1e-9 * y.1.abs());
-    let (_, cases) = odds_after_break(&daily, &atr, up, 7, 0.0).unwrap_or((0.0, 0));
+    let (_, cases) = odds_after_break(daily, &atr, up, 7, 0.0).unwrap_or((0.0, 0));
     let mut msg = format!(
         "{asset} rompeu a {name} ({}). Último fechamento de 1 hora: {}.\nPróximos pontos de liquidez {} e quantas vezes o preço chegou lá em até 7 dias depois de romper a {} de 20 dias ({cases} casos no histórico):",
         fmt_price(level),
@@ -2345,7 +2467,7 @@ async fn alert_for(
     );
     for (label, target) in targets.iter().take(4) {
         let distance = (target - price).abs() / a;
-        let (p, _) = odds_after_break(&daily, &atr, up, 7, distance).unwrap_or((0.0, 0));
+        let (p, _) = odds_after_break(daily, &atr, up, 7, distance).unwrap_or((0.0, 0));
         let _ = write!(
             msg,
             "\n  {label} {} ({:+.1}%): {:.0}%",
@@ -2359,7 +2481,7 @@ async fn alert_for(
             "\n  atenção: nos testes, romper a mínima de 20 dias não levou a queda extra na média",
         );
     }
-    Ok(Some((name.to_owned(), msg)))
+    Some((name.to_owned(), msg))
 }
 
 async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
@@ -2377,17 +2499,16 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut messages = Vec::new();
     let mut keys = String::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
-        let Some((name, msg)) = alert_for(data_dir, asset, now_ms).await? else {
-            continue;
-        };
-        let key = format!("{today},{asset},{name}");
-        if sent.contains(&key) {
-            println!("{asset}: {name} já avisado hoje");
-            continue;
+        for (name, msg) in alerts_for(data_dir, asset, now_ms).await? {
+            let key = format!("{today},{asset},{name}");
+            if sent.contains(&key) {
+                println!("{asset}: {name} já avisado hoje");
+                continue;
+            }
+            println!("{msg}");
+            messages.push(msg);
+            let _ = writeln!(keys, "{key}");
         }
-        println!("{msg}");
-        messages.push(msg);
-        let _ = writeln!(keys, "{key}");
     }
     if dry_run {
         println!("dry run: nothing saved, nothing sent");
@@ -2866,5 +2987,53 @@ mod tests {
             "05/11: comprou SOL a 110,00 (compra agora: o dia fechou acima da máxima de 20 dias). Alvo 114,00, stop 106,00, sai em no máximo 7 dias."
         );
         assert_eq!(money_pt(-12.5), "-$12,50");
+    }
+
+    fn hour_bar(i: usize, open: f64, high: f64, low: f64, close: f64, volume: f64) -> Bar {
+        Bar {
+            open_time_ms: 1_762_300_800_000 + i64::try_from(i).unwrap() * HOUR_MS,
+            open,
+            high,
+            low,
+            close,
+            volume,
+        }
+    }
+
+    #[test]
+    fn anomaly_alert_describes_a_big_hour_and_its_history() {
+        let mut hourly: Vec<Bar> = (0..720)
+            .map(|i| hour_bar(i, 100.0, 100.5, 99.5, 100.0, 10.0))
+            .collect();
+        hourly.push(hour_bar(720, 100.0, 100.2, 96.0, 96.5, 60.0));
+        let (key, msg) = anomaly_alert("SOLUSDT", &hourly, Some(&hourly)).unwrap();
+        println!("{msg}");
+        assert!(key.starts_with("anomalia-"));
+        assert!(msg.starts_with("SOL: vela de 1 hora fora do normal"));
+        assert!(msg.contains("caiu 3,5%"));
+        assert!(msg.contains("volume 6,0 vezes"));
+        // A normal last hour gives no alert.
+        hourly.push(hour_bar(721, 96.5, 97.0, 96.0, 96.5, 10.0));
+        assert!(anomaly_alert("SOLUSDT", &hourly, None).is_none());
+    }
+
+    #[test]
+    fn level_alert_fires_when_the_low_comes_near_a_level() {
+        let analysis = Analysis {
+            lines: Vec::new(),
+            signals: Vec::new(),
+            levels: vec![("do suporte do último ano".to_owned(), 83.74, Verdict::Tie)],
+        };
+        let near = [hour_bar(0, 85.0, 85.2, 84.1, 84.5, 1.0)];
+        let alerts = level_alerts("SOLUSDT", &analysis, &near);
+        assert_eq!(alerts.len(), 1);
+        println!("{}", alerts[0].1);
+        assert!(
+            alerts[0]
+                .1
+                .starts_with("SOL chegou perto do suporte do último ano em 83,74")
+        );
+        let far = [hour_bar(0, 90.0, 90.2, 89.0, 89.5, 1.0)];
+        assert!(level_alerts("SOLUSDT", &analysis, &far).is_empty());
     }
 }

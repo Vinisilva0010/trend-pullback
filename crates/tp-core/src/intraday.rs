@@ -11,6 +11,8 @@ pub struct Bar {
     pub high: f64,
     pub low: f64,
     pub close: f64,
+    /// Traded volume in the base asset (0 when unknown).
+    pub volume: f64,
 }
 
 /// Groups hourly bars into bars of `hours` hours aligned to UTC multiples of
@@ -29,6 +31,7 @@ pub fn aggregate(bars: &[Bar], hours: i64) -> Vec<Bar> {
                 high: group.iter().map(|b| b.high).fold(f64::MIN, f64::max),
                 low: group.iter().map(|b| b.low).fold(f64::MAX, f64::min),
                 close: group[group.len() - 1].close,
+                volume: group.iter().map(|b| b.volume).sum(),
             });
         }
         group.clear();
@@ -58,6 +61,7 @@ mod tests {
             high: price + 1.0,
             low: price - 1.0,
             close: price,
+            volume: 1.0,
         }
     }
 

@@ -138,6 +138,7 @@ pub fn parse_hourly_json(text: &str, now_ms: i64) -> Result<Vec<Bar>, RestError>
             high: number(2, "high")?,
             low: number(3, "low")?,
             close: number(4, "close")?,
+            volume: number(5, "volume")?,
         };
         if !(bar.low > 0.0
             && bar.low <= bar.open.min(bar.close)

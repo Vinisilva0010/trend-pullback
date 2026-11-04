@@ -1,5 +1,6 @@
 //! Indicators and trading rules shared by the backtest and the live scanner.
 
+pub mod anomaly;
 pub mod indicators;
 pub mod intraday;
 pub mod liquidity;

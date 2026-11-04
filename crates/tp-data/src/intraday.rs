@@ -28,7 +28,7 @@ pub fn parse_bars_csv(text: &str) -> Result<Vec<Bar>, BarError> {
             reason,
         };
         let fields: Vec<&str> = row.split(',').collect();
-        let &[time, open, high, low, close, _volume] = fields.as_slice() else {
+        let &[time, open, high, low, close, volume] = fields.as_slice() else {
             return Err(bad(format!("expected 6 fields, found {}", fields.len())));
         };
         let time: i64 = time
@@ -46,6 +46,7 @@ pub fn parse_bars_csv(text: &str) -> Result<Vec<Bar>, BarError> {
             high: number(high, "high")?,
             low: number(low, "low")?,
             close: number(close, "close")?,
+            volume: number(volume, "volume")?,
         };
         if !(bar.low > 0.0
             && bar.low <= bar.open.min(bar.close)
