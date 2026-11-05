@@ -20,6 +20,7 @@ use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
 use tp_core::anomaly::{ANOMALY_RATIO, FOLLOW_HOURS, Spike, follow_after_spikes, spike_at};
+use tp_core::crowding::{HIGH_RANK, LOW_RANK, funding_ranks};
 use tp_core::indicators::{close_values, segments};
 use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
@@ -32,7 +33,9 @@ use tp_core::support::{horizontal_levels, open_gap_below, support_below};
 use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
-use tp_data::binance::rest::{fetch_daily_since, fetch_recent_hourly};
+use tp_data::binance::rest::{
+    fetch_daily_since, fetch_funding_since, fetch_open_interest, fetch_recent_hourly,
+};
 use tp_data::funding::parse_funding_csv;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
 use tp_data::intraday::parse_bars_csv;
@@ -119,6 +122,8 @@ enum Command {
     },
     /// Run the 36 pre-registered variations on the development period (until 2024-10-31).
     Grid,
+    /// Phase 7 test: buying at the close of days with extreme funding, per period.
+    FundingStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -263,6 +268,7 @@ async fn main() -> ExitCode {
             no_partial,
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
+        Command::FundingStudy => cmd_funding_study(&cli.data_dir),
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
@@ -687,8 +693,16 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
             ));
         }
         let closes = close_values(&candles);
-        let analysis = daily_report(asset, &candles, &closes);
+        let funding = load_funding_live(data_dir, asset, now_ms).await;
+        let analysis = daily_report_with(asset, &candles, &closes, funding.as_ref());
         lines.extend(analysis.lines.iter().cloned());
+        if let Some(oi) = open_interest_line(asset).await {
+            // Right after the trend line.
+            let at = lines
+                .len()
+                .min(lines.len().saturating_sub(analysis.lines.len()) + 2);
+            lines.insert(at, oi);
+        }
         sections.push(lines.join("\n"));
         // The tested model weight is still tracked for the record and the
         // paper account; it is no longer part of the message.
@@ -1898,8 +1912,17 @@ fn gap_lines(
 
 /// Report lines for the last candle and the entries with an edge, as
 /// signals for the paper account.
-#[allow(clippy::too_many_lines)] // one report: header, entry blocks, action, signals
 fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
+    daily_report_with(asset, candles, closes, None)
+}
+
+#[allow(clippy::too_many_lines)] // one report: header, entry blocks, action, signals
+fn daily_report_with(
+    asset: &str,
+    candles: &[Candle],
+    closes: &[f64],
+    funding: Option<&BTreeMap<NaiveDate, f64>>,
+) -> Analysis {
     let mut out = Vec::new();
     let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
         return Analysis::default();
@@ -1971,20 +1994,8 @@ fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
         .iter()
         .filter(|(race, _, _)| verdict(*race) == Verdict::Up)
         .collect();
-    let action = if winners.is_empty() {
-        "O que fazer: esperar. Nenhum lugar de entrada tem vantagem agora.".to_owned()
-    } else {
-        format!(
-            "O que fazer: só estes lugares subiram mais do que caíram no histórico: {}.",
-            winners
-                .iter()
-                .map(|(_, label, _)| label.as_str())
-                .collect::<Vec<_>>()
-                .join("; ")
-        )
-    };
-    out.push(action);
-    let signals = winners
+    let mut labels: Vec<String> = winners.iter().map(|(_, label, _)| label.clone()).collect();
+    let mut signals: Vec<Signal> = winners
         .iter()
         .filter(|(_, _, order)| *order != Order::AtClose || broke_today)
         .map(|(race, label, order)| Signal {
@@ -1995,6 +2006,32 @@ fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
             z: race.map_or(0.0, |r| r.z()),
         })
         .collect();
+    if let Some((lines, extreme)) = funding.and_then(|f| funding_lines(candles, &atr, f, last)) {
+        out.extend(lines);
+        if let Some((Verdict::Up, z, high)) = extreme {
+            let label = format!(
+                "compra agora: funding {} extremo",
+                if high { "alto" } else { "baixo" }
+            );
+            labels.push(label.clone());
+            signals.push(Signal {
+                asset: asset.to_owned(),
+                label,
+                order: Order::AtClose,
+                atr: a,
+                z,
+            });
+        }
+    }
+    let action = if labels.is_empty() {
+        "O que fazer: esperar. Nenhum lugar de entrada tem vantagem agora.".to_owned()
+    } else {
+        format!(
+            "O que fazer: só estes lugares subiram mais do que caíram no histórico: {}.",
+            labels.join("; ")
+        )
+    };
+    out.push(action);
     let levels = choices
         .iter()
         .filter_map(|(race, label, order)| match order {
@@ -2006,7 +2043,214 @@ fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
         lines: out,
         signals,
         levels,
+        funding: funding.cloned(),
     }
+}
+
+/// Decided races the development period needs before funding can conclude.
+const FUNDING_MIN_DEV: usize = 30;
+/// Decided races the final period needs before funding can conclude.
+const FUNDING_MIN_FINAL: usize = 10;
+
+/// Races of buying at the close of days with extreme funding (high or low),
+/// split into the development period (through the held-out start) and the
+/// final period after it.
+fn funding_races(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    ranks: &[Option<f64>],
+    high: bool,
+    split: NaiveDate,
+) -> (Option<Race>, Option<Race>) {
+    let entries: Vec<Option<Entry>> = candles
+        .iter()
+        .zip(ranks)
+        .map(|(c, r)| {
+            r.filter(|r| {
+                if high {
+                    *r >= HIGH_RANK
+                } else {
+                    *r <= LOW_RANK
+                }
+            })
+            .map(|_| Entry::AtClose(c.close()))
+        })
+        .collect();
+    let dev: Vec<bool> = candles.iter().map(|c| c.date() <= split).collect();
+    let fin: Vec<bool> = dev.iter().map(|d| !d).collect();
+    (
+        race_odds(candles, atr, &entries, &dev, REPORT_HORIZON, 1.0),
+        race_odds(candles, atr, &entries, &fin, REPORT_HORIZON, 1.0),
+    )
+}
+
+/// Funding conclusion: the development period must show the edge and the
+/// final period must point the same way.
+fn funding_verdict(dev: Option<Race>, fin: Option<Race>) -> Verdict {
+    let (Some(d), Some(f)) = (dev, fin) else {
+        return Verdict::FewCases;
+    };
+    if d.decided() < FUNDING_MIN_DEV || f.decided() < FUNDING_MIN_FINAL {
+        return Verdict::FewCases;
+    }
+    if d.z() >= RACE_Z && f.z() > 0.0 {
+        Verdict::Up
+    } else if d.z() <= -RACE_Z && f.z() < 0.0 {
+        Verdict::Down
+    } else {
+        Verdict::Tie
+    }
+}
+
+fn race_shares(r: Option<Race>) -> String {
+    r.map_or_else(
+        || "nenhum caso".to_owned(),
+        |r| {
+            let n = as_share(r.total());
+            format!(
+                "das {} vezes, subiu primeiro em {:.0}% e caiu primeiro em {:.0}%",
+                r.total(),
+                as_share(r.up_first) / n * 100.0,
+                as_share(r.down_first) / n * 100.0
+            )
+        },
+    )
+}
+
+/// Verdict, development z and side (true = high) of an extreme funding day.
+type FundingExtreme = (Verdict, f64, bool);
+
+/// Funding lines for the last candle, and the verdict and z when today's
+/// funding is extreme.
+fn funding_lines(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    funding: &BTreeMap<NaiveDate, f64>,
+    last: usize,
+) -> Option<(Vec<String>, Option<FundingExtreme>)> {
+    let dates: Vec<NaiveDate> = candles.iter().map(Candle::date).collect();
+    let ranks = funding_ranks(&dates, funding);
+    let rank = ranks[last]?;
+    let value = *funding.get(&dates[last])?;
+    let mut lines = vec![format!(
+        "Funding dos futuros no dia: {} (positivo = quem está comprado paga a quem está vendido). Mais alto que {:.0}% dos dias do último ano.",
+        format!("{:+.3}%", value * 100.0).replace('.', ","),
+        rank * 100.0
+    )];
+    let high = rank >= HIGH_RANK;
+    if !high && rank > LOW_RANK {
+        return Some((lines, None));
+    }
+    let split = held_out_start().ok()?;
+    let (dev, fin) = funding_races(candles, atr, &ranks, high, split);
+    let v = funding_verdict(dev, fin);
+    lines.push(format!(
+        "  Funding {} assim (entre os 10% {} do ano), comprando no fechamento: de 2019 a out/2024, {}; de nov/2024 até hoje, {}. {}",
+        if high { "muito alto" } else { "muito baixo" },
+        if high { "maiores" } else { "menores" },
+        race_shares(dev),
+        race_shares(fin),
+        verdict_pt(v)
+    ));
+    Some((lines, Some((v, dev.map_or(0.0, |r| r.z()), high))))
+}
+
+/// Daily funding sums from the saved history, with the most recent days
+/// replaced by complete sums from the live API. Never fails: without a file
+/// or a connection it returns what it has.
+async fn load_funding_live(
+    data_dir: &Path,
+    asset: &str,
+    now_ms: i64,
+) -> Option<BTreeMap<NaiveDate, f64>> {
+    let mut daily = load_funding(data_dir, asset).unwrap_or_default();
+    let start_day = daily
+        .keys()
+        .next_back()
+        .and_then(NaiveDate::pred_opt)
+        .unwrap_or_else(|| {
+            DateTime::from_timestamp_millis(now_ms - 330 * 86_400_000)
+                .map_or(NaiveDate::MIN, |d| d.date_naive())
+        });
+    let start_ms = start_day
+        .and_hms_opt(0, 0, 0)
+        .map_or(0, |t| t.and_utc().timestamp_millis());
+    match fetch_funding_since(asset, start_ms).await {
+        Ok(rows) => {
+            let mut live: BTreeMap<NaiveDate, f64> = BTreeMap::new();
+            for (ms, rate) in rows {
+                if let Some(d) = DateTime::from_timestamp_millis(ms) {
+                    *live.entry(d.date_naive()).or_insert(0.0) += rate;
+                }
+            }
+            daily.extend(live);
+        }
+        Err(e) => eprintln!("warning: live funding for {asset} unavailable: {e}"),
+    }
+    (!daily.is_empty()).then_some(daily)
+}
+
+/// Open interest change over the last 24 hours, as a Portuguese line.
+async fn open_interest_line(asset: &str) -> Option<String> {
+    let rows = fetch_open_interest(asset, 25).await.ok()?;
+    let (_, first) = *rows.first()?;
+    let (_, last) = *rows.last()?;
+    if rows.len() < 20 || first <= 0.0 {
+        return None;
+    }
+    Some(format!(
+        "Posições abertas nos futuros: {} em 24h (subindo = mais gente entrando alavancada; caindo = posições sendo fechadas ou liquidadas).",
+        pct_pt((last / first - 1.0) * 100.0)
+    ))
+}
+
+/// Open interest change in the last hour, for the abnormal-candle alert.
+async fn open_interest_hour(asset: &str) -> Option<String> {
+    let rows = fetch_open_interest(asset, 2).await.ok()?;
+    let (_, before) = *rows.first()?;
+    let (_, now) = *rows.last()?;
+    if rows.len() < 2 || before <= 0.0 {
+        return None;
+    }
+    let change = (now / before - 1.0) * 100.0;
+    let meaning = if change <= -2.0 {
+        "sinal de liquidação em massa ou de muita gente fechando posição"
+    } else if change >= 2.0 {
+        "muita posição alavancada nova entrando"
+    } else {
+        "sem mudança grande"
+    };
+    Some(format!(
+        " Posições abertas nos futuros na última hora: {} ({meaning}).",
+        pct_pt(change)
+    ))
+}
+
+fn cmd_funding_study(data_dir: &Path) -> CliResult {
+    let split = held_out_start()?;
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        let candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
+        let funding = load_funding(data_dir, asset)?;
+        let atr = simple_atr(&candles, 14);
+        let dates: Vec<NaiveDate> = candles.iter().map(Candle::date).collect();
+        let ranks = funding_ranks(&dates, &funding);
+        println!("{}:", asset_name(asset));
+        for high in [true, false] {
+            let (dev, fin) = funding_races(&candles, &atr, &ranks, high, split);
+            println!(
+                "  Funding {}, comprando no fechamento: de 2019 a out/2024, {}; de nov/2024 até o fim dos dados, {}. {}",
+                if high {
+                    "muito alto (10% maiores do ano)"
+                } else {
+                    "muito baixo (10% menores do ano)"
+                },
+                race_shares(dev),
+                race_shares(fin),
+                verdict_pt(funding_verdict(dev, fin))
+            );
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Days the paper account replays at most when the machine missed some runs.
@@ -2071,7 +2315,10 @@ fn run_paper(
                 signals.extend(analysis.signals.iter().cloned());
             } else {
                 let past = &candles[..=i];
-                signals.extend(daily_report(asset, past, &close_values(past)).signals);
+                signals.extend(
+                    daily_report_with(asset, past, &close_values(past), analysis.funding.as_ref())
+                        .signals,
+                );
             }
         }
         for e in paper.step(day, &bars, &signals) {
@@ -2257,6 +2504,8 @@ struct Analysis {
     signals: Vec<Signal>,
     /// Buy levels below the price: name, price and historical result.
     levels: Vec<(String, f64, Verdict)>,
+    /// Daily funding used for the report, kept for replaying past days.
+    funding: Option<BTreeMap<NaiveDate, f64>>,
 }
 
 fn fmt_price(v: f64) -> String {
@@ -2297,7 +2546,12 @@ async fn alerts_for(
     let history = std::fs::read_to_string(&history_path)
         .ok()
         .and_then(|t| parse_bars_csv(&t).ok());
-    out.extend(anomaly_alert(asset, &hourly, history.as_deref()));
+    if let Some((key, mut msg)) = anomaly_alert(asset, &hourly, history.as_deref()) {
+        if let Some(oi) = open_interest_hour(asset).await {
+            msg.push_str(&oi);
+        }
+        out.push((key, msg));
+    }
     let closes = close_values(&daily);
     let analysis = daily_report(asset, &daily, &closes);
     out.extend(level_alerts(asset, &analysis, cross));
@@ -3023,6 +3277,7 @@ mod tests {
             lines: Vec::new(),
             signals: Vec::new(),
             levels: vec![("do suporte do último ano".to_owned(), 83.74, Verdict::Tie)],
+            funding: None,
         };
         let near = [hour_bar(0, 85.0, 85.2, 84.1, 84.5, 1.0)];
         let alerts = level_alerts("SOLUSDT", &analysis, &near);
@@ -3035,5 +3290,47 @@ mod tests {
         );
         let far = [hour_bar(0, 90.0, 90.2, 89.0, 89.5, 1.0)];
         assert!(level_alerts("SOLUSDT", &analysis, &far).is_empty());
+    }
+
+    #[test]
+    fn funding_verdict_needs_both_periods() {
+        let race = |up: usize, down: usize| {
+            Some(Race {
+                up_first: up,
+                down_first: down,
+                neither: 0,
+            })
+        };
+        assert_eq!(funding_verdict(race(40, 15), race(8, 4)), Verdict::Up);
+        assert_eq!(funding_verdict(race(40, 15), race(4, 8)), Verdict::Tie);
+        assert_eq!(funding_verdict(race(15, 40), race(3, 9)), Verdict::Down);
+        assert_eq!(funding_verdict(race(40, 15), race(2, 1)), Verdict::FewCases);
+        assert_eq!(funding_verdict(None, race(8, 4)), Verdict::FewCases);
+    }
+
+    #[test]
+    fn funding_lines_rank_today_and_judge_extremes() {
+        let candles = walk(900);
+        let atr = simple_atr(&candles, 14);
+        let last = candles.len() - 1;
+        // Funding grows every day, so the last day is the highest of its year.
+        let funding: BTreeMap<NaiveDate, f64> = candles
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.date(), f64::from(u32::try_from(i).unwrap()) * 1e-6))
+            .collect();
+        let (lines, extreme) = funding_lines(&candles, &atr, &funding, last).unwrap();
+        println!("{}", lines.join("\n"));
+        assert!(lines[0].starts_with("Funding dos futuros no dia: +0,090%"));
+        assert!(
+            lines[0].contains("Mais alto que 100% dos dias"),
+            "{}",
+            lines[0]
+        );
+        assert!(extreme.is_some_and(|(_, _, high)| high));
+        let flat: BTreeMap<NaiveDate, f64> = candles.iter().map(|c| (c.date(), 0.0001)).collect();
+        let (lines, extreme) = funding_lines(&candles, &atr, &flat, last).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(extreme.is_none());
     }
 }

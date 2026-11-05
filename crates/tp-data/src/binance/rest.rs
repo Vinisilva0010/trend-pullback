@@ -176,6 +176,113 @@ pub async fn fetch_recent_hourly(
     parse_hourly_json(&text, now_ms)
 }
 
+/// Public USDT-M futures endpoint (no account or key).
+pub const FAPI_URL: &str = "https://fapi.binance.com";
+
+/// Parses a `/fapi/v1/fundingRate` response into (funding time ms, rate).
+///
+/// # Errors
+///
+/// Returns [`RestError`] on malformed JSON, a missing field, an implausible
+/// rate, or times out of order.
+pub fn parse_funding_json(text: &str) -> Result<Vec<(i64, f64)>, RestError> {
+    let rows: Vec<Value> = serde_json::from_str(text)?;
+    let mut out: Vec<(i64, f64)> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let bad = |reason: &str| RestError::Row {
+            row: index,
+            reason: reason.to_owned(),
+        };
+        let time = row
+            .get("fundingTime")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| bad("missing fundingTime"))?;
+        let rate = row
+            .get("fundingRate")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|r| r.is_finite() && r.abs() < 0.05)
+            .ok_or_else(|| bad("invalid fundingRate"))?;
+        if out.last().is_some_and(|(t, _)| *t >= time) {
+            return Err(bad("times are not increasing"));
+        }
+        out.push((time, rate));
+    }
+    Ok(out)
+}
+
+/// Funding payments of a USDT-M perpetual from `start_ms` on (at most 1000).
+///
+/// # Errors
+///
+/// Returns [`RestError`] on an invalid symbol, a failed request or a malformed response.
+pub async fn fetch_funding_since(
+    symbol: &str,
+    start_ms: i64,
+) -> Result<Vec<(i64, f64)>, RestError> {
+    if !is_valid_symbol(symbol) {
+        return Err(RestError::Symbol(symbol.to_owned()));
+    }
+    let url =
+        format!("{FAPI_URL}/fapi/v1/fundingRate?symbol={symbol}&startTime={start_ms}&limit=1000");
+    let http = Http::new(5)?;
+    let body = http.get_bytes(&url).await.map_err(DownloadError::from)?;
+    let text = String::from_utf8(body).map_err(|_| DownloadError::Utf8)?;
+    parse_funding_json(&text)
+}
+
+/// Parses a `/futures/data/openInterestHist` response into (time ms, open
+/// interest in the base asset).
+///
+/// # Errors
+///
+/// Returns [`RestError`] on malformed JSON, a missing field, a negative value,
+/// or times out of order.
+pub fn parse_open_interest_json(text: &str) -> Result<Vec<(i64, f64)>, RestError> {
+    let rows: Vec<Value> = serde_json::from_str(text)?;
+    let mut out: Vec<(i64, f64)> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let bad = |reason: &str| RestError::Row {
+            row: index,
+            reason: reason.to_owned(),
+        };
+        let time = row
+            .get("timestamp")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| bad("missing timestamp"))?;
+        let oi = row
+            .get("sumOpenInterest")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .ok_or_else(|| bad("invalid sumOpenInterest"))?;
+        if out.last().is_some_and(|(t, _)| *t >= time) {
+            return Err(bad("times are not increasing"));
+        }
+        out.push((time, oi));
+    }
+    Ok(out)
+}
+
+/// Hourly open interest of a USDT-M perpetual for the last `hours` hours
+/// (the API keeps about 30 days).
+///
+/// # Errors
+///
+/// Returns [`RestError`] on an invalid symbol, a failed request or a malformed response.
+pub async fn fetch_open_interest(symbol: &str, hours: u32) -> Result<Vec<(i64, f64)>, RestError> {
+    if !is_valid_symbol(symbol) {
+        return Err(RestError::Symbol(symbol.to_owned()));
+    }
+    let limit = hours.clamp(1, 500);
+    let url =
+        format!("{FAPI_URL}/futures/data/openInterestHist?symbol={symbol}&period=1h&limit={limit}");
+    let http = Http::new(5)?;
+    let body = http.get_bytes(&url).await.map_err(DownloadError::from)?;
+    let text = String::from_utf8(body).map_err(|_| DownloadError::Utf8)?;
+    parse_open_interest_json(&text)
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -220,5 +327,28 @@ mod tests {
         assert!(parse_klines_json(&format!("[{DAY2},{DAY1}]"), i64::MAX).is_err());
         let not_midnight = DAY1.replacen("1761955200000", "1761955200001", 1);
         assert!(parse_klines_json(&format!("[{not_midnight}]"), i64::MAX).is_err());
+    }
+
+    #[test]
+    fn parses_funding_rows() {
+        let text = r#"[{"symbol":"BTCUSDT","fundingTime":1762300800000,"fundingRate":"0.00010000","markPrice":"80000"},{"symbol":"BTCUSDT","fundingTime":1762329600000,"fundingRate":"-0.00002500","markPrice":"80100"}]"#;
+        let rows = parse_funding_json(text).unwrap();
+        assert_eq!(
+            rows,
+            vec![(1_762_300_800_000, 0.0001), (1_762_329_600_000, -0.000_025)]
+        );
+        assert!(parse_funding_json(r#"[{"fundingTime":1,"fundingRate":"0.9"}]"#).is_err());
+        assert!(parse_funding_json(r#"[{"fundingTime":2,"fundingRate":"0.0001"},{"fundingTime":1,"fundingRate":"0.0001"}]"#).is_err());
+    }
+
+    #[test]
+    fn parses_open_interest_rows() {
+        let text = r#"[{"symbol":"SOLUSDT","sumOpenInterest":"1000.5","sumOpenInterestValue":"95000","timestamp":1762300800000},{"symbol":"SOLUSDT","sumOpenInterest":"990","sumOpenInterestValue":"94000","timestamp":1762304400000}]"#;
+        let rows = parse_open_interest_json(text).unwrap();
+        assert_eq!(
+            rows,
+            vec![(1_762_300_800_000, 1000.5), (1_762_304_400_000, 990.0)]
+        );
+        assert!(parse_open_interest_json(r#"[{"timestamp":1}]"#).is_err());
     }
 }
