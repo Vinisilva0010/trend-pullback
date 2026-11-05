@@ -2339,6 +2339,7 @@ async fn send_sections(token: &str, chat: &str, sections: &[String]) -> Result<(
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             send_telegram_html(token, chat, &html).await?;
         }
+        println!("telegram: section {} of {} sent", i + 1, sections.len());
     }
     Ok(())
 }

@@ -6,5 +6,7 @@ cd "$(dirname "$0")/.."
 mkdir -p data/live
 {
   echo "=== $(date -Is) ==="
-  ./target/release/tp daily --notify --capital 2200 "$@"
+  code=0
+  ./target/release/tp daily --notify --capital 2200 "$@" || code=$?
+  echo "=== end $(date -Is), exit code $code ==="
 } >> data/live/run.log 2>&1
