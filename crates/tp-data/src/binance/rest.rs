@@ -283,6 +283,74 @@ pub async fn fetch_open_interest(symbol: &str, hours: u32) -> Result<Vec<(i64, f
     parse_open_interest_json(&text)
 }
 
+/// Parses a `/futures/data/globalLongShortAccountRatio` or
+/// `/futures/data/topLongShortPositionRatio` response into (time ms, long
+/// share), where the long share is between 0 and 1.
+///
+/// # Errors
+///
+/// Returns [`RestError`] on malformed JSON, a missing field, a share outside
+/// 0..=1, or times out of order.
+pub fn parse_long_short_json(text: &str) -> Result<Vec<(i64, f64)>, RestError> {
+    let rows: Vec<Value> = serde_json::from_str(text)?;
+    let mut out: Vec<(i64, f64)> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let bad = |reason: &str| RestError::Row {
+            row: index,
+            reason: reason.to_owned(),
+        };
+        let time = row
+            .get("timestamp")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| bad("missing timestamp"))?;
+        let long = row
+            .get("longAccount")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
+            .ok_or_else(|| bad("invalid longAccount"))?;
+        if out.last().is_some_and(|(t, _)| *t >= time) {
+            return Err(bad("times are not increasing"));
+        }
+        out.push((time, long));
+    }
+    Ok(out)
+}
+
+/// Which long/short statistic to read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LongShort {
+    /// Share of all accounts with a net long position.
+    Accounts,
+    /// Share of the position value of the top 20% traders that is long.
+    TopPositions,
+}
+
+/// Hourly long share of a USDT-M perpetual for the last `hours` hours.
+///
+/// # Errors
+///
+/// Returns [`RestError`] on an invalid symbol, a failed request or a malformed response.
+pub async fn fetch_long_short(
+    symbol: &str,
+    kind: LongShort,
+    hours: u32,
+) -> Result<Vec<(i64, f64)>, RestError> {
+    if !is_valid_symbol(symbol) {
+        return Err(RestError::Symbol(symbol.to_owned()));
+    }
+    let path = match kind {
+        LongShort::Accounts => "globalLongShortAccountRatio",
+        LongShort::TopPositions => "topLongShortPositionRatio",
+    };
+    let limit = hours.clamp(1, 500);
+    let url = format!("{FAPI_URL}/futures/data/{path}?symbol={symbol}&period=1h&limit={limit}");
+    let http = Http::new(5)?;
+    let body = http.get_bytes(&url).await.map_err(DownloadError::from)?;
+    let text = String::from_utf8(body).map_err(|_| DownloadError::Utf8)?;
+    parse_long_short_json(&text)
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -350,5 +418,15 @@ mod tests {
             vec![(1_762_300_800_000, 1000.5), (1_762_304_400_000, 990.0)]
         );
         assert!(parse_open_interest_json(r#"[{"timestamp":1}]"#).is_err());
+    }
+
+    #[test]
+    fn parses_long_short_rows() {
+        let text = r#"[{"symbol":"SOLUSDT","longShortRatio":"2.0","longAccount":"0.6667","shortAccount":"0.3333","timestamp":1762300800000}]"#;
+        assert_eq!(
+            parse_long_short_json(text).unwrap(),
+            vec![(1_762_300_800_000, 0.6667)]
+        );
+        assert!(parse_long_short_json(r#"[{"longAccount":"1.5","timestamp":1}]"#).is_err());
     }
 }

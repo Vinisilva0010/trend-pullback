@@ -44,6 +44,28 @@ pub fn is_valid_chat_id(chat_id: &str) -> bool {
 /// Returns [`NotifyError`] for a malformed token or chat id, a network
 /// failure, or a non-success answer from Telegram.
 pub async fn send_telegram(token: &str, chat_id: &str, text: &str) -> Result<(), NotifyError> {
+    send(token, chat_id, text, false).await
+}
+
+/// Sends a message formatted with Telegram's HTML mode (`<b>` for bold).
+/// The caller must escape `&`, `<` and `>` in the text with [`html_escape`].
+///
+/// # Errors
+///
+/// Same as [`send_telegram`].
+pub async fn send_telegram_html(token: &str, chat_id: &str, text: &str) -> Result<(), NotifyError> {
+    send(token, chat_id, text, true).await
+}
+
+/// Escapes text for Telegram's HTML mode.
+#[must_use]
+pub fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+async fn send(token: &str, chat_id: &str, text: &str, html: bool) -> Result<(), NotifyError> {
     if !is_valid_token(token) {
         return Err(NotifyError::Token);
     }
@@ -54,7 +76,12 @@ pub async fn send_telegram(token: &str, chat_id: &str, text: &str) -> Result<(),
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| NotifyError::Network(e.without_url()))?;
-    let body = serde_json::json!({ "chat_id": chat_id, "text": text }).to_string();
+    let body = if html {
+        serde_json::json!({ "chat_id": chat_id, "text": text, "parse_mode": "HTML" })
+    } else {
+        serde_json::json!({ "chat_id": chat_id, "text": text })
+    }
+    .to_string();
     let response = client
         .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -85,5 +112,10 @@ mod tests {
         assert!(is_valid_chat_id("-100123"));
         assert!(!is_valid_chat_id("12a"));
         assert!(!is_valid_chat_id(""));
+    }
+
+    #[test]
+    fn html_escape_covers_markup_characters() {
+        assert_eq!(html_escape("a < b & c > d"), "a &lt; b &amp; c &gt; d");
     }
 }

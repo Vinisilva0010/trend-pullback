@@ -35,7 +35,8 @@ use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
 use tp_data::binance::rest::{
-    fetch_daily_since, fetch_funding_since, fetch_open_interest, fetch_recent_hourly,
+    LongShort, fetch_daily_since, fetch_funding_since, fetch_long_short, fetch_open_interest,
+    fetch_recent_hourly,
 };
 use tp_data::funding::parse_funding_csv;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
@@ -43,7 +44,7 @@ use tp_data::intraday::parse_bars_csv;
 use tp_data::live::{State, extend_series, parse_env, parse_state, state_csv};
 use tp_data::month::YearMonth;
 use tp_data::news::{NewsItem, fetch_feed};
-use tp_data::notify::send_telegram;
+use tp_data::notify::{html_escape, send_telegram, send_telegram_html};
 use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
@@ -698,7 +699,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         let funding = load_funding_live(data_dir, asset, now_ms).await;
         let analysis = daily_report_with(asset, &candles, &closes, funding.as_ref());
         lines.extend(analysis.lines.iter().cloned());
-        if let Some(oi) = open_interest_line(asset).await {
+        if let Some(oi) = positioning_line(asset).await {
             // Right after the trend line.
             let at = lines
                 .len()
@@ -749,14 +750,9 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
             return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
         };
         // One message per asset keeps each under Telegram's 4096-character limit.
-        for (i, section) in lines.iter().enumerate() {
-            let text = if i == 0 {
-                format!("{header}\n\n{section}")
-            } else {
-                section.clone()
-            };
-            send_telegram(token, chat, &text).await?;
-        }
+        let mut messages = lines.clone();
+        messages.insert(0, header.clone());
+        send_sections(token, chat, &messages).await?;
         println!("telegram: sent");
     }
     Ok(ExitCode::SUCCESS)
@@ -1516,31 +1512,31 @@ fn verdict(race: Option<Race>) -> Verdict {
 
 fn verdict_pt(v: Verdict) -> &'static str {
     match v {
-        Verdict::Up => "Conclusão: sobe mais do que cai.",
-        Verdict::Down => "Conclusão: cai mais do que sobe. Não vale comprar ali.",
-        Verdict::Tie => "Conclusão: empate, igual cara ou coroa. Não tem vantagem.",
-        Verdict::FewCases => "Conclusão: poucos casos no histórico para dizer.",
+        Verdict::Up => "Resultado: GANHA MAIS DO QUE PERDE. Vale o plano.",
+        Verdict::Down => "Resultado: PERDE MAIS DO QUE GANHA. Não vale.",
+        Verdict::Tie => "Resultado: EMPATE, igual cara ou coroa. Não tem vantagem.",
+        Verdict::FewCases => "Resultado: POUCOS CASOS no histórico para dizer.",
     }
 }
 
-/// Sentence for a race: how often the price rose one daily move before
-/// falling one, and the other way round.
+/// Plan lines for a race: target and stop one daily move from the entry,
+/// how often each came first in the past, and the result.
 fn race_sentence(what: &str, race: Option<Race>, step: f64, entry: f64) -> String {
-    let Some(r) = race else {
-        return format!("  Não há no histórico nenhuma vez em que {what}.");
-    };
-    let total = as_share(r.total());
-    let move_text = format!(
-        "{} ({})",
-        fmt_pt(step),
-        format!("{:.1}%", step / entry * 100.0).replace('.', ",")
+    let pct = format!("{:.1}%", step / entry * 100.0).replace('.', ",");
+    let plan = format!(
+        "  Alvo {} (+{pct}) | Stop {} (-{pct}) | Prazo {REPORT_HORIZON} dias",
+        fmt_pt(entry + step),
+        fmt_pt(entry - step)
     );
+    let Some(r) = race else {
+        return format!("{plan}\n  Não há no histórico nenhuma vez em que {what}.");
+    };
     format!(
-        "  Das {} vezes em que {what}, o preço subiu {move_text} antes de cair {move_text} em {:.0}% das vezes, e caiu primeiro em {:.0}% (nas outras {:.0}% não andou isso em {REPORT_HORIZON} dias). {}",
+        "{plan}\n  No passado ({} vezes assim): alvo primeiro {}, stop primeiro {}, nenhum dos dois {}.\n  {}",
         r.total(),
-        as_share(r.up_first) / total * 100.0,
-        as_share(r.down_first) / total * 100.0,
-        as_share(r.neither) / total * 100.0,
+        r.up_first,
+        r.down_first,
+        r.neither,
         verdict_pt(verdict(race))
     )
 }
@@ -1599,13 +1595,14 @@ fn support_lines(
         .collect();
     let race = race_odds(candles, atr, &entries, &mask, REPORT_HORIZON, 1.0);
     let lines = vec![
+        String::new(),
         format!(
-            "Comprar embaixo, com ordem limite em {} (mínima de 20 dias, {} do preço):",
+            "Plano: ordem limite em {} (mínima de 20 dias, {} do preço)",
             fmt_pt(low20),
             pct_pt((low20 / close - 1.0) * 100.0)
         ),
         format!(
-            "  Chance de o preço chegar lá em até {REPORT_HORIZON} dias: {:.0}%.",
+            "  Chance de chegar lá: {:.0}% em {REPORT_HORIZON} dias",
             touch * 100.0
         ),
         race_sentence(
@@ -1671,13 +1668,14 @@ fn breakout_lines(
         "em qualquer tendência (poucos casos saindo de uma tendência igual)".clone_into(&mut trend);
     }
     let lines = vec![
+        String::new(),
         format!(
-            "Comprar no rompimento, se um dia fechar acima de {} (máxima de 20 dias, {} do preço):",
+            "Plano: comprar se um dia fechar acima de {} (máxima de 20 dias, {} do preço)",
             fmt_pt(high20),
             pct_pt((high20 / close - 1.0) * 100.0)
         ),
         format!(
-            "  Chance de o preço chegar lá em até {REPORT_HORIZON} dias: {:.0}%.",
+            "  Chance de chegar lá: {:.0}% em {REPORT_HORIZON} dias",
             touch * 100.0
         ),
         race_sentence(
@@ -1802,6 +1800,19 @@ fn race_in_trend(
     (all, label.to_owned())
 }
 
+/// Plans whose price was reached within 30 days less often than this are not shown.
+const MIN_SHOWN_REACH: f64 = 0.10;
+
+/// Chance of falling to a level within [`FAR_HORIZON`] days.
+fn reach_chance(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    trend_days: &[bool],
+    distance_atr: f64,
+) -> f64 {
+    touch_odds(candles, atr, trend_days, FAR_HORIZON, distance_atr, false).map_or(0.0, |(p, _)| p)
+}
+
 fn reach_sentence(
     candles: &[Candle],
     atr: &[Option<f64>],
@@ -1813,7 +1824,7 @@ fn reach_sentence(
         touch_odds(candles, atr, trend_days, h, distance_atr, up).map_or(0.0, |(p, _)| p) * 100.0
     };
     format!(
-        "  Chance de o preço chegar lá: {:.0}% em {REPORT_HORIZON} dias, {:.0}% em {FAR_HORIZON} dias.",
+        "  Chance de chegar lá: {:.0}% em {REPORT_HORIZON} dias, {:.0}% em {FAR_HORIZON} dias",
         chance(REPORT_HORIZON),
         chance(FAR_HORIZON)
     )
@@ -1848,8 +1859,9 @@ fn level_lines(
         &format!("numa {} como agora", trend_pt(regimes[last])),
     );
     let lines = vec![
+        String::new(),
         format!(
-            "Comprar no suporte do último ano, com ordem limite em {} ({} do preço; o preço virou nessa região {} vezes):",
+            "Plano: ordem limite em {} (suporte do último ano, {} do preço, o preço virou ali {} vezes)",
             fmt_pt(s.price),
             pct_pt((s.price / close - 1.0) * 100.0),
             s.touches
@@ -1862,6 +1874,12 @@ fn level_lines(
             s.price,
         ),
     ];
+    let lines = if reach_chance(candles, atr, &trend_days, (close - s.price) / a) < MIN_SHOWN_REACH
+    {
+        Vec::new()
+    } else {
+        lines
+    };
     Some((
         lines,
         race,
@@ -1892,8 +1910,9 @@ fn gap_lines(
         &format!("numa {} como agora", trend_pt(regimes[last])),
     );
     let lines = vec![
+        String::new(),
         format!(
-            "Comprar no gap aberto embaixo, com ordem limite em {} (gap de {} a {}, formado em {}; {} do preço):",
+            "Plano: ordem limite em {} (gap aberto de {} a {}, formado em {}, {} do preço)",
             fmt_pt(g.top),
             fmt_pt(g.bottom),
             fmt_pt(g.top),
@@ -1908,6 +1927,11 @@ fn gap_lines(
             g.top,
         ),
     ];
+    let lines = if reach_chance(candles, atr, &trend_days, (close - g.top) / a) < MIN_SHOWN_REACH {
+        Vec::new()
+    } else {
+        lines
+    };
     Some((
         lines,
         race,
@@ -2037,7 +2061,8 @@ fn daily_report_with(
             labels.join("; ")
         )
     };
-    out.push(action);
+    // The answer first: right after the name and trend lines.
+    out.insert(2.min(out.len()), action);
     let levels = choices
         .iter()
         .filter_map(|(race, label, order)| match order {
@@ -2137,27 +2162,52 @@ fn funding_lines(
     let dates: Vec<NaiveDate> = candles.iter().map(Candle::date).collect();
     let ranks = funding_ranks(&dates, funding);
     let rank = ranks[last]?;
-    let value = *funding.get(&dates[last])?;
-    let mut lines = vec![format!(
-        "Funding dos futuros no dia: {} (positivo = quem está comprado paga a quem está vendido). Mais alto que {:.0}% dos dias do último ano.",
-        format!("{:+.3}%", value * 100.0).replace('.', ","),
-        rank * 100.0
-    )];
     let high = rank >= HIGH_RANK;
     if !high && rank > LOW_RANK {
-        return Some((lines, None));
+        // Normal funding: nothing worth a line.
+        return Some((Vec::new(), None));
     }
     let split = held_out_start().ok()?;
     let (dev, fin) = funding_races(candles, atr, &ranks, high, split);
     let v = funding_verdict(dev, fin);
-    lines.push(format!(
-        "  Funding {} assim (entre os 10% {} do ano), comprando no fechamento: de 2019 a out/2024, {}; de nov/2024 até hoje, {}. {}",
-        if high { "muito alto" } else { "muito baixo" },
-        if high { "maiores" } else { "menores" },
-        race_shares(dev),
-        race_shares(fin),
-        verdict_pt(v)
-    ));
+    let counts = |r: Option<Race>| {
+        r.map_or_else(
+            || "nenhum caso".to_owned(),
+            |r| {
+                format!(
+                    "alvo primeiro {}, stop primeiro {}",
+                    r.up_first, r.down_first
+                )
+            },
+        )
+    };
+    let lines = vec![
+        String::new(),
+        format!(
+            "Plano: comprar no fechamento de hoje, porque o funding está muito {} (mais {} que {:.0}% dos dias do ano)",
+            if high { "alto" } else { "baixo" },
+            if high { "alto" } else { "baixo" },
+            if high {
+                rank * 100.0
+            } else {
+                (1.0 - rank) * 100.0
+            }
+        ),
+        format!(
+            "  {}",
+            if high {
+                "Funding alto = quem está comprado está pagando caro para continuar comprado."
+            } else {
+                "Funding baixo = quem está vendido está pagando para continuar vendido."
+            }
+        ),
+        format!(
+            "  No passado, em dias assim: de 2019 a out/2024, {}; de nov/2024 até hoje, {}.",
+            counts(dev),
+            counts(fin)
+        ),
+        format!("  {}", verdict_pt(v)),
+    ];
     Some((lines, Some((v, dev.map_or(0.0, |r| r.z()), high))))
 }
 
@@ -2196,18 +2246,101 @@ async fn load_funding_live(
     (!daily.is_empty()).then_some(daily)
 }
 
-/// Open interest change over the last 24 hours, as a Portuguese line.
-async fn open_interest_line(asset: &str) -> Option<String> {
+/// Long share of accounts at or above which the crowd counts as heavily long.
+const CROWD_LONG: f64 = 0.65;
+/// Long share of accounts at or below which the crowd counts as heavily short.
+const CROWD_SHORT: f64 = 0.45;
+
+/// Futures positioning line: long and short shares of accounts and of the top
+/// traders' money, and the 24h open interest change. None when the futures
+/// API cannot be reached.
+async fn positioning_line(asset: &str) -> Option<String> {
+    let accounts = fetch_long_short(asset, LongShort::Accounts, 25)
+        .await
+        .ok()?;
+    let (_, now) = *accounts.last()?;
+    let (_, before) = *accounts.first()?;
+    let top = fetch_long_short(asset, LongShort::TopPositions, 1)
+        .await
+        .ok()
+        .and_then(|r| r.last().map(|(_, v)| *v));
+    let mut text = format!(
+        "Futuros: {:.0}% das contas estão compradas e {:.0}% vendidas (24h atrás: {:.0}% compradas).",
+        now * 100.0,
+        (1.0 - now) * 100.0,
+        before * 100.0
+    );
+    if let Some(t) = top {
+        let _ = write!(
+            text,
+            " Entre os maiores traders, {:.0}% do dinheiro está comprado.",
+            t * 100.0
+        );
+    }
+    if let Some(oi) = open_interest_change(asset).await {
+        let _ = write!(text, " Posições abertas: {} em 24h.", pct_pt(oi));
+    }
+    text.push_str(if now >= CROWD_LONG {
+        " Muita gente comprada: se o preço cair, a liquidação desses comprados pode empurrar o preço mais para baixo."
+    } else if now <= CROWD_SHORT {
+        " Muita gente vendida: se o preço subir, a liquidação desses vendidos pode empurrar o preço mais para cima."
+    } else {
+        " Comprados e vendidos equilibrados."
+    });
+    text.push_str(
+        " (Informação sem teste no histórico: a Binance só guarda 30 dias desses números.)",
+    );
+    Some(text)
+}
+
+/// Open interest change over the last 24 hours, in percent.
+async fn open_interest_change(asset: &str) -> Option<f64> {
     let rows = fetch_open_interest(asset, 25).await.ok()?;
     let (_, first) = *rows.first()?;
     let (_, last) = *rows.last()?;
-    if rows.len() < 20 || first <= 0.0 {
-        return None;
+    (rows.len() >= 20 && first > 0.0).then(|| (last / first - 1.0) * 100.0)
+}
+
+/// Telegram HTML for a report section: everything escaped, with the asset
+/// line, the plans, the action and the account line in bold.
+fn section_html(section: &str) -> String {
+    section
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let escaped = html_escape(line);
+            let bold = i == 0
+                || line.starts_with("Plano:")
+                || line.starts_with("O que fazer")
+                || line.starts_with("Conta fictícia");
+            if bold && !line.is_empty() {
+                format!("<b>{escaped}</b>")
+            } else {
+                escaped
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Sends the report sections one by one, a little apart so Telegram does not
+/// refuse them, retrying a failed one once.
+async fn send_sections(token: &str, chat: &str, sections: &[String]) -> Result<(), Box<dyn Error>> {
+    for (i, section) in sections.iter().enumerate() {
+        if i > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        }
+        let html = section_html(section);
+        if let Err(first) = send_telegram_html(token, chat, &html).await {
+            eprintln!(
+                "warning: Telegram refused section {}: {first}; retrying",
+                i + 1
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            send_telegram_html(token, chat, &html).await?;
+        }
     }
-    Some(format!(
-        "Posições abertas nos futuros: {} em 24h (subindo = mais gente entrando alavancada; caindo = posições sendo fechadas ou liquidadas).",
-        pct_pt((last / first - 1.0) * 100.0)
-    ))
+    Ok(())
 }
 
 /// Open interest change in the last hour, for the abnormal-candle alert.
@@ -2845,7 +2978,7 @@ fn level_alerts(asset: &str, analysis: &Analysis, recent: &[Bar]) -> Vec<(String
                     fmt_pt(*level),
                     fmt_pt(low),
                     fmt_pt(price),
-                    verdict_pt(*v).trim_start_matches("Conclusão: ")
+                    verdict_pt(*v).trim_start_matches("Resultado: ")
                 ),
             )
         })
@@ -3336,11 +3469,15 @@ mod tests {
         println!("{}", report.join("\n"));
         assert!(report[0].starts_with("SOL — dia fechado em "));
         assert!(report[1].starts_with("Tendência: "));
-        assert!(report.iter().any(|l| l.starts_with("Comprar embaixo")));
         assert!(
             report
                 .iter()
-                .any(|l| l.starts_with("Comprar no rompimento"))
+                .any(|l| l.starts_with("Plano: ordem limite em"))
+        );
+        assert!(
+            report
+                .iter()
+                .any(|l| l.starts_with("Plano: comprar se um dia fechar acima"))
         );
         assert!(
             report.last().unwrap().contains("O que fazer")
@@ -3413,11 +3550,7 @@ mod tests {
         let closes = close_values(&candles);
         let report = daily_report("SOLUSDT", &candles, &closes).lines;
         println!("{}", report.join("\n"));
-        assert!(
-            report
-                .iter()
-                .any(|l| l.starts_with("Comprar no suporte do último ano"))
-        );
+        assert!(report.iter().any(|l| l.contains("(suporte do último ano")));
     }
 
     #[test]
@@ -3574,16 +3707,15 @@ mod tests {
             .collect();
         let (lines, extreme) = funding_lines(&candles, &atr, &funding, last).unwrap();
         println!("{}", lines.join("\n"));
-        assert!(lines[0].starts_with("Funding dos futuros no dia: +0,090%"));
         assert!(
-            lines[0].contains("Mais alto que 100% dos dias"),
+            lines[1].starts_with("Plano: comprar no fechamento de hoje, porque o funding está muito alto (mais alto que 100% dos dias"),
             "{}",
-            lines[0]
+            lines[1]
         );
         assert!(extreme.is_some_and(|(_, _, high)| high));
         let flat: BTreeMap<NaiveDate, f64> = candles.iter().map(|c| (c.date(), 0.0001)).collect();
         let (lines, extreme) = funding_lines(&candles, &atr, &flat, last).unwrap();
-        assert_eq!(lines.len(), 1);
+        assert!(lines.is_empty());
         assert!(extreme.is_none());
     }
 
