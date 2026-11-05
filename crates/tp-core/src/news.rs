@@ -41,6 +41,50 @@ impl Kind {
         }
     }
 
+    /// What this kind of news usually does to prices and what to hope for,
+    /// in plain Portuguese. General market experience, not a tested edge.
+    #[must_use]
+    pub fn meaning_pt(self) -> &'static str {
+        match self {
+            Self::Hack => {
+                "Em geral derruba a moeda atingida nos primeiros dias, e o mercado todo se o valor for grande. Torcer para: o dinheiro ser congelado ou devolvido."
+            }
+            Self::ExchangeTrouble => {
+                "Em geral derruba o mercado todo, por medo de quebra (como a FTX em 2022). Torcer para: os saques voltarem rápido."
+            }
+            Self::NetworkOutage => {
+                "Em geral derruba a moeda da rede enquanto ela está parada. Torcer para: a rede voltar logo e sem perda de fundos."
+            }
+            Self::Stablecoin => {
+                "Stablecoin saindo de 1 dólar em geral derruba o mercado todo e trava saques. Torcer para: voltar a 1 dólar rápido."
+            }
+            Self::Regulation => {
+                "Processo, proibição ou regra dura em geral derrubam o preço; aprovação ou regra clara em geral ajudam a subir. Torcer para: decisão a favor ou regra clara."
+            }
+            Self::Macro => {
+                "Juros caindo, inflação abaixo do esperado ou dólar mais fraco em geral ajudam cripto a subir; o contrário em geral derruba. Torcer para: juros e inflação mais baixos."
+            }
+            Self::Etf => {
+                "ETF aprovado ou dinheiro entrando nos ETFs em geral ajuda a subir; dinheiro saindo em geral derruba. Torcer para: entrada de dinheiro."
+            }
+            Self::BigHolders => {
+                "Governo, baleia ou liberação de tokens mandando moedas para corretora em geral pressiona para baixo; empresa comprando em geral ajuda a subir. Torcer para: compra, não venda."
+            }
+            Self::Liquidations => {
+                "Liquidação em massa de comprados acelera a queda; de vendidos acelera a alta. Depois que passa, o preço costuma se acalmar."
+            }
+            Self::Listing => {
+                "Listagem em corretora grande em geral ajuda a subir; deslistagem em geral derruba. Torcer para: listagem."
+            }
+            Self::Geopolitics => {
+                "Guerra, ataque ou sanção em geral derrubam no começo, por medo; acordo ou cessar-fogo em geral ajudam a subir. Torcer para: acordo."
+            }
+            Self::PriceMove => {
+                "Essa notícia só descreve um movimento que já aconteceu; não indica o próximo."
+            }
+        }
+    }
+
     /// True for kinds that matter even when no tracked coin is named.
     #[must_use]
     pub fn market_wide(self) -> bool {

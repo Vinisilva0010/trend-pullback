@@ -317,6 +317,134 @@ pub fn race_odds(
     (race.total() > 0).then_some(race)
 }
 
+/// Result of following one fixed plan from every past entry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanStats {
+    /// Return of each past trade, in percent, after fees.
+    pub returns: Vec<f64>,
+    /// Median of the highest price reached within the horizon, in percent
+    /// above the entry (ignoring the stop).
+    pub median_reach: f64,
+    /// 75th percentile of the same.
+    pub q75_reach: f64,
+}
+
+impl PlanStats {
+    #[must_use]
+    pub fn wins(&self) -> usize {
+        self.returns.iter().filter(|r| **r > 0.0).count()
+    }
+
+    #[must_use]
+    pub fn losses(&self) -> usize {
+        self.returns.iter().filter(|r| **r <= 0.0).count()
+    }
+
+    /// Mean return per trade (percent) and its t-statistic.
+    #[must_use]
+    pub fn mean_and_t(&self) -> (f64, f64) {
+        mean_and_t(&self.returns)
+    }
+}
+
+/// Value at `percent` of a sorted sample (lower nearest rank).
+fn quantile(sorted: &[f64], percent: usize) -> f64 {
+    sorted
+        .get(sorted.len().saturating_sub(1) * percent / 100)
+        .copied()
+        .unwrap_or(0.0)
+}
+
+/// A fixed trade plan measured in daily ATRs from the entry.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plan {
+    /// Days the trade may stay open before it is closed at the close.
+    pub horizon: usize,
+    /// Target distance above the entry, in ATRs.
+    pub target_atr: f64,
+    /// Stop distance below the entry, in ATRs.
+    pub stop_atr: f64,
+    /// Fee per side, as a share (0.001 = 0.1%).
+    pub fee: f64,
+}
+
+/// Follows `plan` from every past entry where `mask` is true: target
+/// `target_atr` ATRs above the entry, stop `stop_atr` ATRs below, exit at the
+/// close after `horizon` days otherwise. A day touching both counts as the
+/// stop; on an intraday entry day only the stop is checked; an open beyond a
+/// level fills at the open. Each trade pays `fee` (a share, per side). Trades
+/// do not overlap. Also measures how high the price got within the horizon.
+#[must_use]
+pub fn plan_stats(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    entries: &[Option<Entry>],
+    mask: &[bool],
+    plan: Plan,
+) -> Option<PlanStats> {
+    let Plan {
+        horizon,
+        target_atr,
+        stop_atr,
+        fee,
+    } = plan;
+    let n = candles.len();
+    if horizon == 0 || atr.len() != n || entries.len() != n || mask.len() != n {
+        return None;
+    }
+    let (_, end) = continuous_runs(candles);
+    let mut returns = Vec::new();
+    let mut reaches = Vec::new();
+    let mut next_free = 0usize;
+    for t in 0..n {
+        if t < next_free || !mask[t] || t + horizon > end[t] {
+            continue;
+        }
+        let (Some(entry), Some(a)) = (entries[t], atr[t].filter(|a| *a > 0.0)) else {
+            continue;
+        };
+        let price = match entry {
+            Entry::Intraday(p) | Entry::AtClose(p) => p,
+        };
+        let target = price + target_atr * a;
+        let stop = price - stop_atr * a;
+        let window = &candles[t + 1..=t + horizon];
+        let mut exit = None;
+        if matches!(entry, Entry::Intraday(_)) && candles[t].low() <= stop {
+            exit = Some(stop);
+        }
+        for c in window {
+            if exit.is_some() {
+                break;
+            }
+            if c.open() <= stop {
+                exit = Some(c.open());
+            } else if c.low() <= stop {
+                exit = Some(stop);
+            } else if c.open() >= target {
+                exit = Some(c.open());
+            } else if c.high() >= target {
+                exit = Some(target);
+            }
+        }
+        let exit = exit.unwrap_or_else(|| window[window.len() - 1].close());
+        let value = (1.0 - fee) * (1.0 - fee) * exit / price;
+        returns.push((value - 1.0) * 100.0);
+        let high = window.iter().map(Candle::high).fold(f64::MIN, f64::max);
+        reaches.push((high / price - 1.0) * 100.0);
+        next_free = t + horizon + 1;
+    }
+    if returns.is_empty() {
+        return None;
+    }
+    reaches.sort_by(f64::total_cmp);
+    Some(PlanStats {
+        returns,
+        median_reach: quantile(&reaches, 50),
+        q75_reach: quantile(&reaches, 75),
+    })
+}
+
 /// Complete Monday-to-Sunday weeks built from consecutive daily candles.
 /// Each weekly candle is dated on its Sunday. Weeks with a missing day are
 /// skipped, and so is the current week until its Sunday closes.
@@ -545,5 +673,61 @@ mod tests {
         // Day 0 races day 1 (both sides: stop first); day 1 is skipped as
         // overlapping; day 2 races day 3 (neither).
         assert_eq!((r.up_first, r.down_first, r.neither), (0, 1, 1));
+    }
+
+    #[test]
+    fn plan_takes_target_stop_or_time_exit() {
+        // Entry at the close of day 0 (10); ATR 1, target +2, stop -1, 3 days.
+        let candles = vec![
+            bar(0, 10.0, 10.2, 9.8, 10.0),
+            bar(1, 10.0, 11.0, 9.5, 10.8),
+            bar(2, 10.8, 12.3, 10.5, 12.0),
+            bar(3, 12.0, 12.5, 11.5, 12.2),
+            bar(4, 12.2, 12.4, 12.0, 12.1),
+            bar(5, 12.1, 12.3, 11.9, 12.0),
+            bar(6, 12.0, 12.2, 11.8, 12.1),
+            bar(7, 12.1, 12.2, 11.0, 11.5),
+        ];
+        let atr = vec![Some(1.0); 8];
+        let mut entries = vec![None; 8];
+        entries[0] = Some(Entry::AtClose(10.0));
+        entries[4] = Some(Entry::AtClose(12.1));
+        let plan = Plan {
+            horizon: 3,
+            target_atr: 2.0,
+            stop_atr: 1.0,
+            fee: 0.0,
+        };
+        let p = plan_stats(&candles, &atr, &entries, &[true; 8], plan).unwrap();
+        // Day 0: target 12 hit on day 2 (+20%). Day 4: stop 11.1 hit on day 7 (low 11.0).
+        assert_eq!(p.returns.len(), 2);
+        assert!((p.returns[0] - 20.0).abs() < 1e-9);
+        assert!((p.returns[1] - (11.1 / 12.1 - 1.0) * 100.0).abs() < 1e-9);
+        assert_eq!((p.wins(), p.losses()), (1, 1));
+        // Highest prices: 12.5 after day 0 (+25%), 12.4 after day 4 (days 5 to 7).
+        let low_reach = (12.3 / 12.1 - 1.0) * 100.0;
+        assert!(
+            (p.median_reach - low_reach).abs() < 1e-9,
+            "{}",
+            p.median_reach
+        );
+    }
+
+    #[test]
+    fn plan_exits_at_the_close_when_nothing_is_hit_and_pays_fees() {
+        let candles: Vec<Candle> = (0..5).map(|i| bar(i, 10.0, 10.3, 9.8, 10.0)).collect();
+        let atr = vec![Some(1.0); 5];
+        let mut entries = vec![None; 5];
+        entries[0] = Some(Entry::AtClose(10.0));
+        let plan = Plan {
+            horizon: 3,
+            target_atr: 2.0,
+            stop_atr: 1.0,
+            fee: 0.001,
+        };
+        let p = plan_stats(&candles, &atr, &entries, &[true; 5], plan).unwrap();
+        assert_eq!(p.returns.len(), 1);
+        assert!((p.returns[0] - (0.999 * 0.999 - 1.0) * 100.0).abs() < 1e-9);
+        assert!((p.median_reach - 3.0).abs() < 1e-9);
     }
 }

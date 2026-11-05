@@ -14,29 +14,34 @@ use tp_backtest::allocation::{
     monthly_returns, run_allocation, run_leveraged,
 };
 use tp_backtest::levels::{EdgeEvent, LevelParams, run_levels};
-use tp_backtest::paper::{DayBar, Event, Order, Paper, Signal, trade_csv};
+use tp_backtest::paper::{
+    DayBar, Event, Order, Paper, SPOT_FEE, STOP_ATR as PLAN_STOP_ATR, Signal,
+    TARGET_ATR as PLAN_TARGET_ATR, trade_csv,
+};
 use tp_backtest::range::{RangeCosts, RangeParams, RangeResult, run_range};
 use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
 use tp_core::anomaly::{ANOMALY_RATIO, FOLLOW_HOURS, Spike, follow_after_spikes, spike_at};
-use tp_core::crowding::{HIGH_RANK, LOW_RANK, funding_ranks};
+use tp_core::crowding::{HIGH_RANK, LOW_RANK, OiHour, funding_ranks, liquidation_zones};
 use tp_core::indicators::{close_values, segments};
 use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::liquidity::{odds_after_break, round_above, round_below, simple_atr};
 use tp_core::market::Candle;
 use tp_core::news::{Coins, Kind, classify_headline};
-use tp_core::odds::{Entry, Forward, Race, Shape, forward_stats, race_odds, touch_odds, weekly};
+use tp_core::odds::{
+    Entry, Forward, Plan, PlanStats, Race, Shape, forward_stats, plan_stats, race_odds, touch_odds,
+    weekly,
+};
 use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::support::{horizontal_levels, open_gap_below, support_below};
-use tp_core::trend::{DONCHIAN_LOOKBACKS, donchian_positions};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
 use tp_data::binance::download::{DownloadConfig, DownloadSummary, download_spot_daily, kline_dir};
 use tp_data::binance::rest::{
     LongShort, fetch_daily_since, fetch_funding_since, fetch_long_short, fetch_open_interest,
-    fetch_recent_hourly,
+    fetch_open_interest_value, fetch_recent_hourly,
 };
 use tp_data::funding::parse_funding_csv;
 use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
@@ -45,6 +50,10 @@ use tp_data::live::{State, extend_series, parse_env, parse_state, state_csv};
 use tp_data::month::YearMonth;
 use tp_data::news::{NewsItem, fetch_feed};
 use tp_data::notify::{html_escape, send_telegram, send_telegram_html};
+use tp_data::positioning::{
+    OkxRatio, fetch_bybit_open_interest, fetch_bybit_ratio, fetch_okx_open_interest,
+    fetch_okx_ratio,
+};
 use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
@@ -701,13 +710,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         let funding = load_funding_live(data_dir, asset, now_ms).await;
         let analysis = daily_report_with(asset, &candles, &closes, funding.as_ref());
         lines.extend(analysis.lines.iter().cloned());
-        if let Some(oi) = positioning_line(asset).await {
-            // Right after the trend line.
-            let at = lines
-                .len()
-                .min(lines.len().saturating_sub(analysis.lines.len()) + 2);
-            lines.insert(at, oi);
-        }
+        lines.extend(positioning_lines(asset, now_ms).await);
         sections.push(lines.join("\n"));
         // The tested model weight is still tracked for the record and the
         // paper account; it is no longer part of the message.
@@ -1486,16 +1489,6 @@ fn pct_pt(v: f64) -> String {
     format!("{v:+.1}%").replace('.', ",")
 }
 
-fn trend_pt(regime: Option<Regime>) -> &'static str {
-    match regime {
-        Some(Regime::Up) => "alta",
-        Some(Regime::Down) => "queda",
-        Some(Regime::Range) => "lateral",
-        Some(Regime::Transition) => "indefinida",
-        None => "sem dados suficientes",
-    }
-}
-
 /// Highest high and lowest low of the `days` candles that end at `last` (inclusive).
 fn extremes_until(candles: &[Candle], last: usize, days: usize) -> (f64, f64) {
     let w = &candles[last + 1 - days.min(last + 1)..=last];
@@ -1513,48 +1506,364 @@ enum Verdict {
     FewCases,
 }
 
-fn verdict(race: Option<Race>) -> Verdict {
-    match race {
-        Some(r) if r.decided() >= MIN_RACES && r.z() >= RACE_Z => Verdict::Up,
-        Some(r) if r.decided() >= MIN_RACES && r.z() <= -RACE_Z => Verdict::Down,
-        Some(r) if r.decided() >= MIN_RACES => Verdict::Tie,
-        _ => Verdict::FewCases,
+/// The plan every entry is judged by: target three daily moves above, stop
+/// one and a half below (2 to 1), up to 30 days, spot fee on both sides.
+const PLAN: Plan = Plan {
+    horizon: 30,
+    target_atr: PLAN_TARGET_ATR,
+    stop_atr: PLAN_STOP_ATR,
+    fee: SPOT_FEE,
+};
+/// Past trades a plan needs before the report draws a conclusion.
+const MIN_TRADES: usize = 30;
+/// t-statistic of the mean trade a plan needs to count as an edge.
+const EDGE_TSTAT: f64 = 2.0;
+
+fn verdict(stats: Option<&PlanStats>) -> Verdict {
+    let Some(s) = stats.filter(|s| s.returns.len() >= MIN_TRADES) else {
+        return Verdict::FewCases;
+    };
+    let (mean, t) = s.mean_and_t();
+    if mean > 0.0 && t >= EDGE_TSTAT {
+        Verdict::Up
+    } else if mean < 0.0 && t <= -EDGE_TSTAT {
+        Verdict::Down
+    } else {
+        Verdict::Tie
     }
 }
 
 fn verdict_pt(v: Verdict) -> &'static str {
     match v {
-        Verdict::Up => "Resultado: GANHA MAIS DO QUE PERDE. Vale o plano.",
-        Verdict::Down => "Resultado: PERDE MAIS DO QUE GANHA. Não vale.",
-        Verdict::Tie => "Resultado: EMPATE, igual cara ou coroa. Não tem vantagem.",
-        Verdict::FewCases => "Resultado: POUCOS CASOS no histórico para dizer.",
+        Verdict::Up => "vale: no passado esse plano ganhou mais do que perdeu",
+        Verdict::Down => "não vale: no passado esse plano perdeu dinheiro",
+        Verdict::Tie => "não vale: no passado deu resultado igual ao acaso",
+        Verdict::FewCases => "poucos casos no passado para dizer",
     }
-}
-
-/// Plan lines for a race: target and stop one daily move from the entry,
-/// how often each came first in the past, and the result.
-fn race_sentence(what: &str, race: Option<Race>, step: f64, entry: f64) -> String {
-    let pct = format!("{:.1}%", step / entry * 100.0).replace('.', ",");
-    let plan = format!(
-        "  Alvo {} (+{pct}) | Stop {} (-{pct}) | Prazo {REPORT_HORIZON} dias",
-        fmt_pt(entry + step),
-        fmt_pt(entry - step)
-    );
-    let Some(r) = race else {
-        return format!("{plan}\n  Não há no histórico nenhuma vez em que {what}.");
-    };
-    format!(
-        "{plan}\n  No passado ({} vezes assim): alvo primeiro {}, stop primeiro {}, nenhum dos dois {}.\n  {}",
-        r.total(),
-        r.up_first,
-        r.down_first,
-        r.neither,
-        verdict_pt(verdict(race))
-    )
 }
 
 fn as_share(n: usize) -> f64 {
     f64::from(u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+fn pct_plain(v: f64) -> String {
+    format!("{:.1}%", v.abs()).replace('.', ",")
+}
+
+/// One place to buy and how its plan did in the past.
+#[derive(Debug, Clone)]
+struct BuyOption {
+    /// Short Portuguese description of the place, e.g. "75.244 (suporte do último ano)".
+    place: String,
+    /// "do suporte do último ano": used by the proximity alert.
+    name_de: String,
+    order: Order,
+    price: f64,
+    stats: Option<PlanStats>,
+    verdict: Verdict,
+    /// For a breakout: the day closed above the level today.
+    active: bool,
+    /// Chance of the price reaching a limit level within 30 days.
+    reach: Option<f64>,
+}
+
+/// Plan stats over the days in today's trend, or over every day when that
+/// gives too few trades.
+fn plan_in_trend(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    entries: &[Option<Entry>],
+    trend_days: &[bool],
+    same_trend: bool,
+) -> Option<PlanStats> {
+    let s = plan_stats(candles, atr, entries, trend_days, PLAN);
+    if same_trend && s.as_ref().is_some_and(|s| s.returns.len() >= MIN_TRADES) {
+        return s;
+    }
+    plan_stats(candles, atr, entries, &vec![true; candles.len()], PLAN)
+}
+
+/// Every place to buy today: the one-year support, the open gap, the 20-day
+/// low (limit orders) and the close above the 20-day high.
+fn buy_options(
+    candles: &[Candle],
+    atr: &[Option<f64>],
+    regimes: &[Option<Regime>],
+    last: usize,
+    a: f64,
+) -> Vec<BuyOption> {
+    let close = candles[last].close();
+    let (trend_days, same_trend) = trend_mask(regimes, last);
+    let mut out = Vec::new();
+    let limit = |out: &mut Vec<BuyOption>,
+                 place: String,
+                 name_de: &str,
+                 price: f64,
+                 entries: Vec<Option<Entry>>| {
+        let stats = plan_in_trend(candles, atr, &entries, &trend_days, same_trend);
+        out.push(BuyOption {
+            place,
+            name_de: name_de.to_owned(),
+            order: Order::Limit(price),
+            price,
+            verdict: verdict(stats.as_ref()),
+            stats,
+            active: false,
+            reach: Some(reach_chance(candles, atr, &trend_days, (close - price) / a)),
+        });
+    };
+    let levels = horizontal_levels(
+        candles,
+        last,
+        LEVEL_LOOKBACK,
+        SWING_WING,
+        LEVEL_TOLERANCE_ATR * a,
+    );
+    if let Some(s) = support_below(&levels, close, MIN_LEVEL_TOUCHES) {
+        limit(
+            &mut out,
+            format!("{} (suporte do último ano)", fmt_pt(s.price)),
+            "do suporte do último ano",
+            s.price,
+            support_entries(candles, atr),
+        );
+    }
+    if let Some(g) = open_gap_below(candles, last, LEVEL_LOOKBACK, close) {
+        limit(
+            &mut out,
+            format!("{} (gap aberto)", fmt_pt(g.top)),
+            "do gap aberto",
+            g.top,
+            gap_entries(candles),
+        );
+    }
+    let (high20, low20) = extremes_until(candles, last, 20);
+    let low_entries: Vec<Option<Entry>> = (0..candles.len())
+        .map(|t| {
+            (t > 20)
+                .then(|| extremes_until(candles, t - 1, 20).1)
+                .and_then(|prior| (candles[t].low() <= prior).then_some(Entry::Intraday(prior)))
+        })
+        .collect();
+    limit(
+        &mut out,
+        format!("{} (mínima de 20 dias)", fmt_pt(low20)),
+        "da mínima de 20 dias",
+        low20,
+        low_entries,
+    );
+    let breakout_entries: Vec<Option<Entry>> = (0..candles.len())
+        .map(|t| {
+            (t > 20)
+                .then(|| extremes_until(candles, t - 1, 20).0)
+                .and_then(|prior| {
+                    (candles[t].close() > prior).then_some(Entry::AtClose(candles[t].close()))
+                })
+        })
+        .collect();
+    // Breakouts that came out of today's trend, judged by the day before.
+    let from_same: Vec<bool> = (0..candles.len())
+        .map(|t| t > 0 && trend_days[t - 1])
+        .collect();
+    let stats = plan_in_trend(candles, atr, &breakout_entries, &from_same, same_trend);
+    let active = close > extremes_until(candles, last - 1, 20).0;
+    let level = if active { close } else { high20 };
+    out.push(BuyOption {
+        place: format!("se um dia fechar acima de {}", fmt_pt(level)),
+        name_de: "da máxima de 20 dias".to_owned(),
+        order: Order::AtClose,
+        price: level,
+        verdict: verdict(stats.as_ref()),
+        stats,
+        active,
+        reach: None,
+    });
+    out
+}
+
+/// Lines for an option with an edge: where the price usually goes, the plan
+/// and its past result.
+fn winner_lines(o: &BuyOption, close: f64, a: f64) -> Vec<String> {
+    let Some(s) = &o.stats else {
+        return Vec::new();
+    };
+    let entry = o.price;
+    let header = match o.order {
+        Order::AtClose if o.active => format!(
+            "Comprar agora: o dia fechou acima da máxima de 20 dias, em {}",
+            fmt_pt(close)
+        ),
+        Order::AtClose => format!(
+            "Se um dia fechar acima de {} ({} acima de hoje):",
+            fmt_pt(entry),
+            pct_plain((entry / close - 1.0) * 100.0)
+        ),
+        Order::Limit(_) => format!(
+            "Ordem de compra em {} ({} abaixo de hoje):",
+            o.place,
+            pct_plain((entry / close - 1.0) * 100.0)
+        ),
+    };
+    let (mean, _) = s.mean_and_t();
+    let mut lines = vec![String::new(), header];
+    if let Some(r) = o.reach {
+        lines.push(format!(
+            "  Chance de o preço chegar lá em até 30 dias: {:.0}%.",
+            r * 100.0
+        ));
+    }
+    lines.push(format!(
+        "  Para onde o preço costuma ir em 30 dias: em metade das {} vezes chegou a {} (+{}); em 1 de cada 4 chegou a {} (+{}).",
+        s.returns.len(),
+        fmt_pt(entry * (1.0 + s.median_reach / 100.0)),
+        pct_plain(s.median_reach),
+        fmt_pt(entry * (1.0 + s.q75_reach / 100.0)),
+        pct_plain(s.q75_reach)
+    ));
+    let target = entry + PLAN_TARGET_ATR * a;
+    let stop = entry - PLAN_STOP_ATR * a;
+    lines.push(format!(
+        "  Plano: alvo {} (+{}), stop {} (-{}), sair em até 30 dias se não bater nenhum dos dois.",
+        fmt_pt(target),
+        pct_plain((target / entry - 1.0) * 100.0),
+        fmt_pt(stop),
+        pct_plain((1.0 - stop / entry) * 100.0)
+    ));
+    lines.push(format!(
+        "  Esse plano no passado: ganhou {} vezes e perdeu {}; resultado médio por trade {}.",
+        s.wins(),
+        s.losses(),
+        pct_pt(mean)
+    ));
+    lines
+}
+
+fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
+    daily_report_with(asset, candles, closes, None)
+}
+
+#[allow(clippy::too_many_lines)] // one report: header, options, funding, action, signals
+fn daily_report_with(
+    asset: &str,
+    candles: &[Candle],
+    closes: &[f64],
+    funding: Option<&BTreeMap<NaiveDate, f64>>,
+) -> Analysis {
+    let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
+        return Analysis::default();
+    };
+    let atr = simple_atr(candles, 14);
+    let Some(a) = atr[last].filter(|a| *a > 0.0) else {
+        return Analysis::default();
+    };
+    let name = asset_name(asset);
+    let today = &candles[last];
+    let close = today.close();
+    let regimes = classify(closes);
+    let change = (close / candles[last - 1].close() - 1.0) * 100.0;
+    let mut out = vec![
+        format!(
+            "{name}: {} {} hoje e fechou em {}",
+            if change >= 0.0 { "subiu" } else { "caiu" },
+            pct_plain(change),
+            fmt_pt(close)
+        ),
+        format!("Tendência: {}", trend_explained(regimes[last])),
+    ];
+    let shape = Shape::of(today);
+    let same_shape: Vec<bool> = candles.iter().map(|c| Shape::of(c) == shape).collect();
+    out.extend(candle_line(
+        "Candle de hoje",
+        shape.label_pt(),
+        "7 dias",
+        forward_stats(candles, &atr, &same_shape, CANDLE_HORIZON),
+    ));
+    out.extend(weekly_line(candles, last));
+    let options = buy_options(candles, &atr, &regimes, last, a);
+    let mut signals = Vec::new();
+    let mut actions = Vec::new();
+    for o in options.iter().filter(|o| o.verdict == Verdict::Up) {
+        out.extend(winner_lines(o, close, a));
+        let z = o.stats.as_ref().map_or(0.0, |s| s.mean_and_t().1);
+        match o.order {
+            Order::AtClose if o.active => {
+                actions.push(format!(
+                    "COMPRAR AGORA (o dia fechou acima de {})",
+                    fmt_pt(o.price)
+                ));
+            }
+            Order::AtClose => {
+                actions.push(format!(
+                    "esperar; só vale comprar se um dia fechar acima de {}",
+                    fmt_pt(o.price)
+                ));
+                continue;
+            }
+            Order::Limit(_) => actions.push(format!("deixar ordem de compra em {}", o.place)),
+        }
+        signals.push(Signal {
+            asset: asset.to_owned(),
+            label: o.place.clone(),
+            order: o.order,
+            atr: a,
+            z,
+        });
+    }
+    let others: Vec<&str> = options
+        .iter()
+        .filter(|o| o.verdict != Verdict::Up && o.reach.is_none_or(|r| r >= MIN_SHOWN_REACH))
+        .map(|o| o.place.as_str())
+        .collect();
+    if !others.is_empty() {
+        out.push(String::new());
+        out.push(format!(
+            "Não vale comprar em: {}. No passado, esses planos perderam dinheiro ou deram resultado igual ao acaso.",
+            others.join("; ")
+        ));
+    }
+    if let Some((lines, extreme)) = funding.and_then(|f| funding_lines(candles, &atr, f, last)) {
+        out.extend(lines);
+        if let Some((Verdict::Up, z, high)) = extreme {
+            actions.push("comprar agora pelo funding extremo".to_owned());
+            signals.push(Signal {
+                asset: asset.to_owned(),
+                label: format!("funding {} extremo", if high { "alto" } else { "baixo" }),
+                order: Order::AtClose,
+                atr: a,
+                z,
+            });
+        }
+    }
+    let action = if actions.is_empty() {
+        "O que fazer: esperar. Nenhum lugar de compra tem vantagem agora.".to_owned()
+    } else {
+        format!("O que fazer: {}.", actions.join("; ou "))
+    };
+    out.insert(2, String::new());
+    out.insert(3, action);
+    let levels = options
+        .iter()
+        .filter_map(|o| match o.order {
+            Order::Limit(price) => Some((o.name_de.clone(), price, o.verdict)),
+            Order::AtClose => None,
+        })
+        .collect();
+    Analysis {
+        lines: out,
+        signals,
+        levels,
+        funding: funding.cloned(),
+    }
+}
+
+fn trend_explained(regime: Option<Regime>) -> &'static str {
+    match regime {
+        Some(Regime::Up) => "alta (subindo há semanas)",
+        Some(Regime::Down) => "queda (caindo há semanas)",
+        Some(Regime::Range) => "lateral (andando de lado)",
+        Some(Regime::Transition) => "indefinida (sem direção clara)",
+        None => "sem dados suficientes",
+    }
 }
 
 /// Mask of the days in the same trend state as `last`, or every day when
@@ -1570,134 +1879,6 @@ fn trend_mask(regimes: &[Option<Regime>], last: usize) -> (Vec<bool>, bool) {
     } else {
         (vec![true; regimes.len()], false)
     }
-}
-
-/// Lines for buying with a limit order at the 20-day low.
-fn support_lines(
-    name: &str,
-    candles: &[Candle],
-    atr: &[Option<f64>],
-    regimes: &[Option<Regime>],
-    last: usize,
-    a: f64,
-) -> (Vec<String>, Option<Race>) {
-    let close = candles[last].close();
-    let (_, low20) = extremes_until(candles, last, 20);
-    let (mask, same_trend) = trend_mask(regimes, last);
-    let trend = if same_trend {
-        format!("numa {} como agora", trend_pt(regimes[last]))
-    } else {
-        "em qualquer tendência".to_owned()
-    };
-    let touch = touch_odds(
-        candles,
-        atr,
-        &mask,
-        REPORT_HORIZON,
-        (close - low20) / a,
-        false,
-    )
-    .map_or(0.0, |(p, _)| p);
-    let entries: Vec<Option<Entry>> = (0..candles.len())
-        .map(|t| {
-            (t > 20)
-                .then(|| extremes_until(candles, t - 1, 20).1)
-                .and_then(|prior| (candles[t].low() <= prior).then_some(Entry::Intraday(prior)))
-        })
-        .collect();
-    let race = race_odds(candles, atr, &entries, &mask, REPORT_HORIZON, 1.0);
-    let lines = vec![
-        String::new(),
-        format!(
-            "Plano: ordem limite em {} (mínima de 20 dias, {} do preço)",
-            fmt_pt(low20),
-            pct_pt((low20 / close - 1.0) * 100.0)
-        ),
-        format!(
-            "  Chance de chegar lá: {:.0}% em {REPORT_HORIZON} dias",
-            touch * 100.0
-        ),
-        race_sentence(
-            &format!("a {name} chegou na mínima de 20 dias {trend}"),
-            race,
-            a,
-            low20,
-        ),
-    ];
-    (lines, race)
-}
-
-/// Lines for buying on a daily close above the 20-day high.
-fn breakout_lines(
-    name: &str,
-    candles: &[Candle],
-    atr: &[Option<f64>],
-    regimes: &[Option<Regime>],
-    last: usize,
-    a: f64,
-) -> (Vec<String>, Option<Race>) {
-    let close = candles[last].close();
-    let (high20, _) = extremes_until(candles, last, 20);
-    let (trend_days, same_trend) = trend_mask(regimes, last);
-    let touch = touch_odds(
-        candles,
-        atr,
-        &trend_days,
-        REPORT_HORIZON,
-        (high20 - close) / a,
-        true,
-    )
-    .map_or(0.0, |(p, _)| p);
-    let entries: Vec<Option<Entry>> = (0..candles.len())
-        .map(|t| {
-            (t > 20)
-                .then(|| extremes_until(candles, t - 1, 20).0)
-                .and_then(|prior| {
-                    (candles[t].close() > prior).then_some(Entry::AtClose(candles[t].close()))
-                })
-        })
-        .collect();
-    // Breakouts that came out of the same trend state as today, judged by the
-    // day before the breakout; every breakout when there are too few.
-    let from_same: Vec<bool> = (0..candles.len())
-        .map(|t| t > 0 && trend_days[t - 1])
-        .collect();
-    let mut race = race_odds(candles, atr, &entries, &from_same, REPORT_HORIZON, 1.0);
-    let mut trend = if same_trend {
-        format!("saindo de uma {} como agora", trend_pt(regimes[last]))
-    } else {
-        "em qualquer tendência".to_owned()
-    };
-    if same_trend && race.is_none_or(|r| r.decided() < MIN_RACES) {
-        race = race_odds(
-            candles,
-            atr,
-            &entries,
-            &vec![true; candles.len()],
-            REPORT_HORIZON,
-            1.0,
-        );
-        "em qualquer tendência (poucos casos saindo de uma tendência igual)".clone_into(&mut trend);
-    }
-    let lines = vec![
-        String::new(),
-        format!(
-            "Plano: comprar se um dia fechar acima de {} (máxima de 20 dias, {} do preço)",
-            fmt_pt(high20),
-            pct_pt((high20 / close - 1.0) * 100.0)
-        ),
-        format!(
-            "  Chance de chegar lá: {:.0}% em {REPORT_HORIZON} dias",
-            touch * 100.0
-        ),
-        race_sentence(
-            &format!("a {name} fechou acima da máxima de 20 dias {trend}"),
-            race,
-            a,
-            high20,
-        ),
-    ];
-    (lines, race)
 }
 
 /// Candle reading, only when that shape changed the following days in the past.
@@ -1782,36 +1963,6 @@ fn gap_entries(candles: &[Candle]) -> Vec<Option<Entry>> {
         .collect()
 }
 
-/// Race over the days in today's trend, or over every day (with a note) when
-/// that gives too few decided cases.
-fn race_in_trend(
-    candles: &[Candle],
-    atr: &[Option<f64>],
-    entries: &[Option<Entry>],
-    trend_days: &[bool],
-    same_trend: bool,
-    same_label: &str,
-) -> (Option<Race>, String) {
-    let race = race_odds(candles, atr, entries, trend_days, REPORT_HORIZON, 1.0);
-    if same_trend && race.is_some_and(|r| r.decided() >= MIN_RACES) {
-        return (race, same_label.to_owned());
-    }
-    let all = race_odds(
-        candles,
-        atr,
-        entries,
-        &vec![true; candles.len()],
-        REPORT_HORIZON,
-        1.0,
-    );
-    let label = if same_trend {
-        "em qualquer tendência (poucos casos numa tendência igual)"
-    } else {
-        "em qualquer tendência"
-    };
-    (all, label.to_owned())
-}
-
 /// Plans whose price was reached within 30 days less often than this are not shown.
 const MIN_SHOWN_REACH: f64 = 0.10;
 
@@ -1823,271 +1974,6 @@ fn reach_chance(
     distance_atr: f64,
 ) -> f64 {
     touch_odds(candles, atr, trend_days, FAR_HORIZON, distance_atr, false).map_or(0.0, |(p, _)| p)
-}
-
-fn reach_sentence(
-    candles: &[Candle],
-    atr: &[Option<f64>],
-    trend_days: &[bool],
-    distance_atr: f64,
-    up: bool,
-) -> String {
-    let chance = |h: usize| {
-        touch_odds(candles, atr, trend_days, h, distance_atr, up).map_or(0.0, |(p, _)| p) * 100.0
-    };
-    format!(
-        "  Chance de chegar lá: {:.0}% em {REPORT_HORIZON} dias, {:.0}% em {FAR_HORIZON} dias",
-        chance(REPORT_HORIZON),
-        chance(FAR_HORIZON)
-    )
-}
-
-/// Lines for buying at the nearest horizontal support of the past year.
-fn level_lines(
-    name: &str,
-    candles: &[Candle],
-    atr: &[Option<f64>],
-    regimes: &[Option<Regime>],
-    last: usize,
-    a: f64,
-) -> Option<(Vec<String>, Option<Race>, String, f64)> {
-    let close = candles[last].close();
-    let levels = horizontal_levels(
-        candles,
-        last,
-        LEVEL_LOOKBACK,
-        SWING_WING,
-        LEVEL_TOLERANCE_ATR * a,
-    );
-    let s = support_below(&levels, close, MIN_LEVEL_TOUCHES)?;
-    let (trend_days, same_trend) = trend_mask(regimes, last);
-    let entries = support_entries(candles, atr);
-    let (race, trend) = race_in_trend(
-        candles,
-        atr,
-        &entries,
-        &trend_days,
-        same_trend,
-        &format!("numa {} como agora", trend_pt(regimes[last])),
-    );
-    let lines = vec![
-        String::new(),
-        format!(
-            "Plano: ordem limite em {} (suporte do último ano, {} do preço, o preço virou ali {} vezes)",
-            fmt_pt(s.price),
-            pct_pt((s.price / close - 1.0) * 100.0),
-            s.touches
-        ),
-        reach_sentence(candles, atr, &trend_days, (close - s.price) / a, false),
-        race_sentence(
-            &format!("a {name} chegou num suporte assim {trend}"),
-            race,
-            a,
-            s.price,
-        ),
-    ];
-    let lines = if reach_chance(candles, atr, &trend_days, (close - s.price) / a) < MIN_SHOWN_REACH
-    {
-        Vec::new()
-    } else {
-        lines
-    };
-    Some((
-        lines,
-        race,
-        format!("ordem limite no suporte em {}", fmt_pt(s.price)),
-        s.price,
-    ))
-}
-
-/// Lines for buying at the top of the nearest open gap below the price.
-fn gap_lines(
-    name: &str,
-    candles: &[Candle],
-    atr: &[Option<f64>],
-    regimes: &[Option<Regime>],
-    last: usize,
-    a: f64,
-) -> Option<(Vec<String>, Option<Race>, String, f64)> {
-    let close = candles[last].close();
-    let g = open_gap_below(candles, last, LEVEL_LOOKBACK, close)?;
-    let (trend_days, same_trend) = trend_mask(regimes, last);
-    let entries = gap_entries(candles);
-    let (race, trend) = race_in_trend(
-        candles,
-        atr,
-        &entries,
-        &trend_days,
-        same_trend,
-        &format!("numa {} como agora", trend_pt(regimes[last])),
-    );
-    let lines = vec![
-        String::new(),
-        format!(
-            "Plano: ordem limite em {} (gap aberto de {} a {}, formado em {}, {} do preço)",
-            fmt_pt(g.top),
-            fmt_pt(g.bottom),
-            fmt_pt(g.top),
-            candles[g.formed].date().format("%d/%m/%Y"),
-            pct_pt((g.top / close - 1.0) * 100.0)
-        ),
-        reach_sentence(candles, atr, &trend_days, (close - g.top) / a, false),
-        race_sentence(
-            &format!("a {name} voltou num gap aberto {trend}"),
-            race,
-            a,
-            g.top,
-        ),
-    ];
-    let lines = if reach_chance(candles, atr, &trend_days, (close - g.top) / a) < MIN_SHOWN_REACH {
-        Vec::new()
-    } else {
-        lines
-    };
-    Some((
-        lines,
-        race,
-        format!("ordem limite no gap em {}", fmt_pt(g.top)),
-        g.top,
-    ))
-}
-
-/// Report lines for the last candle and the entries with an edge, as
-/// signals for the paper account.
-fn daily_report(asset: &str, candles: &[Candle], closes: &[f64]) -> Analysis {
-    daily_report_with(asset, candles, closes, None)
-}
-
-#[allow(clippy::too_many_lines)] // one report: header, entry blocks, action, signals
-fn daily_report_with(
-    asset: &str,
-    candles: &[Candle],
-    closes: &[f64],
-    funding: Option<&BTreeMap<NaiveDate, f64>>,
-) -> Analysis {
-    let mut out = Vec::new();
-    let Some(last) = candles.len().checked_sub(1).filter(|l| *l > 60) else {
-        return Analysis::default();
-    };
-    let atr = simple_atr(candles, 14);
-    let Some(a) = atr[last].filter(|a| *a > 0.0) else {
-        return Analysis::default();
-    };
-    let name = asset_name(asset);
-    let today = &candles[last];
-    let regimes = classify(closes);
-    let votes = DONCHIAN_LOOKBACKS
-        .iter()
-        .filter(|&&l| donchian_positions(closes, l)[last])
-        .count();
-    out.push(format!(
-        "{name} — dia fechado em {} às 21h: {} ({} no dia)",
-        today.date().format("%d/%m"),
-        fmt_pt(today.close()),
-        pct_pt((today.close() / candles[last - 1].close() - 1.0) * 100.0)
-    ));
-    out.push(format!(
-        "Tendência: {} ({votes} de 9 canais apontam para cima). Um dia normal da {name} anda {} ({}).",
-        trend_pt(regimes[last]),
-        fmt_pt(a),
-        format!("{:.1}%", a / today.close() * 100.0).replace('.', ",")
-    ));
-    let shape = Shape::of(today);
-    let same_shape: Vec<bool> = candles.iter().map(|c| Shape::of(c) == shape).collect();
-    out.extend(candle_line(
-        "Candle de hoje",
-        shape.label_pt(),
-        "7 dias",
-        forward_stats(candles, &atr, &same_shape, CANDLE_HORIZON),
-    ));
-    out.extend(weekly_line(candles, last));
-    let mut choices: Vec<(Option<Race>, String, Order)> = Vec::new();
-    for (lines, race, label, price) in [
-        level_lines(name, candles, &atr, &regimes, last, a),
-        gap_lines(name, candles, &atr, &regimes, last, a),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        out.extend(lines);
-        choices.push((race, label, Order::Limit(price)));
-    }
-    let (high20, low20) = extremes_until(candles, last, 20);
-    let (support, support_race) = support_lines(name, candles, &atr, &regimes, last, a);
-    out.extend(support);
-    choices.push((
-        support_race,
-        format!("ordem limite na mínima de 20 dias em {}", fmt_pt(low20)),
-        Order::Limit(low20),
-    ));
-    let (breakout, breakout_race) = breakout_lines(name, candles, &atr, &regimes, last, a);
-    out.extend(breakout);
-    let broke_today = today.close() > extremes_until(candles, last - 1, 20).0;
-    choices.push((
-        breakout_race,
-        if broke_today {
-            "compra agora: o dia fechou acima da máxima de 20 dias".to_owned()
-        } else {
-            format!("compra se um dia fechar acima de {}", fmt_pt(high20))
-        },
-        Order::AtClose,
-    ));
-    let winners: Vec<&(Option<Race>, String, Order)> = choices
-        .iter()
-        .filter(|(race, _, _)| verdict(*race) == Verdict::Up)
-        .collect();
-    let mut labels: Vec<String> = winners.iter().map(|(_, label, _)| label.clone()).collect();
-    let mut signals: Vec<Signal> = winners
-        .iter()
-        .filter(|(_, _, order)| *order != Order::AtClose || broke_today)
-        .map(|(race, label, order)| Signal {
-            asset: asset.to_owned(),
-            label: label.clone(),
-            order: *order,
-            atr: a,
-            z: race.map_or(0.0, |r| r.z()),
-        })
-        .collect();
-    if let Some((lines, extreme)) = funding.and_then(|f| funding_lines(candles, &atr, f, last)) {
-        out.extend(lines);
-        if let Some((Verdict::Up, z, high)) = extreme {
-            let label = format!(
-                "compra agora: funding {} extremo",
-                if high { "alto" } else { "baixo" }
-            );
-            labels.push(label.clone());
-            signals.push(Signal {
-                asset: asset.to_owned(),
-                label,
-                order: Order::AtClose,
-                atr: a,
-                z,
-            });
-        }
-    }
-    let action = if labels.is_empty() {
-        "O que fazer: esperar. Nenhum lugar de entrada tem vantagem agora.".to_owned()
-    } else {
-        format!(
-            "O que fazer: só estes lugares subiram mais do que caíram no histórico: {}.",
-            labels.join("; ")
-        )
-    };
-    // The answer first: right after the name and trend lines.
-    out.insert(2.min(out.len()), action);
-    let levels = choices
-        .iter()
-        .filter_map(|(race, label, order)| match order {
-            Order::Limit(price) => Some((level_name(label), *price, verdict(*race))),
-            Order::AtClose => None,
-        })
-        .collect();
-    Analysis {
-        lines: out,
-        signals,
-        levels,
-        funding: funding.cloned(),
-    }
 }
 
 /// Decided races the development period needs before funding can conclude.
@@ -2182,43 +2068,28 @@ fn funding_lines(
     let split = held_out_start().ok()?;
     let (dev, fin) = funding_races(candles, atr, &ranks, high, split);
     let v = funding_verdict(dev, fin);
-    let counts = |r: Option<Race>| {
-        r.map_or_else(
-            || "nenhum caso".to_owned(),
-            |r| {
-                format!(
-                    "alvo primeiro {}, stop primeiro {}",
-                    r.up_first, r.down_first
-                )
-            },
-        )
+    let past = match v {
+        Verdict::Up => "deu vantagem para comprar",
+        Verdict::Down => "o preço caiu mais do que subiu",
+        Verdict::Tie | Verdict::FewCases => "não deu vantagem nem para comprar nem para vender",
     };
     let lines = vec![
         String::new(),
         format!(
-            "Plano: comprar no fechamento de hoje, porque o funding está muito {} (mais {} que {:.0}% dos dias do ano)",
+            "Funding (taxa que comprados e vendidos pagam entre si nos futuros): muito {}, {} que {:.0}% dos dias do ano. {} No passado, um funding assim {past}.",
             if high { "alto" } else { "baixo" },
-            if high { "alto" } else { "baixo" },
+            if high { "maior" } else { "menor" },
             if high {
                 rank * 100.0
             } else {
                 (1.0 - rank) * 100.0
-            }
-        ),
-        format!(
-            "  {}",
+            },
             if high {
-                "Funding alto = quem está comprado está pagando caro para continuar comprado."
+                "Quem está comprado está pagando caro para continuar comprado."
             } else {
-                "Funding baixo = quem está vendido está pagando para continuar vendido."
+                "Quem está vendido está pagando para continuar vendido."
             }
         ),
-        format!(
-            "  No passado, em dias assim: de 2019 a out/2024, {}; de nov/2024 até hoje, {}.",
-            counts(dev),
-            counts(fin)
-        ),
-        format!("  {}", verdict_pt(v)),
     ];
     Some((lines, Some((v, dev.map_or(0.0, |r| r.z()), high))))
 }
@@ -2262,55 +2133,227 @@ async fn load_funding_live(
 const CROWD_LONG: f64 = 0.65;
 /// Long share of accounts at or below which the crowd counts as heavily short.
 const CROWD_SHORT: f64 = 0.45;
+/// Hours of history used for the liquidation estimate (about 20 days).
+const ZONE_HOURS: u32 = 500;
 
-/// Futures positioning line: long and short shares of accounts and of the top
-/// traders' money, and the 24h open interest change. None when the futures
-/// API cannot be reached.
-async fn positioning_line(asset: &str) -> Option<String> {
-    let accounts = fetch_long_short(asset, LongShort::Accounts, 25)
+fn usd_pt(v: f64) -> String {
+    if v >= 1e9 {
+        format!("US$ {} bi", format!("{:.1}", v / 1e9).replace('.', ","))
+    } else {
+        format!("US$ {:.0} mi", v / 1e6)
+    }
+}
+
+/// Value at or before `t` in rows sorted by time.
+fn at_or_before(rows: &[(i64, f64)], t: i64) -> Option<f64> {
+    let i = rows.partition_point(|(rt, _)| *rt <= t);
+    i.checked_sub(1).map(|i| rows[i].1)
+}
+
+/// Long share now and 24 hours ago from hourly rows.
+fn share_now_and_before(rows: &[(i64, f64)]) -> Option<(f64, f64)> {
+    let (t, now) = *rows.last()?;
+    let before = at_or_before(rows, t - 24 * HOUR_MS).unwrap_or(now);
+    Some((now, before))
+}
+
+/// One exchange's long share (now, 24h ago) and open interest in USD.
+struct Venue {
+    name: &'static str,
+    share: Option<(f64, f64)>,
+    top: Option<f64>,
+    usd: Option<f64>,
+}
+
+fn weighted(
+    venues: &[Venue],
+    pick: impl Fn(&Venue) -> Option<f64>,
+) -> Option<(f64, Vec<&'static str>)> {
+    let mut sum = 0.0;
+    let mut weight = 0.0;
+    let mut names = Vec::new();
+    for v in venues {
+        if let (Some(x), Some(w)) = (pick(v), v.usd.filter(|u| *u > 0.0)) {
+            sum += x * w;
+            weight += w;
+            names.push(v.name);
+        }
+    }
+    (weight > 0.0).then(|| (sum / weight, names))
+}
+
+fn names_pt(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [rest @ .., last] => format!("{} e {last}", rest.join(", ")),
+    }
+}
+
+/// Futures positioning for the report: long and short shares across
+/// Binance, Bybit and OKX (weighted by each one's open interest), top-trader
+/// money, the 24h open interest change and the estimated liquidation zones.
+/// Exchanges that fail are left out; empty when none answers.
+async fn positioning_lines(asset: &str, now_ms: i64) -> Vec<String> {
+    let hourly = fetch_recent_hourly(asset, i64::from(ZONE_HOURS) + 2, now_ms)
         .await
-        .ok()?;
-    let (_, now) = *accounts.last()?;
-    let (_, before) = *accounts.first()?;
-    let top = fetch_long_short(asset, LongShort::TopPositions, 1)
+        .unwrap_or_default();
+    let Some(price) = hourly.last().map(|b| b.close) else {
+        return Vec::new();
+    };
+    let binance_share = fetch_long_short(asset, LongShort::Accounts, ZONE_HOURS)
+        .await
+        .ok();
+    let binance_oi = fetch_open_interest_value(asset, ZONE_HOURS).await.ok();
+    let binance_top = fetch_long_short(asset, LongShort::TopPositions, 1)
         .await
         .ok()
         .and_then(|r| r.last().map(|(_, v)| *v));
-    let mut text = format!(
-        "Futuros: {:.0}% das contas estão compradas e {:.0}% vendidas (24h atrás: {:.0}% compradas).",
+    let bybit_share = fetch_bybit_ratio(asset, 25).await.ok();
+    let bybit_usd = fetch_bybit_open_interest(asset)
+        .await
+        .ok()
+        .and_then(|r| r.last().map(|(_, oi)| oi * price));
+    let okx_share = fetch_okx_ratio(asset, OkxRatio::Accounts, 25).await.ok();
+    let okx_top = fetch_okx_ratio(asset, OkxRatio::TopPositions, 1)
+        .await
+        .ok()
+        .and_then(|r| r.last().map(|(_, v)| *v));
+    let okx_usd = fetch_okx_open_interest(asset)
+        .await
+        .ok()
+        .and_then(|r| r.last().map(|(_, v)| *v));
+    let binance_usd = binance_oi.as_ref().and_then(|r| r.last().map(|(_, v)| *v));
+    let venues = [
+        Venue {
+            name: "Binance",
+            share: binance_share.as_deref().and_then(share_now_and_before),
+            top: binance_top,
+            usd: binance_usd,
+        },
+        Venue {
+            name: "Bybit",
+            share: bybit_share.as_deref().and_then(share_now_and_before),
+            top: None,
+            usd: bybit_usd,
+        },
+        Venue {
+            name: "OKX",
+            share: okx_share.as_deref().and_then(share_now_and_before),
+            top: okx_top,
+            usd: okx_usd,
+        },
+    ];
+    let mut out = Vec::new();
+    let Some((now, names)) = weighted(&venues, |v| v.share.map(|s| s.0)) else {
+        return out;
+    };
+    let before = weighted(&venues, |v| v.share.map(|s| s.1)).map_or(now, |(b, _)| b);
+    out.push(String::new());
+    out.push(format!(
+        "Alavancagem nos futuros ({}): {:.0}% das contas estão compradas e {:.0}% vendidas (24h atrás: {:.0}% e {:.0}%).",
+        names_pt(&names),
         now * 100.0,
         (1.0 - now) * 100.0,
-        before * 100.0
-    );
-    if let Some(t) = top {
-        let _ = write!(
-            text,
-            " Entre os maiores traders, {:.0}% do dinheiro está comprado.",
-            t * 100.0
-        );
+        before * 100.0,
+        (1.0 - before) * 100.0
+    ));
+    if let Some((top, top_names)) = weighted(&venues, |v| v.top) {
+        out.push(format!(
+            "  Maiores traders ({}): {:.0}% do dinheiro está comprado e {:.0}% vendido.",
+            names_pt(&top_names),
+            top * 100.0,
+            (1.0 - top) * 100.0
+        ));
     }
-    if let Some(oi) = open_interest_change(asset).await {
-        let _ = write!(text, " Posições abertas: {} em 24h.", pct_pt(oi));
+    if let Some(rows) = &binance_oi
+        && let (Some((t, last)), true) = (rows.last(), rows.len() > 24)
+        && let Some(first) = at_or_before(rows, t - 24 * HOUR_MS).filter(|f| *f > 0.0)
+    {
+        out.push(format!(
+            "  Dinheiro em posições abertas na Binance: {} em 24h (subindo = mais gente entrando; caindo = gente saindo ou sendo liquidada).",
+            pct_pt((last / first - 1.0) * 100.0)
+        ));
     }
-    text.push_str(if now >= CROWD_LONG {
-        " Muita gente comprada: se o preço cair, a liquidação desses comprados pode empurrar o preço mais para baixo."
-    } else if now <= CROWD_SHORT {
-        " Muita gente vendida: se o preço subir, a liquidação desses vendidos pode empurrar o preço mais para cima."
-    } else {
-        " Comprados e vendidos equilibrados."
-    });
-    text.push_str(
-        " (Informação sem teste no histórico: a Binance só guarda 30 dias desses números.)",
+    out.push(
+        if now >= CROWD_LONG {
+            "  Muita gente comprada: se o preço cair, a liquidação desses comprados pode empurrar o preço ainda mais para baixo."
+        } else if now <= CROWD_SHORT {
+            "  Muita gente vendida: se o preço subir, a liquidação desses vendidos pode empurrar o preço ainda mais para cima."
+        } else {
+            "  Comprados e vendidos estão parecidos: nenhum lado está muito cheio."
+        }
+        .to_owned(),
     );
-    Some(text)
+    out.extend(zone_lines(
+        &hourly,
+        binance_oi.as_deref(),
+        binance_share.as_deref(),
+        &venues,
+    ));
+    out
 }
 
-/// Open interest change over the last 24 hours, in percent.
-async fn open_interest_change(asset: &str) -> Option<f64> {
-    let rows = fetch_open_interest(asset, 25).await.ok()?;
-    let (_, first) = *rows.first()?;
-    let (_, last) = *rows.last()?;
-    (rows.len() >= 20 && first > 0.0).then(|| (last / first - 1.0) * 100.0)
+/// Estimated liquidation zones from Binance's hourly open interest and long
+/// share, scaled to the open interest of all exchanges that answered.
+fn zone_lines(
+    hourly: &[Bar],
+    oi: Option<&[(i64, f64)]>,
+    share: Option<&[(i64, f64)]>,
+    venues: &[Venue],
+) -> Vec<String> {
+    let (Some(oi), Some(share)) = (oi, share) else {
+        return Vec::new();
+    };
+    let hours: Vec<OiHour> = hourly
+        .iter()
+        .filter_map(|b| {
+            // Open interest stamped at the end of the bar's hour.
+            let end = b.open_time_ms + HOUR_MS;
+            let i = oi.partition_point(|(t, _)| *t < end);
+            let (t, usd) = *oi.get(i)?;
+            (t == end).then_some(())?;
+            Some(OiHour {
+                high: b.high,
+                low: b.low,
+                close: b.close,
+                oi_usd: usd,
+                long_share: at_or_before(share, end)?,
+            })
+        })
+        .collect();
+    let binance_now = venues[0].usd.unwrap_or(0.0);
+    let total: f64 = venues.iter().filter_map(|v| v.usd).sum();
+    let scale = if binance_now > 0.0 {
+        total / binance_now
+    } else {
+        1.0
+    };
+    if hours.len() < 48 {
+        return Vec::new();
+    }
+    let (longs, shorts) = liquidation_zones(&hours, scale);
+    let mut out = Vec::new();
+    if let Some(z) = longs {
+        out.push(format!(
+            "  Comprados seriam liquidados principalmente entre {} e {} (cerca de {}). Se o preço cair até lá, essas liquidações podem acelerar a queda.",
+            fmt_pt(z.low),
+            fmt_pt(z.high),
+            usd_pt(z.usd)
+        ));
+    }
+    if let Some(z) = shorts {
+        out.push(format!(
+            "  Vendidos seriam liquidados principalmente entre {} e {} (cerca de {}). Se o preço subir até lá, essas liquidações podem acelerar a alta.",
+            fmt_pt(z.low),
+            fmt_pt(z.high),
+            usd_pt(z.usd)
+        ));
+    }
+    if !out.is_empty() {
+        out.push("  (As zonas são estimativa: as corretoras não mostram as posições reais. O cálculo usa onde o dinheiro entrou nos últimos 20 dias e alavancagem de 10x a 50x.)".to_owned());
+    }
+    out
 }
 
 /// Telegram HTML for a report section: everything escaped, with the asset
@@ -2322,9 +2365,19 @@ fn section_html(section: &str) -> String {
         .map(|(i, line)| {
             let escaped = html_escape(line);
             let bold = i == 0
-                || line.starts_with("Plano:")
-                || line.starts_with("O que fazer")
-                || line.starts_with("Conta fictícia");
+                || [
+                    "O que fazer",
+                    "Se um dia fechar",
+                    "Comprar agora",
+                    "Ordem de compra",
+                    "Não vale comprar",
+                    "Alavancagem",
+                    "Funding",
+                    "Conta fictícia",
+                    "PRÉVIA",
+                ]
+                .iter()
+                .any(|p| line.starts_with(p));
             if bold && !line.is_empty() {
                 format!("<b>{escaped}</b>")
             } else {
@@ -2518,7 +2571,7 @@ fn run_paper(
 fn event_pt(day: NaiveDate, e: &Event) -> String {
     match e {
         Event::Bought(p) => format!(
-            "{}: comprou {} a {} ({}). Alvo {}, stop {}, sai em no máximo 7 dias.",
+            "{}: comprou {} a {} ({}). Alvo {}, stop {}, sai em no máximo 30 dias.",
             date_pt(day),
             asset_name(&p.asset),
             fmt_pt(p.entry_price),
@@ -2590,7 +2643,7 @@ fn paper_section(
         (Some(p), _) => {
             let now = closes.get(&p.asset).copied().unwrap_or(p.entry_price);
             out.push(format!(
-                "Posição aberta: {} comprado a {}, agora {} ({}). Alvo {}, stop {}, dia {} de 7.",
+                "Posição aberta: {} comprado a {}, agora {} ({}). Alvo {}, stop {}, dia {} de 30.",
                 asset_name(&p.asset),
                 fmt_pt(p.entry_price),
                 fmt_pt(now),
@@ -2636,17 +2689,6 @@ fn paper_section(
         ));
     }
     out.join("\n")
-}
-
-/// Short name of a buy level from its order label.
-fn level_name(label: &str) -> String {
-    if label.contains("suporte") {
-        "do suporte do último ano".to_owned()
-    } else if label.contains("gap") {
-        "do gap aberto".to_owned()
-    } else {
-        "da mínima de 20 dias".to_owned()
-    }
 }
 
 /// Daily report of one asset.
@@ -2836,14 +2878,15 @@ async fn news_alerts(
         .map(|((kind, coins), items)| {
             let sources: BTreeSet<&str> = items.iter().map(|(i, _)| domain_of(&i.link)).collect();
             let mut msg = format!(
-                "NOTÍCIA: {} ({coins}), {} {}:",
+                "NOTÍCIA: {} ({coins}), {} {}\nO que costuma acontecer: {}\nNotícias:",
                 kind.label_pt(),
                 sources.len(),
                 if sources.len() == 1 {
                     "fonte"
                 } else {
                     "fontes"
-                }
+                },
+                kind.meaning_pt()
             );
             for (item, _) in items.iter().take(3) {
                 let _ = write!(
@@ -2991,7 +3034,7 @@ fn level_alerts(asset: &str, analysis: &Analysis, recent: &[Bar]) -> Vec<(String
                     fmt_pt(*level),
                     fmt_pt(low),
                     fmt_pt(price),
-                    verdict_pt(*v).trim_start_matches("Resultado: ")
+                    verdict_pt(*v)
                 ),
             )
         })
@@ -3480,22 +3523,13 @@ mod tests {
         let closes = close_values(&candles);
         let report = daily_report("SOLUSDT", &candles, &closes).lines;
         println!("{}", report.join("\n"));
-        assert!(report[0].starts_with("SOL — dia fechado em "));
+        assert!(report[0].starts_with("SOL: "), "{}", report[0]);
+        assert!(report[0].contains(" hoje e fechou em "));
         assert!(report[1].starts_with("Tendência: "));
-        assert!(
-            report
-                .iter()
-                .any(|l| l.starts_with("Plano: ordem limite em"))
-        );
-        assert!(
-            report
-                .iter()
-                .any(|l| l.starts_with("Plano: comprar se um dia fechar acima"))
-        );
-        assert!(
-            report.last().unwrap().contains("O que fazer")
-                || report.iter().any(|l| l.starts_with("O que fazer"))
-        );
+        assert!(report[3].starts_with("O que fazer: "), "{}", report[3]);
+        // Every place to buy shows up, with a plan or in the "não vale" line.
+        assert!(report.iter().any(|l| l.contains("(mínima de 20 dias)")));
+        assert!(report.iter().any(|l| l.contains("fechar acima de")));
     }
 
     #[test]
@@ -3637,7 +3671,7 @@ mod tests {
         let events = paper.step(day, &bars, &[signal]);
         assert_eq!(
             event_pt(day, &events[0]),
-            "05/11: comprou SOL a 110,00 (compra agora: o dia fechou acima da máxima de 20 dias). Alvo 114,00, stop 106,00, sai em no máximo 7 dias."
+            "05/11: comprou SOL a 110,00 (compra agora: o dia fechou acima da máxima de 20 dias). Alvo 122,00, stop 104,00, sai em no máximo 30 dias."
         );
         assert_eq!(money_pt(-12.5), "-$12,50");
     }
@@ -3721,7 +3755,7 @@ mod tests {
         let (lines, extreme) = funding_lines(&candles, &atr, &funding, last).unwrap();
         println!("{}", lines.join("\n"));
         assert!(
-            lines[1].starts_with("Plano: comprar no fechamento de hoje, porque o funding está muito alto (mais alto que 100% dos dias"),
+            lines[1].starts_with("Funding (taxa que comprados e vendidos pagam entre si nos futuros): muito alto, maior que 100% dos dias do ano."),
             "{}",
             lines[1]
         );
@@ -3784,6 +3818,94 @@ mod tests {
         assert!(
             line.starts_with("\nPreço agora: SOL +0,8% na última hora"),
             "{line}"
+        );
+    }
+
+    #[test]
+    fn winner_lines_read_as_a_plan() {
+        let stats = PlanStats {
+            returns: vec![5.0; 20].into_iter().chain(vec![-3.0; 12]).collect(),
+            median_reach: 8.4,
+            q75_reach: 15.0,
+        };
+        let o = BuyOption {
+            place: "se um dia fechar acima de 84.898".to_owned(),
+            name_de: "da máxima de 20 dias".to_owned(),
+            order: Order::AtClose,
+            price: 84_898.0,
+            verdict: Verdict::Up,
+            stats: Some(stats),
+            active: false,
+            reach: None,
+        };
+        let lines = winner_lines(&o, 80_504.0, 2_164.0);
+        println!("{}", lines.join("\n"));
+        assert_eq!(
+            lines[1],
+            "Se um dia fechar acima de 84.898 (5,5% acima de hoje):"
+        );
+        assert!(
+            lines[2].contains("em metade das 32 vezes chegou a 92.029 (+8,4%)"),
+            "{}",
+            lines[2]
+        );
+        assert!(
+            lines[3].starts_with("  Plano: alvo 91.390 (+7,6%), stop 81.652 (-3,8%)"),
+            "{}",
+            lines[3]
+        );
+        assert!(
+            lines[4].contains("ganhou 20 vezes e perdeu 12"),
+            "{}",
+            lines[4]
+        );
+    }
+
+    #[test]
+    fn positioning_helpers_weight_by_open_interest() {
+        let venues = [
+            Venue {
+                name: "Binance",
+                share: Some((0.70, 0.60)),
+                top: Some(0.6),
+                usd: Some(3e9),
+            },
+            Venue {
+                name: "Bybit",
+                share: Some((0.50, 0.50)),
+                top: None,
+                usd: Some(1e9),
+            },
+            Venue {
+                name: "OKX",
+                share: None,
+                top: Some(0.8),
+                usd: Some(1e9),
+            },
+        ];
+        let (now, names) = weighted(&venues, |v| v.share.map(|s| s.0)).unwrap();
+        assert!((now - 0.65).abs() < 1e-12);
+        assert_eq!(names_pt(&names), "Binance e Bybit");
+        let (top, names) = weighted(&venues, |v| v.top).unwrap();
+        assert!((top - 0.65).abs() < 1e-12);
+        assert_eq!(names, vec!["Binance", "OKX"]);
+        assert_eq!(usd_pt(1.24e9), "US$ 1,2 bi");
+        assert_eq!(usd_pt(3.4e8), "US$ 340 mi");
+        let rows = [(0, 0.5), (24 * HOUR_MS, 0.7)];
+        assert_eq!(share_now_and_before(&rows), Some((0.7, 0.5)));
+        assert_eq!(
+            names_pt(&["Binance", "Bybit", "OKX"]),
+            "Binance, Bybit e OKX"
+        );
+    }
+
+    #[test]
+    fn report_lines_get_bold_in_telegram() {
+        let html =
+            section_html("BTC: subiu\nTendência: x\nO que fazer: esperar <já>\n  detalhe & mais");
+        assert_eq!(
+            html,
+            "<b>BTC: subiu</b>\nTendência: x\n<b>O que fazer: esperar &lt;já&gt;</b>\n  detalhe &amp; mais"
         );
     }
 }

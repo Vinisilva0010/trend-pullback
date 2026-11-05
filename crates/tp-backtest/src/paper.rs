@@ -1,15 +1,15 @@
 //! Paper account that follows the daily report day by day.
 //!
-//! It trades exactly what the report measures: when an entry rose first more
-//! often than chance, it buys with the whole account (spot, no leverage), aims
-//! one daily ATR above the entry, stops one ATR below, and gives up after
-//! seven days at the close. One position at a time.
+//! It trades exactly the plan the report measures: when an entry's plan made
+//! money in the past, it buys with the whole account (spot, no leverage),
+//! aims three daily ATRs above the entry, stops one and a half below, and
+//! gives up after thirty days at the close. One position at a time.
 //!
 //! Event order inside a day: an open position is checked first (an open below
 //! the stop exits at the open; a touched stop exits at the stop; an open above
 //! the target exits at the open; a touched target exits at the target; when
-//! both are touched the stop is assumed first; on the seventh day it exits at
-//! the close). Then a limit order placed the day before fills if the low
+//! both are touched the stop is assumed first; on the thirtieth day it exits
+//! at the close). Then a limit order placed the day before fills if the low
 //! reaches it, at the order price or the open if lower; on that day only the
 //! stop is checked. Finally, the signals of the day's close are read: a
 //! breakout buys at the close, a limit entry is placed for the next day. Every
@@ -23,7 +23,11 @@ use chrono::NaiveDate;
 /// Binance spot fee per side (0.1%).
 pub const SPOT_FEE: f64 = 0.001;
 /// Days a position may stay open before it is closed at the close.
-pub const MAX_DAYS: usize = 7;
+pub const MAX_DAYS: usize = 30;
+/// Target distance above the entry, in daily ATRs.
+pub const TARGET_ATR: f64 = 3.0;
+/// Stop distance below the entry, in daily ATRs (target to stop is 2 to 1).
+pub const STOP_ATR: f64 = 1.5;
 
 /// Prices of one asset on one day.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,7 +54,7 @@ pub struct Signal {
     /// Short Portuguese name of the entry, for the journal.
     pub label: String,
     pub order: Order,
-    /// Daily ATR at the signal; target and stop are one ATR away.
+    /// Daily ATR at the signal; target and stop are measured in it.
     pub atr: f64,
     /// Strength of the historical edge; the strongest signal wins.
     pub z: f64,
@@ -96,7 +100,7 @@ impl ExitReason {
         match self {
             Self::Target => "alvo",
             Self::Stop => "stop",
-            Self::Time => "7 dias sem alvo nem stop",
+            Self::Time => "30 dias sem alvo nem stop",
         }
     }
 }
@@ -232,8 +236,8 @@ impl Paper {
             entry_date: date,
             entry_price: price,
             quantity: cost * (1.0 - SPOT_FEE) / price,
-            target: price + atr,
-            stop: price - atr,
+            target: price + TARGET_ATR * atr,
+            stop: price - STOP_ATR * atr,
             cost,
             days: 0,
         };
@@ -441,8 +445,11 @@ pub fn trade_csv(t: &Trade) -> String {
 mod tests {
     use super::*;
 
-    fn d(day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 11, day).unwrap()
+    fn d(day: u64) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 11, 1)
+            .unwrap()
+            .checked_add_days(chrono::Days::new(day - 1))
+            .unwrap()
     }
 
     fn bars(open: f64, high: f64, low: f64, close: f64) -> BTreeMap<String, DayBar> {
@@ -476,16 +483,16 @@ mod tests {
             &[signal(Order::AtClose, 3.0)],
         );
         assert!(
-            matches!(&e[0], Event::Bought(pos) if pos.entry_price == 100.0 && pos.target == 104.0 && pos.stop == 96.0)
+            matches!(&e[0], Event::Bought(pos) if pos.entry_price == 100.0 && pos.target == 112.0 && pos.stop == 94.0)
         );
         assert_eq!(p.cash, 0.0);
-        let e = p.step(d(3), &bars(101.0, 105.0, 99.0, 103.0), &[]);
+        let e = p.step(d(3), &bars(101.0, 113.0, 99.0, 110.0), &[]);
         let Event::Sold(t) = &e[0] else {
             panic!("expected a sale")
         };
         assert_eq!(t.reason, ExitReason::Target);
-        assert_eq!(t.exit_price, 104.0);
-        let expected = 1000.0 * 0.999 / 100.0 * 104.0 * 0.999;
+        assert_eq!(t.exit_price, 112.0);
+        let expected = 1000.0 * 0.999 / 100.0 * 112.0 * 0.999;
         assert!((p.cash - expected).abs() < 1e-9);
         assert!((t.pnl - (expected - 1000.0)).abs() < 1e-9);
     }
@@ -498,9 +505,9 @@ mod tests {
             &bars(98.0, 101.0, 97.0, 100.0),
             &[signal(Order::AtClose, 3.0)],
         );
-        let e = p.step(d(3), &bars(100.0, 105.0, 95.0, 100.0), &[]);
+        let e = p.step(d(3), &bars(100.0, 113.0, 93.0, 100.0), &[]);
         assert!(
-            matches!(&e[0], Event::Sold(t) if t.reason == ExitReason::Stop && t.exit_price == 96.0)
+            matches!(&e[0], Event::Sold(t) if t.reason == ExitReason::Stop && t.exit_price == 94.0)
         );
         p.step(
             d(4),
@@ -512,20 +519,20 @@ mod tests {
     }
 
     #[test]
-    fn position_closes_at_the_close_after_seven_days() {
+    fn position_closes_at_the_close_after_thirty_days() {
         let mut p = Paper::new(1000.0, d(1));
         p.step(
             d(2),
             &bars(98.0, 101.0, 97.0, 100.0),
             &[signal(Order::AtClose, 3.0)],
         );
-        for day in 3..9 {
+        for day in 3..32 {
             assert!(
                 p.step(d(day), &bars(100.0, 101.0, 99.0, 100.5), &[])
                     .is_empty()
             );
         }
-        let e = p.step(d(9), &bars(100.0, 101.0, 99.0, 100.5), &[]);
+        let e = p.step(d(32), &bars(100.0, 101.0, 99.0, 100.5), &[]);
         assert!(
             matches!(&e[0], Event::Sold(t) if t.reason == ExitReason::Time && t.exit_price == 100.5)
         );
@@ -562,10 +569,10 @@ mod tests {
             &bars(95.0, 96.0, 93.0, 94.0),
             &[signal(Order::Limit(90.0), 2.5)],
         );
-        let e = p.step(d(3), &bars(92.0, 99.0, 85.0, 88.0), &[]);
+        let e = p.step(d(3), &bars(92.0, 99.0, 83.0, 88.0), &[]);
         assert_eq!(e.len(), 2);
         assert!(
-            matches!(&e[1], Event::Sold(t) if t.reason == ExitReason::Stop && t.exit_price == 86.0)
+            matches!(&e[1], Event::Sold(t) if t.reason == ExitReason::Stop && t.exit_price == 84.0)
         );
     }
 

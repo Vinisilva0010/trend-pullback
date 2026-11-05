@@ -8,4 +8,5 @@ pub mod live;
 pub mod month;
 pub mod news;
 pub mod notify;
+pub mod positioning;
 pub mod universe;
