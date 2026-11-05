@@ -26,6 +26,7 @@ use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::liquidity::{odds_after_break, round_above, round_below, simple_atr};
 use tp_core::market::Candle;
+use tp_core::news::{Coins, Kind, classify_headline};
 use tp_core::odds::{Entry, Forward, Race, Shape, forward_stats, race_odds, touch_odds, weekly};
 use tp_core::regime::{Regime, average_run, classify};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
@@ -41,6 +42,7 @@ use tp_data::history::{BuildSummary, build_all, processed_dir, read_series};
 use tp_data::intraday::parse_bars_csv;
 use tp_data::live::{State, extend_series, parse_env, parse_state, state_csv};
 use tp_data::month::YearMonth;
+use tp_data::news::{NewsItem, fetch_feed};
 use tp_data::notify::send_telegram;
 use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
@@ -721,7 +723,11 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         market.insert(asset.to_owned(), (candles, analysis));
     }
     sections.push(run_paper(&live_dir, capital, &market, dry_run)?);
-    let header = "Relatório diário (candle fechado às 21h de Brasília). Chance = quantas vezes aconteceu no histórico da moeda; não é certeza.".to_owned();
+    let mut header = "Relatório diário (candle fechado às 21h de Brasília). Chance = quantas vezes aconteceu no histórico da moeda; não é certeza.".to_owned();
+    if let Some(agenda) = DateTime::from_timestamp_millis(now_ms).and_then(agenda_line) {
+        header.push('\n');
+        header.push_str(&agenda);
+    }
     let lines = sections;
     println!("{header}");
     for line in &lines {
@@ -2518,6 +2524,216 @@ fn fmt_price(v: f64) -> String {
     }
 }
 
+/// Hours back a news item may be published to still be alerted.
+const NEWS_WINDOW_HOURS: i64 = 3;
+/// News messages sent at most per hourly run.
+const MAX_NEWS_MESSAGES: usize = 4;
+/// Distance from 1.00 at which USDC/USDT counts as off its peg.
+const DEPEG_LIMIT: f64 = 0.005;
+/// Minutes before a scheduled event when the warning goes out.
+const EVENT_WARN_MINUTES: i64 = 90;
+/// Links remembered so a story is never sent twice.
+const NEWS_MEMORY: usize = 3000;
+
+/// Non-empty, non-comment lines of a config file (empty when missing).
+fn config_lines(path: &str) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Scheduled events from `config/events.csv` lines (date, UTC time, description).
+fn parse_events(lines: &[String]) -> Vec<(DateTime<chrono::Utc>, String)> {
+    lines
+        .iter()
+        .filter_map(|l| {
+            let mut f = l.splitn(3, ',');
+            let date: NaiveDate = f.next()?.trim().parse().ok()?;
+            let time = chrono::NaiveTime::parse_from_str(f.next()?.trim(), "%H:%M").ok()?;
+            let what = f.next()?.trim().to_owned();
+            Some((date.and_time(time).and_utc(), what))
+        })
+        .collect()
+}
+
+/// Date and time in Brasília (UTC-3, no daylight saving since 2019).
+fn brt_pt(t: DateTime<chrono::Utc>) -> String {
+    (t - chrono::Duration::hours(3))
+        .format("%d/%m às %Hh%M")
+        .to_string()
+}
+
+/// Agenda line for the daily report: events in the next 7 days.
+fn agenda_line(now: DateTime<chrono::Utc>) -> Option<String> {
+    let events = parse_events(&config_lines("config/events.csv"));
+    let soon: Vec<String> = events
+        .iter()
+        .filter(|(t, _)| *t > now && *t <= now + chrono::Duration::days(7))
+        .map(|(t, what)| format!("{what} em {}", brt_pt(*t)))
+        .collect();
+    (!soon.is_empty()).then(|| {
+        format!(
+            "Agenda dos próximos 7 dias (eventos que costumam mexer forte no preço): {}.",
+            soon.join("; ")
+        )
+    })
+}
+
+/// Warnings for scheduled events starting within [`EVENT_WARN_MINUTES`].
+fn event_alerts(
+    now: DateTime<chrono::Utc>,
+    events: &[(DateTime<chrono::Utc>, String)],
+) -> Vec<(String, String)> {
+    events
+        .iter()
+        .filter(|(t, _)| *t > now && *t - now <= chrono::Duration::minutes(EVENT_WARN_MINUTES))
+        .map(|(t, what)| {
+            (
+                format!("evento-{}", t.timestamp()),
+                format!(
+                    "Daqui a pouco: {what} em {} (horário de Brasília). Costuma mexer forte no preço nos minutos seguintes; ordens apertadas podem ser executadas no susto.",
+                    brt_pt(*t)
+                ),
+            )
+        })
+        .collect()
+}
+
+/// Price change over the last `hours` hourly bars, in percent.
+fn change_over(hourly: &[Bar], hours: usize) -> Option<f64> {
+    let last = hourly.last()?;
+    let before = hourly.get(hourly.len().checked_sub(hours + 1)?)?;
+    Some((last.close / before.close - 1.0) * 100.0)
+}
+
+fn price_line(coins: Coins, hourly: &BTreeMap<String, Vec<Bar>>) -> String {
+    let mut names = Vec::new();
+    for (on, asset) in [
+        (coins.btc, "BTCUSDT"),
+        (coins.eth, "ETHUSDT"),
+        (coins.sol, "SOLUSDT"),
+    ] {
+        if on {
+            names.push(asset);
+        }
+    }
+    if names.is_empty() {
+        names.push("BTCUSDT");
+    }
+    let parts: Vec<String> = names
+        .iter()
+        .filter_map(|a| {
+            let h = hourly.get(*a)?;
+            Some(format!(
+                "{} {} na última hora e {} em 24h",
+                asset_name(a),
+                pct_pt(change_over(h, 1)?),
+                pct_pt(change_over(h, 24)?)
+            ))
+        })
+        .collect();
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("\nPreço agora: {}.", parts.join("; "))
+    }
+}
+
+fn domain_of(link: &str) -> &str {
+    let rest = link.split_once("://").map_or(link, |(_, r)| r);
+    let host = rest.split('/').next().unwrap_or(rest);
+    host.strip_prefix("www.").unwrap_or(host)
+}
+
+/// News alerts from the configured feeds: recent stories that name BTC, ETH
+/// or SOL (or are market-wide) and fit a price-moving kind, grouped by kind
+/// and coins, most serious first. Returns the messages and the new links.
+async fn news_alerts(
+    now: DateTime<chrono::Utc>,
+    sent: &BTreeSet<String>,
+    hourly: &BTreeMap<String, Vec<Bar>>,
+) -> (Vec<String>, Vec<String>) {
+    let mut groups: BTreeMap<(Kind, String), Vec<(NewsItem, Coins)>> = BTreeMap::new();
+    let mut new_links = Vec::new();
+    for url in config_lines("config/news_feeds.txt") {
+        let items = match fetch_feed(&url).await {
+            Ok(items) => items,
+            Err(e) => {
+                eprintln!("warning: news feed skipped: {e}");
+                continue;
+            }
+        };
+        for item in items {
+            let recent = item
+                .published
+                .is_some_and(|p| p <= now && now - p <= chrono::Duration::hours(NEWS_WINDOW_HOURS));
+            if !recent || sent.contains(&item.link) || new_links.contains(&item.link) {
+                continue;
+            }
+            let Some(c) = classify_headline(&item.title, &item.summary) else {
+                continue;
+            };
+            new_links.push(item.link.clone());
+            groups
+                .entry((c.kind, c.coins.label_pt()))
+                .or_default()
+                .push((item, c.coins));
+        }
+    }
+    let messages = groups
+        .into_iter()
+        .take(MAX_NEWS_MESSAGES)
+        .map(|((kind, coins), items)| {
+            let sources: BTreeSet<&str> = items.iter().map(|(i, _)| domain_of(&i.link)).collect();
+            let mut msg = format!(
+                "NOTÍCIA: {} ({coins}), {} {}:",
+                kind.label_pt(),
+                sources.len(),
+                if sources.len() == 1 {
+                    "fonte"
+                } else {
+                    "fontes"
+                }
+            );
+            for (item, _) in items.iter().take(3) {
+                let _ = write!(
+                    msg,
+                    "\n- {} ({}{}) {}",
+                    item.title,
+                    domain_of(&item.link),
+                    item.published
+                        .map_or_else(String::new, |p| format!(", {}", brt_pt(p))),
+                    item.link
+                );
+            }
+            msg.push_str(&price_line(items[0].1, hourly));
+            msg
+        })
+        .collect();
+    (messages, new_links)
+}
+
+/// Alert when USDC trades away from one USDT.
+async fn depeg_alert(now_ms: i64) -> Option<(String, String)> {
+    let bars = fetch_recent_hourly("USDCUSDT", 3, now_ms).await.ok()?;
+    let price = bars.last()?.close;
+    if (price - 1.0).abs() < DEPEG_LIMIT {
+        return None;
+    }
+    Some((
+        "usdc-paridade".to_owned(),
+        format!(
+            "Stablecoin fora da paridade: USDC/USDT está em {} ({} do 1 a 1). Isso indica problema em uma das duas stablecoins; confira as notícias antes de operar.",
+            format!("{price:.4}").replace('.', ","),
+            pct_pt((price - 1.0) * 100.0)
+        ),
+    ))
+}
+
 /// Hours of recent bars fetched each run: the 30-day baseline plus a margin.
 const ALERT_FETCH_HOURS: i64 = 760;
 /// Recent hours checked for a crossed 20- or 60-day level.
@@ -2530,7 +2746,7 @@ async fn alerts_for(
     data_dir: &Path,
     asset: &str,
     now_ms: i64,
-) -> Result<Vec<(String, String)>, Box<dyn Error>> {
+) -> Result<(Vec<(String, String)>, Vec<Bar>), Box<dyn Error>> {
     let mut daily = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
     let last = daily.last().map(Candle::date).ok_or("empty history")?;
     let since = last.succ_opt().ok_or("date overflow")?;
@@ -2555,7 +2771,7 @@ async fn alerts_for(
     let closes = close_values(&daily);
     let analysis = daily_report(asset, &daily, &closes);
     out.extend(level_alerts(asset, &analysis, cross));
-    Ok(out)
+    Ok((out, hourly))
 }
 
 /// Alert when the last closed hour is abnormal, with what followed such
@@ -2752,8 +2968,24 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     };
     let mut messages = Vec::new();
     let mut keys = String::new();
+    let mut hourly_by_asset = BTreeMap::new();
+    let now = DateTime::from_timestamp_millis(now_ms).ok_or("invalid clock")?;
+    let mut market_alerts: Vec<(String, String)> =
+        event_alerts(now, &parse_events(&config_lines("config/events.csv")));
+    market_alerts.extend(depeg_alert(now_ms).await);
+    for (name, msg) in market_alerts {
+        let key = format!("{today},mercado,{name}");
+        if sent.contains(&key) {
+            continue;
+        }
+        println!("{msg}");
+        messages.push(msg);
+        let _ = writeln!(keys, "{key}");
+    }
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
-        for (name, msg) in alerts_for(data_dir, asset, now_ms).await? {
+        let (alerts, hourly) = alerts_for(data_dir, asset, now_ms).await?;
+        hourly_by_asset.insert(asset.to_owned(), hourly);
+        for (name, msg) in alerts {
             let key = format!("{today},{asset},{name}");
             if sent.contains(&key) {
                 println!("{asset}: {name} já avisado hoje");
@@ -2763,6 +2995,17 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
             messages.push(msg);
             let _ = writeln!(keys, "{key}");
         }
+    }
+    let news_path = data_dir.join("live").join("news_sent.txt");
+    let news_sent: BTreeSet<String> = std::fs::read_to_string(&news_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let (news, new_links) = news_alerts(now, &news_sent, &hourly_by_asset).await;
+    for msg in news {
+        println!("{msg}");
+        messages.push(msg);
     }
     if dry_run {
         println!("dry run: nothing saved, nothing sent");
@@ -2787,6 +3030,16 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         .append(true)
         .open(&path)?;
     std::io::Write::write_all(&mut file, keys.as_bytes())?;
+    if !new_links.is_empty() {
+        let mut all: Vec<String> = std::fs::read_to_string(&news_path)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        all.extend(new_links);
+        let keep = all.len().saturating_sub(NEWS_MEMORY);
+        std::fs::write(&news_path, all[keep..].join("\n") + "\n")?;
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -3332,5 +3585,60 @@ mod tests {
         let (lines, extreme) = funding_lines(&candles, &atr, &flat, last).unwrap();
         assert_eq!(lines.len(), 1);
         assert!(extreme.is_none());
+    }
+
+    #[test]
+    fn events_parse_and_warn_shortly_before() {
+        let lines = vec![
+            "2026-11-10,13:30,Inflação dos EUA (CPI)".to_owned(),
+            "bad line".to_owned(),
+        ];
+        let events = parse_events(&lines);
+        assert_eq!(events.len(), 1);
+        assert_eq!(brt_pt(events[0].0), "10/11 às 10h30");
+        let before = |m: i64| events[0].0 - chrono::Duration::minutes(m);
+        assert_eq!(event_alerts(before(60), &events).len(), 1);
+        assert!(event_alerts(before(200), &events).is_empty());
+        assert!(event_alerts(before(-5), &events).is_empty());
+        assert!(
+            event_alerts(before(60), &events)[0]
+                .1
+                .starts_with("Daqui a pouco: Inflação dos EUA (CPI) em 10/11 às 10h30")
+        );
+    }
+
+    #[test]
+    fn price_changes_and_domains_read_right() {
+        let hourly: Vec<Bar> = (0..30)
+            .map(|i| {
+                hour_bar(
+                    i,
+                    100.0,
+                    101.0,
+                    99.0,
+                    100.0 + f64::from(u32::try_from(i).unwrap()),
+                    1.0,
+                )
+            })
+            .collect();
+        assert!((change_over(&hourly, 1).unwrap() - (129.0 / 128.0 - 1.0) * 100.0).abs() < 1e-9);
+        assert!(change_over(&hourly[..10], 24).is_none());
+        assert_eq!(
+            domain_of("https://www.coindesk.com/markets/x"),
+            "coindesk.com"
+        );
+        let map = BTreeMap::from([("SOLUSDT".to_owned(), hourly)]);
+        let line = price_line(
+            Coins {
+                btc: false,
+                eth: false,
+                sol: true,
+            },
+            &map,
+        );
+        assert!(
+            line.starts_with("\nPreço agora: SOL +0,8% na última hora"),
+            "{line}"
+        );
     }
 }

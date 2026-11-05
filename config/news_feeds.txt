@@ -1,0 +1,9 @@
+# Public news feeds read by the hourly alerts (one URL per line; # starts a comment).
+# A feed that fails is skipped with a warning; the others still run.
+https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml
+https://cointelegraph.com/rss
+https://www.theblock.co/rss.xml
+https://decrypt.co/feed
+https://bitcoinmagazine.com/feed
+https://cryptoslate.com/feed/
+https://status.solana.com/history.rss

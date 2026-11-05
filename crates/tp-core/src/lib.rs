@@ -6,6 +6,7 @@ pub mod indicators;
 pub mod intraday;
 pub mod liquidity;
 pub mod market;
+pub mod news;
 pub mod odds;
 pub mod regime;
 pub mod strategy;

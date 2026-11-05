@@ -1,0 +1,17 @@
+# US economic events that usually move crypto prices.
+# date (YYYY-MM-DD), time in UTC (HH:MM), description in Portuguese.
+# Sources: BLS release schedules (CPI, jobs report) and the Federal Reserve FOMC calendar.
+# Add next year's dates here when the agencies publish them.
+2026-11-06,13:30,Relatório de empregos dos EUA (payroll)
+2026-11-10,13:30,Inflação dos EUA (CPI)
+2026-12-04,13:30,Relatório de empregos dos EUA (payroll)
+2026-12-09,19:00,Decisão de juros do Fed (FOMC)
+2026-12-10,13:30,Inflação dos EUA (CPI)
+2027-01-27,19:00,Decisão de juros do Fed (FOMC)
+2027-03-17,18:00,Decisão de juros do Fed (FOMC)
+2027-04-28,18:00,Decisão de juros do Fed (FOMC)
+2027-06-09,18:00,Decisão de juros do Fed (FOMC)
+2027-07-28,18:00,Decisão de juros do Fed (FOMC)
+2027-09-15,18:00,Decisão de juros do Fed (FOMC)
+2027-10-27,18:00,Decisão de juros do Fed (FOMC)
+2027-12-08,19:00,Decisão de juros do Fed (FOMC)
