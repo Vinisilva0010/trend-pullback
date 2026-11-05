@@ -197,7 +197,8 @@ enum Command {
         /// Send a Telegram message when an order is needed (reads .env).
         #[arg(long)]
         notify: bool,
-        /// Show the signal without saving state or log and without sending.
+        /// Show the report without saving anything; with --notify, send it to
+        /// Telegram as a preview.
         #[arg(long)]
         dry_run: bool,
     },
@@ -662,6 +663,7 @@ async fn run_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     result
 }
 
+#[allow(clippy::too_many_lines)] // one run: data, report, paper account, save, send
 async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -> CliResult {
     let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
     let now_ms = i64::try_from(since_epoch.as_millis())?;
@@ -729,19 +731,29 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         header.push('\n');
         header.push_str(&agenda);
     }
+    if dry_run && notify {
+        header.insert_str(
+            0,
+            "PRÉVIA (teste: nada foi salvo e a conta fictícia não mudou)\n",
+        );
+    }
     let lines = sections;
     println!("{header}");
     for line in &lines {
         println!("{line}");
     }
-    if dry_run {
+    if dry_run && !notify {
         println!("dry run: nothing saved, nothing sent");
         return Ok(ExitCode::SUCCESS);
     }
-    std::fs::create_dir_all(&live_dir)?;
-    std::fs::write(&state_path, state_csv(&state))?;
-    let log_path = append_signal_log(&live_dir, &log)?;
-    println!("saved: {} and {}", state_path.display(), log_path.display());
+    if dry_run {
+        println!("preview: nothing saved, sending to Telegram");
+    } else {
+        std::fs::create_dir_all(&live_dir)?;
+        std::fs::write(&state_path, state_csv(&state))?;
+        let log_path = append_signal_log(&live_dir, &log)?;
+        println!("saved: {} and {}", state_path.display(), log_path.display());
+    }
     if notify {
         let env = parse_env(&std::fs::read_to_string(".env")?);
         let (Some(token), Some(chat)) =
