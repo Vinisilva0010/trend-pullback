@@ -35,6 +35,7 @@ use tp_core::odds::{
     weekly,
 };
 use tp_core::regime::{Regime, average_run, classify};
+use tp_core::smc::{Setup, Side, SmcParams, scan, stats};
 use tp_core::strategy::{EntryMode, Frame, StrategyParams, market_ok, setups_on};
 use tp_core::support::{horizontal_levels, open_gap_below, support_below};
 use tp_core::trend::{VolTarget, donchian_ensemble_weights, sma_trend_weights};
@@ -136,6 +137,8 @@ enum Command {
     Grid,
     /// Phase 7 test: buying at the close of days with extreme funding, per period.
     FundingStudy,
+    /// Smart Money / Wyckoff setup over the history, per timeframe.
+    SmcStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -282,6 +285,7 @@ async fn main() -> ExitCode {
         } => cmd_backtest(&cli.data_dir, fvg, start, end, stop_atr, hold, !no_partial),
         Command::Grid => cmd_grid(&cli.data_dir),
         Command::FundingStudy => cmd_funding_study(&cli.data_dir),
+        Command::SmcStudy => cmd_smc_study(&cli.data_dir),
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
@@ -2956,6 +2960,168 @@ async fn open_interest_hour(asset: &str) -> Option<String> {
         " Posições abertas nos futuros na última hora: {} ({meaning}).",
         pct_pt(change)
     ))
+}
+
+/// One timeframe of the Smart Money / Wyckoff setup.
+struct SmcFrame {
+    /// Portuguese name shown in messages.
+    name: &'static str,
+    /// Hours per candle (24 for daily).
+    hours: i64,
+    params: SmcParams,
+}
+
+/// The three timeframes: short (1h, up to 2 days), swing (4h, up to 10 days)
+/// and month (daily, up to 30 days).
+fn smc_frames() -> [SmcFrame; 3] {
+    [
+        SmcFrame {
+            name: "curto (gráfico de 1h, até 2 dias)",
+            hours: 1,
+            params: SmcParams::with_max_hold(48),
+        },
+        SmcFrame {
+            name: "swing (gráfico de 4h, até 10 dias)",
+            hours: 4,
+            params: SmcParams::with_max_hold(60),
+        },
+        SmcFrame {
+            name: "mês (gráfico diário, até 30 dias)",
+            hours: 24,
+            params: SmcParams::with_max_hold(30),
+        },
+    ]
+}
+
+/// Daily candles as bars stamped at 00:00 UTC.
+fn daily_bars(candles: &[Candle]) -> Vec<Bar> {
+    candles
+        .iter()
+        .filter_map(|c| {
+            Some(Bar {
+                open_time_ms: c.date().and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis(),
+                open: c.open(),
+                high: c.high(),
+                low: c.low(),
+                close: c.close(),
+                volume: c.volume(),
+            })
+        })
+        .collect()
+}
+
+/// Mean R and its t-statistic for a list of results.
+fn r_mean_t(rs: &[f64]) -> (f64, f64) {
+    if rs.len() < 2 {
+        return (rs.first().copied().unwrap_or(0.0), 0.0);
+    }
+    mean_and_t(rs)
+}
+
+fn r_pt(r: f64) -> String {
+    format!("{r:+.2}R").replace('.', ",")
+}
+
+/// One line of results for a group of setups, split by period.
+fn smc_line(label: &str, setups: &[&Setup], bars: &[Bar], split_ms: i64) -> String {
+    let closed: Vec<&&Setup> = setups.iter().filter(|s| s.r.is_some()).collect();
+    if closed.is_empty() {
+        return format!("  {label}: nenhum trade no histórico.");
+    }
+    let all = stats(closed.iter().map(|s| **s));
+    let when = |s: &Setup| s.fill_index.map_or(i64::MAX, |i| bars[i].open_time_ms);
+    let dev: Vec<f64> = closed
+        .iter()
+        .filter(|s| when(s) <= split_ms)
+        .filter_map(|s| s.r)
+        .collect();
+    let fin: Vec<f64> = closed
+        .iter()
+        .filter(|s| when(s) > split_ms)
+        .filter_map(|s| s.r)
+        .collect();
+    let (dev_mean, dev_t) = r_mean_t(&dev);
+    let (fin_mean, _) = r_mean_t(&fin);
+    let verdict = if dev.len() >= 30 && dev_t >= 2.0 && fin.len() >= 10 && fin_mean > 0.0 {
+        "GANHOU NOS DOIS PERÍODOS"
+    } else if all.mean_r > 0.0 {
+        "positivo, mas sem prova (pode ser sorte)"
+    } else {
+        "PERDEU"
+    };
+    format!(
+        "  {label}: {} trades (alvo {}, stop {}, prazo {}); média {} por trade. Até out/2024: {} em {}; de nov/2024 até hoje: {} em {}. {verdict}.",
+        all.trades,
+        all.targets,
+        all.stops,
+        all.timeouts,
+        r_pt(all.mean_r),
+        r_pt(dev_mean),
+        dev.len(),
+        r_pt(fin_mean),
+        fin.len()
+    )
+}
+
+fn cmd_smc_study(data_dir: &Path) -> CliResult {
+    let split_ms = held_out_start()?
+        .and_hms_opt(23, 59, 59)
+        .ok_or("invalid date")?
+        .and_utc()
+        .timestamp_millis();
+    println!(
+        "Setup Smart Money / Wyckoff: varrida de liquidez, quebra de estrutura (CHoCH), entrada no reteste do order block, stop além da varrida, alvo na próxima liquidez com no mínimo 2 para 1. Custos de 0,2% por trade incluídos."
+    );
+    println!(
+        "1R = o que se perde quando bate o stop. Média +0,30R = em média ganha 30% do que arrisca por trade; -0,10R = perde 10%."
+    );
+    for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
+        let hourly_path = processed_dir(data_dir)
+            .join("futures_1h")
+            .join(format!("{asset}.csv"));
+        let hourly = std::fs::read_to_string(&hourly_path)
+            .map_err(|e| format!("{}: {e}", hourly_path.display()))
+            .and_then(|t| parse_bars_csv(&t).map_err(|e| e.to_string()))?;
+        let daily = daily_bars(&read_series(
+            &processed_dir(data_dir).join(format!("{asset}.csv")),
+        )?);
+        println!();
+        println!("{}", asset_name(asset));
+        for frame in smc_frames() {
+            let bars = match frame.hours {
+                1 => hourly.clone(),
+                24 => daily.clone(),
+                h => aggregate(&hourly, h),
+            };
+            let setups = scan(&bars, frame.params);
+            println!(" {}", frame.name);
+            let longs: Vec<&Setup> = setups.iter().filter(|s| s.side == Side::Long).collect();
+            let shorts: Vec<&Setup> = setups.iter().filter(|s| s.side == Side::Short).collect();
+            let wyckoff: Vec<&Setup> = setups.iter().filter(|s| s.wyckoff_range).collect();
+            let climax: Vec<&Setup> = setups.iter().filter(|s| s.climax_volume).collect();
+            println!("{}", smc_line("Compras", &longs, &bars, split_ms));
+            println!("{}", smc_line("Vendas", &shorts, &bars, split_ms));
+            println!(
+                "{}",
+                smc_line(
+                    "Só spring/UTAD de Wyckoff (varrida no piso ou teto de lateral)",
+                    &wyckoff,
+                    &bars,
+                    split_ms
+                )
+            );
+            println!(
+                "{}",
+                smc_line(
+                    "Só com volume de clímax na varrida",
+                    &climax,
+                    &bars,
+                    split_ms
+                )
+            );
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn cmd_funding_study(data_dir: &Path) -> CliResult {

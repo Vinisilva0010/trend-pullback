@@ -9,6 +9,7 @@ pub mod market;
 pub mod news;
 pub mod odds;
 pub mod regime;
+pub mod smc;
 pub mod strategy;
 pub mod support;
 pub mod trend;
