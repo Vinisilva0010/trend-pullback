@@ -59,6 +59,8 @@ use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
 
+mod smc_live;
+
 type CliResult = Result<ExitCode, Box<dyn Error>>;
 
 const STOP_ATR: [f64; 3] = [1.5, 2.5, 3.5];
@@ -764,6 +766,18 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
             .filter(|(t, _)| *t > now_utc && *t <= now_utc + chrono::Duration::hours(36))
             .collect();
     let mut summary = daily_summary(report_date, &items, &soon, &paper_text);
+    let mut smc_assets = Vec::new();
+    for (asset, (candles, _)) in &market {
+        match fetch_recent_hourly(asset, ALERT_FETCH_HOURS, now_ms).await {
+            Ok(hourly) => smc_assets.push((
+                asset.clone(),
+                smc_live::scan_frames(&hourly, &daily_bars(candles)),
+            )),
+            Err(e) => eprintln!("warning: {asset}: no hourly data for the SMC section: {e}"),
+        }
+    }
+    let smc_books = smc_live::Books::load(&live_dir, now_ms);
+    summary.insert(1, smc_live::summary_section(&smc_assets, &smc_books));
     let mut header = "Relatório diário (candle fechado às 21h de Brasília). Chance = quantas vezes aconteceu no histórico da moeda; não é certeza.".to_owned();
     if let Some(agenda) = DateTime::from_timestamp_millis(now_ms).and_then(agenda_line) {
         header.push('\n');
@@ -2906,6 +2920,12 @@ fn section_html(section: &str) -> String {
                     "Conta fictícia",
                     "Para você",
                     "PRÉVIA",
+                    "Smart Money",
+                    "Contas fictícias",
+                    "Trades abertos",
+                    "Ordens armadas",
+                    "Varridas esperando",
+                    "Liquidez mais perto",
                 ]
                 .iter()
                 .any(|p| line.starts_with(p));
@@ -3645,7 +3665,7 @@ async fn alerts_for(
     data_dir: &Path,
     asset: &str,
     now_ms: i64,
-) -> Result<(Vec<(String, String)>, Vec<Bar>), Box<dyn Error>> {
+) -> Result<(Vec<(String, String)>, Vec<Bar>, Vec<Candle>), Box<dyn Error>> {
     let mut daily = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
     let last = daily.last().map(Candle::date).ok_or("empty history")?;
     let since = last.succ_opt().ok_or("date overflow")?;
@@ -3670,7 +3690,7 @@ async fn alerts_for(
     let closes = close_values(&daily);
     let analysis = daily_report(asset, &daily, &closes);
     out.extend(level_alerts(asset, &analysis, cross));
-    Ok((out, hourly))
+    Ok((out, hourly, daily))
 }
 
 /// Alert when the last closed hour is abnormal, with what followed such
@@ -3853,6 +3873,7 @@ fn alert_for(daily: &[Candle], hourly: &[Bar], asset: &str) -> Option<(String, S
     Some((name.to_owned(), msg))
 }
 
+#[allow(clippy::too_many_lines)] // one run: market, assets, setups, news, send, save
 async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
     let now_ms = i64::try_from(since_epoch.as_millis())?;
@@ -3881,8 +3902,30 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         messages.push(msg);
         let _ = writeln!(keys, "{key}");
     }
+    let live_dir = data_dir.join("live");
+    let smc_sent_path = live_dir.join(smc_live::SENT_FILE);
+    let smc_sent: BTreeSet<String> = std::fs::read_to_string(&smc_sent_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let mut books = smc_live::Books::load(&live_dir, now_ms);
+    let mut smc_keys = String::new();
+    let mut smc_trades = String::new();
+    let mut smc_messages = Vec::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
-        let (alerts, hourly) = alerts_for(data_dir, asset, now_ms).await?;
+        let (alerts, hourly, daily) = alerts_for(data_dir, asset, now_ms).await?;
+        let frames = smc_live::scan_frames(&hourly, &daily_bars(&daily));
+        let (stages, trades) =
+            smc_live::stage_alerts(data_dir, asset, &frames, now_ms, &smc_sent, &mut books);
+        for stage in stages {
+            println!("{}", stage.message);
+            smc_messages.push(stage.message);
+            let _ = writeln!(smc_keys, "{}", stage.key);
+        }
+        for trade in trades {
+            let _ = writeln!(smc_trades, "{}", trade.csv());
+        }
         hourly_by_asset.insert(asset.to_owned(), hourly);
         for (name, msg) in alerts {
             let key = format!("{today},{asset},{name}");
@@ -3906,11 +3949,14 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         println!("{msg}");
         messages.push(msg);
     }
+    messages.extend(smc_messages);
     if dry_run {
         println!("dry run: nothing saved, nothing sent");
         return Ok(ExitCode::SUCCESS);
     }
     if messages.is_empty() {
+        std::fs::create_dir_all(&live_dir)?;
+        smc_live::save(&live_dir, &books, &smc_keys, &smc_trades)?;
         return Ok(ExitCode::SUCCESS);
     }
     if notify {
@@ -3920,10 +3966,17 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         else {
             return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
         };
-        send_telegram(token, chat, &messages.join("\n\n")).await?;
+        // Telegram refuses texts over 4096 characters, so long hours go in parts.
+        for (i, text) in smc_live::pack_messages(&messages, 3800).iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            }
+            send_telegram(token, chat, text).await?;
+        }
         println!("telegram: sent");
     }
-    std::fs::create_dir_all(data_dir.join("live"))?;
+    std::fs::create_dir_all(&live_dir)?;
+    smc_live::save(&live_dir, &books, &smc_keys, &smc_trades)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

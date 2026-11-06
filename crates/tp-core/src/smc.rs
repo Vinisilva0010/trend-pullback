@@ -183,14 +183,41 @@ fn sign(side: Side) -> f64 {
     }
 }
 
+/// A sweep still waiting for its change of character at the end of the data.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sweep {
+    pub side: Side,
+    /// Candle that swept the liquidity.
+    pub sweep_index: usize,
+    /// Swing level that was swept.
+    pub swept_level: f64,
+    /// Lowest low (long) or highest high (short) of the sweep.
+    pub sweep_extreme: f64,
+    /// Close needed beyond this level to confirm the setup.
+    pub choch_level: f64,
+    /// Last candle on which the confirmation may still come.
+    pub deadline_index: usize,
+    pub wyckoff_range: bool,
+    pub climax_volume: bool,
+}
+
 /// Every setup in the history, in time order, with its outcome as far as
 /// the data goes. At most one setup per side is active at a time.
 #[must_use]
 pub fn scan(bars: &[Bar], p: SmcParams) -> Vec<Setup> {
-    let mut out = scan_side(bars, p, Side::Long);
-    out.extend(scan_side(bars, p, Side::Short));
+    scan_with_pending(bars, p).0
+}
+
+/// Like [`scan`], plus the sweeps whose confirmation window is still open at
+/// the last candle (not yet confirmed and not invalidated).
+#[must_use]
+pub fn scan_with_pending(bars: &[Bar], p: SmcParams) -> (Vec<Setup>, Vec<Sweep>) {
+    let (mut out, mut pending) = scan_side(bars, p, Side::Long);
+    let (shorts, short_pending) = scan_side(bars, p, Side::Short);
+    out.extend(shorts);
+    pending.extend(short_pending);
     out.sort_by_key(|s| s.choch_index);
-    out
+    (out, pending)
 }
 
 #[allow(
@@ -198,7 +225,7 @@ pub fn scan(bars: &[Bar], p: SmcParams) -> Vec<Setup> {
     clippy::many_single_char_names,
     clippy::needless_range_loop
 )] // one pass: sweep, CHoCH, order, fill, exit
-fn scan_side(bars: &[Bar], p: SmcParams, side: Side) -> Vec<Setup> {
+fn scan_side(bars: &[Bar], p: SmcParams, side: Side) -> (Vec<Setup>, Vec<Sweep>) {
     let n = bars.len();
     let atr = bar_atr(bars, 14);
     let s = sign(side);
@@ -220,6 +247,7 @@ fn scan_side(bars: &[Bar], p: SmcParams, side: Side) -> Vec<Setup> {
         .collect();
     let (highs, lows) = swings(&mirrored, p.wing);
     let mut out = Vec::new();
+    let mut pending = Vec::new();
     let mut t = 0usize;
     let mut last_swept: Option<usize> = None;
     while t < n {
@@ -262,8 +290,10 @@ fn scan_side(bars: &[Bar], p: SmcParams, side: Side) -> Vec<Setup> {
             continue;
         };
         let mut choch = None;
+        let mut invalidated = false;
         for k in reclaim_at..=(t + p.choch_window).min(n - 1) {
             if mirrored[k].low < extreme {
+                invalidated = true;
                 break;
             }
             if mirrored[k].close > choch_level {
@@ -272,6 +302,18 @@ fn scan_side(bars: &[Bar], p: SmcParams, side: Side) -> Vec<Setup> {
             }
         }
         let Some(choch_at) = choch else {
+            if !invalidated && t + p.choch_window > n - 1 {
+                pending.push(Sweep {
+                    side,
+                    sweep_index: t,
+                    swept_level: level * s,
+                    sweep_extreme: extreme * s,
+                    choch_level: choch_level * s,
+                    deadline_index: t + p.choch_window,
+                    wyckoff_range: is_range_floor(&mirrored, &atr, t, level),
+                    climax_volume: climax(bars, t),
+                });
+            }
             t = reclaim_at + 1;
             continue;
         };
@@ -331,7 +373,7 @@ fn scan_side(bars: &[Bar], p: SmcParams, side: Side) -> Vec<Setup> {
         out.push(setup);
         t = next.max(t + 1);
     }
-    out
+    (out, pending)
 }
 
 /// Runs the order and the trade forward; returns the next candle to scan from.
@@ -354,6 +396,7 @@ fn follow(
         let b = m[k];
         if b.high >= target && b.low > entry {
             setup.status = Status::Cancelled;
+            setup.exit_index = Some(k);
             return k + 1;
         }
         if b.low <= entry {
@@ -364,6 +407,7 @@ fn follow(
     let Some((k, price)) = fill else {
         if start + p.order_valid < n {
             setup.status = Status::Cancelled;
+            setup.exit_index = Some(start + p.order_valid - 1);
             return start + p.order_valid;
         }
         return n;
@@ -426,6 +470,34 @@ fn climax(bars: &[Bar], t: usize) -> bool {
     }
     let avg = bars[t - 20..t].iter().map(|b| b.volume).sum::<f64>() / 20.0;
     avg > 0.0 && bars[t].volume >= 2.0 * avg
+}
+
+/// Nearest untouched liquidity around the last close: the closest confirmed
+/// swing high above it (stops of sellers) and swing low below it (stops of
+/// buyers) that no later candle has traded through.
+#[must_use]
+pub fn nearest_liquidity(bars: &[Bar], wing: usize) -> (Option<f64>, Option<f64>) {
+    let Some(last) = bars.last() else {
+        return (None, None);
+    };
+    let (highs, lows) = swings(bars, wing);
+    let n = bars.len();
+    let confirmed = |i: usize| i + wing < n;
+    let above = highs
+        .iter()
+        .filter(|(i, h)| {
+            confirmed(*i) && *h > last.close && bars[i + 1..].iter().all(|b| b.high < *h)
+        })
+        .map(|(_, h)| *h)
+        .min_by(f64::total_cmp);
+    let below = lows
+        .iter()
+        .filter(|(i, l)| {
+            confirmed(*i) && *l < last.close && bars[i + 1..].iter().all(|b| b.low > *l)
+        })
+        .map(|(_, l)| *l)
+        .max_by(f64::total_cmp);
+    (above, below)
 }
 
 /// Summary of closed trades.
@@ -569,6 +641,23 @@ mod tests {
     }
 
     #[test]
+    fn nearest_liquidity_skips_levels_already_taken() {
+        // Highs: 12 at 3 (later taken by 13 at 8), 13 at 8; lows: 8 at 5, 10 at 11.
+        let prices = [
+            10.0, 10.5, 11.0, 12.0, 10.0, 8.0, 10.0, 11.0, 13.0, 11.0, 10.5, 10.0, 10.2, 10.1,
+        ];
+        let bars: Vec<Bar> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, p)| bar(i, *p, *p, *p, *p))
+            .collect();
+        let (above, below) = nearest_liquidity(&bars, 2);
+        assert_eq!(above, Some(13.0));
+        assert_eq!(below, Some(10.0));
+        assert_eq!(nearest_liquidity(&[], 2), (None, None));
+    }
+
+    #[test]
     fn atr_averages_true_ranges() {
         let bars: Vec<Bar> = (0..5).map(|i| bar(i, 10.0, 11.0, 9.0, 10.0)).collect();
         let atr = bar_atr(&bars, 2);
@@ -597,5 +686,27 @@ mod tests {
         let setups = scan(&bars, SmcParams::with_max_hold(48));
         assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
         assert!(!setups.is_empty());
+    }
+
+    #[test]
+    fn a_fresh_sweep_waits_for_its_choch() {
+        let mut bars = long_story();
+        // Keep the story up to the sweep candle and one more candle without the break.
+        let cut = bars
+            .iter()
+            .position(|b| (b.low - 88.0).abs() < 1e-9)
+            .unwrap()
+            + 2;
+        bars.truncate(cut);
+        let (setups, pending) = scan_with_pending(&bars, SmcParams::with_max_hold(48));
+        assert!(
+            setups
+                .iter()
+                .all(|s| s.side != Side::Long || s.sweep_extreme != 88.0)
+        );
+        let sweep = pending.iter().find(|s| s.side == Side::Long).unwrap();
+        assert_eq!(sweep.sweep_extreme, 88.0);
+        assert!(sweep.choch_level > 96.0 && sweep.choch_level < 98.0);
+        assert_eq!(sweep.deadline_index, sweep.sweep_index + 20);
     }
 }
