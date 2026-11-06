@@ -23,7 +23,7 @@ use tp_backtest::{
     BacktestConfig, Criteria, Evaluation, Market, equity_csv, evaluate, run, trades_csv,
 };
 use tp_core::anomaly::{ANOMALY_RATIO, FOLLOW_HOURS, Spike, follow_after_spikes, spike_at};
-use tp_core::crowding::{HIGH_RANK, LOW_RANK, OiHour, funding_ranks, liquidation_zones};
+use tp_core::crowding::{HIGH_RANK, LOW_RANK, OiHour, Zone, funding_ranks, liquidation_zones};
 use tp_core::indicators::{close_values, segments};
 use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
@@ -691,6 +691,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     let mut sections = Vec::new();
     let mut log = String::new();
     let mut market: BTreeMap<String, (Vec<Candle>, Analysis)> = BTreeMap::new();
+    let mut positionings: BTreeMap<String, Option<Positioning>> = BTreeMap::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         let mut candles = read_series(&processed_dir(data_dir).join(format!("{asset}.csv")))?;
         let last = candles.last().map(Candle::date).ok_or("empty history")?;
@@ -710,7 +711,11 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         let funding = load_funding_live(data_dir, asset, now_ms).await;
         let analysis = daily_report_with(asset, &candles, &closes, funding.as_ref());
         lines.extend(analysis.lines.iter().cloned());
-        lines.extend(positioning_lines(asset, now_ms).await);
+        let positioning = fetch_positioning(asset, now_ms).await;
+        if let Some(p) = &positioning {
+            lines.extend(positioning_text(p));
+        }
+        positionings.insert(asset.to_owned(), positioning);
         sections.push(lines.join("\n"));
         // The tested model weight is still tracked for the record and the
         // paper account; it is no longer part of the message.
@@ -728,14 +733,43 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         }
         market.insert(asset.to_owned(), (candles, analysis));
     }
-    sections.push(run_paper(&live_dir, capital, &market, dry_run)?);
+    let paper_text = run_paper(&live_dir, capital, &market, dry_run)?;
+    sections.push(paper_text.clone());
+    let trends_path = live_dir.join("trends.csv");
+    let previous = read_trends(&trends_path);
+    let report_date = market
+        .values()
+        .filter_map(|(c, _)| c.last().map(Candle::date))
+        .min()
+        .unwrap_or(today);
+    let items: Vec<SummaryItem> = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+        .iter()
+        .filter_map(|asset| {
+            let (_, analysis) = market.get(*asset)?;
+            Some(SummaryItem {
+                facts: analysis.facts.as_ref()?,
+                positioning: positionings.get(*asset).and_then(Option::as_ref),
+                previous: previous.get(*asset).copied(),
+            })
+        })
+        .collect();
+    let now_utc = DateTime::from_timestamp_millis(now_ms).ok_or("invalid clock")?;
+    let soon: Vec<(DateTime<chrono::Utc>, String)> =
+        parse_events(&config_lines("config/events.csv"))
+            .into_iter()
+            .filter(|(t, _)| *t > now_utc && *t <= now_utc + chrono::Duration::hours(36))
+            .collect();
+    let mut summary = daily_summary(report_date, &items, &soon, &paper_text);
     let mut header = "Relatório diário (candle fechado às 21h de Brasília). Chance = quantas vezes aconteceu no histórico da moeda; não é certeza.".to_owned();
     if let Some(agenda) = DateTime::from_timestamp_millis(now_ms).and_then(agenda_line) {
         header.push('\n');
         header.push_str(&agenda);
     }
-    if dry_run && notify {
-        header.insert_str(
+    if dry_run
+        && notify
+        && let Some(first) = summary.first_mut()
+    {
+        first.insert_str(
             0,
             "PRÉVIA (teste: nada foi salvo e a conta fictícia não mudou)\n",
         );
@@ -744,6 +778,10 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     println!("{header}");
     for line in &lines {
         println!("{line}");
+    }
+    println!("--- resumo enviado ao Telegram ---");
+    for message in &summary {
+        println!("{message}");
     }
     if dry_run && !notify {
         println!("dry run: nothing saved, nothing sent");
@@ -754,6 +792,7 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
     } else {
         std::fs::create_dir_all(&live_dir)?;
         std::fs::write(&state_path, state_csv(&state))?;
+        std::fs::write(&trends_path, trends_csv(&items))?;
         let log_path = append_signal_log(&live_dir, &log)?;
         println!("saved: {} and {}", state_path.display(), log_path.display());
     }
@@ -764,10 +803,8 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         else {
             return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
         };
-        // One message per asset keeps each under Telegram's 4096-character limit.
-        let mut messages = lines.clone();
-        messages.insert(0, header.clone());
-        send_sections(token, chat, &messages).await?;
+        // The summary goes in two messages, each under Telegram's 4096-character limit.
+        send_sections(token, chat, &summary).await?;
         println!("telegram: sent");
     }
     Ok(ExitCode::SUCCESS)
@@ -1821,9 +1858,11 @@ fn daily_report_with(
             others.join("; ")
         ));
     }
+    let mut funding_note = None;
     if let Some((lines, extreme)) = funding.and_then(|f| funding_lines(candles, &atr, f, last)) {
         out.extend(lines);
-        if let Some((Verdict::Up, z, high)) = extreme {
+        funding_note = extreme.map(|(v, _, high, rank)| (v, high, rank));
+        if let Some((Verdict::Up, z, high, _)) = extreme {
             actions.push("comprar agora pelo funding extremo".to_owned());
             signals.push(Signal {
                 asset: asset.to_owned(),
@@ -1853,6 +1892,15 @@ fn daily_report_with(
         signals,
         levels,
         funding: funding.cloned(),
+        facts: Some(Facts {
+            name: name.to_owned(),
+            close,
+            atr: a,
+            change,
+            regime: regimes[last],
+            options,
+            funding_note,
+        }),
     }
 }
 
@@ -2046,8 +2094,8 @@ fn race_shares(r: Option<Race>) -> String {
     )
 }
 
-/// Verdict, development z and side (true = high) of an extreme funding day.
-type FundingExtreme = (Verdict, f64, bool);
+/// Verdict, development z, side (true = high) and rank of an extreme funding day.
+type FundingExtreme = (Verdict, f64, bool, f64);
 
 /// Funding lines for the last candle, and the verdict and z when today's
 /// funding is extreme.
@@ -2091,7 +2139,7 @@ fn funding_lines(
             }
         ),
     ];
-    Some((lines, Some((v, dev.map_or(0.0, |r| r.z()), high))))
+    Some((lines, Some((v, dev.map_or(0.0, |r| r.z()), high, rank))))
 }
 
 /// Daily funding sums from the saved history, with the most recent days
@@ -2190,17 +2238,33 @@ fn names_pt(names: &[&str]) -> String {
     }
 }
 
-/// Futures positioning for the report: long and short shares across
-/// Binance, Bybit and OKX (weighted by each one's open interest), top-trader
-/// money, the 24h open interest change and the estimated liquidation zones.
-/// Exchanges that fail are left out; empty when none answers.
-async fn positioning_lines(asset: &str, now_ms: i64) -> Vec<String> {
+/// Futures positioning of one asset across the exchanges that answered.
+#[derive(Debug, Clone)]
+struct Positioning {
+    /// Exchanges whose long share was used.
+    names: Vec<&'static str>,
+    /// Share of accounts that are long now and 24 hours ago (0 to 1).
+    now: f64,
+    before: f64,
+    /// Share of top-trader money that is long, and the exchanges behind it.
+    top: Option<(f64, Vec<&'static str>)>,
+    /// Change of open interest on Binance over 24 hours, in percent.
+    oi_change: Option<f64>,
+    /// Estimated liquidation zones below (longs) and above (shorts) the price.
+    longs: Option<Zone>,
+    shorts: Option<Zone>,
+    price: f64,
+}
+
+/// Futures positioning: long and short shares across Binance, Bybit and OKX
+/// (weighted by each one's open interest), top-trader money, the 24h open
+/// interest change and the estimated liquidation zones. Exchanges that fail
+/// are left out; None when none answers.
+async fn fetch_positioning(asset: &str, now_ms: i64) -> Option<Positioning> {
     let hourly = fetch_recent_hourly(asset, i64::from(ZONE_HOURS) + 2, now_ms)
         .await
         .unwrap_or_default();
-    let Some(price) = hourly.last().map(|b| b.close) else {
-        return Vec::new();
-    };
+    let price = hourly.last().map(|b| b.close)?;
     let binance_share = fetch_long_short(asset, LongShort::Accounts, ZONE_HOURS)
         .await
         .ok();
@@ -2244,66 +2308,81 @@ async fn positioning_lines(asset: &str, now_ms: i64) -> Vec<String> {
             usd: okx_usd,
         },
     ];
-    let mut out = Vec::new();
-    let Some((now, names)) = weighted(&venues, |v| v.share.map(|s| s.0)) else {
-        return out;
-    };
+    let (now, names) = weighted(&venues, |v| v.share.map(|s| s.0))?;
     let before = weighted(&venues, |v| v.share.map(|s| s.1)).map_or(now, |(b, _)| b);
-    out.push(String::new());
-    out.push(format!(
-        "Alavancagem nos futuros ({}): {:.0}% das contas estão compradas e {:.0}% vendidas (24h atrás: {:.0}% e {:.0}%).",
-        names_pt(&names),
-        now * 100.0,
-        (1.0 - now) * 100.0,
-        before * 100.0,
-        (1.0 - before) * 100.0
-    ));
-    if let Some((top, top_names)) = weighted(&venues, |v| v.top) {
-        out.push(format!(
-            "  Maiores traders ({}): {:.0}% do dinheiro está comprado e {:.0}% vendido.",
-            names_pt(&top_names),
-            top * 100.0,
-            (1.0 - top) * 100.0
-        ));
-    }
-    if let Some(rows) = &binance_oi
-        && let (Some((t, last)), true) = (rows.last(), rows.len() > 24)
-        && let Some(first) = at_or_before(rows, t - 24 * HOUR_MS).filter(|f| *f > 0.0)
-    {
-        out.push(format!(
-            "  Dinheiro em posições abertas na Binance: {} em 24h (subindo = mais gente entrando; caindo = gente saindo ou sendo liquidada).",
-            pct_pt((last / first - 1.0) * 100.0)
-        ));
-    }
-    out.push(
-        if now >= CROWD_LONG {
-            "  Muita gente comprada: se o preço cair, a liquidação desses comprados pode empurrar o preço ainda mais para baixo."
-        } else if now <= CROWD_SHORT {
-            "  Muita gente vendida: se o preço subir, a liquidação desses vendidos pode empurrar o preço ainda mais para cima."
-        } else {
-            "  Comprados e vendidos estão parecidos: nenhum lado está muito cheio."
-        }
-        .to_owned(),
-    );
-    out.extend(zone_lines(
+    let oi_change = binance_oi.as_deref().and_then(|rows| {
+        let (t, last) = *rows.last()?;
+        let first = at_or_before(rows, t - 24 * HOUR_MS).filter(|f| *f > 0.0)?;
+        (rows.len() > 24).then(|| (last / first - 1.0) * 100.0)
+    });
+    let (longs, shorts) = zones(
         &hourly,
         binance_oi.as_deref(),
         binance_share.as_deref(),
         &venues,
-    ));
+    );
+    Some(Positioning {
+        names,
+        now,
+        before,
+        top: weighted(&venues, |v| v.top),
+        oi_change,
+        longs,
+        shorts,
+        price,
+    })
+}
+
+/// Detailed positioning lines, kept in the run log.
+fn positioning_text(p: &Positioning) -> Vec<String> {
+    let mut out = vec![
+        String::new(),
+        format!(
+            "Alavancagem nos futuros ({}): {:.0}% das contas estão compradas e {:.0}% vendidas (24h atrás: {:.0}% e {:.0}%).",
+            names_pt(&p.names),
+            p.now * 100.0,
+            (1.0 - p.now) * 100.0,
+            p.before * 100.0,
+            (1.0 - p.before) * 100.0
+        ),
+    ];
+    if let Some((top, names)) = &p.top {
+        out.push(format!(
+            "  Maiores traders ({}): {:.0}% do dinheiro está comprado e {:.0}% vendido.",
+            names_pt(names),
+            top * 100.0,
+            (1.0 - top) * 100.0
+        ));
+    }
+    if let Some(c) = p.oi_change {
+        out.push(format!(
+            "  Dinheiro em posições abertas na Binance: {} em 24h.",
+            pct_pt(c)
+        ));
+    }
+    for (z, side) in [(p.longs, "Comprados"), (p.shorts, "Vendidos")] {
+        if let Some(z) = z {
+            out.push(format!(
+                "  {side} seriam liquidados principalmente entre {} e {} (cerca de {}).",
+                fmt_pt(z.low),
+                fmt_pt(z.high),
+                usd_pt(z.usd)
+            ));
+        }
+    }
     out
 }
 
 /// Estimated liquidation zones from Binance's hourly open interest and long
 /// share, scaled to the open interest of all exchanges that answered.
-fn zone_lines(
+fn zones(
     hourly: &[Bar],
     oi: Option<&[(i64, f64)]>,
     share: Option<&[(i64, f64)]>,
     venues: &[Venue],
-) -> Vec<String> {
+) -> (Option<Zone>, Option<Zone>) {
     let (Some(oi), Some(share)) = (oi, share) else {
-        return Vec::new();
+        return (None, None);
     };
     let hours: Vec<OiHour> = hourly
         .iter()
@@ -2322,6 +2401,9 @@ fn zone_lines(
             })
         })
         .collect();
+    if hours.len() < 48 {
+        return (None, None);
+    }
     let binance_now = venues[0].usd.unwrap_or(0.0);
     let total: f64 = venues.iter().filter_map(|v| v.usd).sum();
     let scale = if binance_now > 0.0 {
@@ -2329,31 +2411,475 @@ fn zone_lines(
     } else {
         1.0
     };
-    if hours.len() < 48 {
-        return Vec::new();
+    liquidation_zones(&hours, scale)
+}
+
+/// Change of open interest (percent) beyond which money counts as having
+/// entered or left.
+const OI_MOVE: f64 = 3.0;
+/// Change of the long share (points, 0 to 1) that counts as a big shift.
+const SHARE_MOVE: f64 = 0.05;
+/// A level within this share of a liquidation zone counts as next to it.
+const NEAR_ZONE: f64 = 0.005;
+
+/// One asset's numbers for the summary.
+struct SummaryItem<'a> {
+    facts: &'a Facts,
+    positioning: Option<&'a Positioning>,
+    /// Trend in the previous report, when known.
+    previous: Option<Regime>,
+}
+
+fn trend_word(regime: Option<Regime>) -> &'static str {
+    match regime {
+        Some(Regime::Up) => "alta",
+        Some(Regime::Down) => "queda",
+        Some(Regime::Range) => "lateral",
+        Some(Regime::Transition) => "indefinida",
+        None => "sem dados",
     }
-    let (longs, shorts) = liquidation_zones(&hours, scale);
-    let mut out = Vec::new();
-    if let Some(z) = longs {
-        out.push(format!(
-            "  Comprados seriam liquidados principalmente entre {} e {} (cerca de {}). Se o preço cair até lá, essas liquidações podem acelerar a queda.",
-            fmt_pt(z.low),
-            fmt_pt(z.high),
-            usd_pt(z.usd)
+}
+
+fn moved(name: &str, change: f64, close: f64) -> String {
+    format!(
+        "{name} {} {} e fechou em {}",
+        if change >= 0.0 { "subiu" } else { "caiu" },
+        pct_plain(change),
+        fmt_pt(close)
+    )
+}
+
+/// What the change in leverage means, in one sentence.
+fn leverage_meaning(p: &Positioning, price_change: f64) -> &'static str {
+    let shift = p.now - p.before;
+    match p.oi_change {
+        Some(oi) if oi <= -OI_MOVE && shift >= SHARE_MOVE && price_change < 0.0 => {
+            "saiu dinheiro grande e entrou muita conta pequena comprando a queda com alavancagem: combustível para mais queda"
+        }
+        Some(oi) if oi <= -OI_MOVE && shift <= -SHARE_MOVE => {
+            "posições foram fechadas e muitos comprados saíram: a alavancagem comprada diminuiu"
+        }
+        Some(oi) if oi <= -OI_MOVE => {
+            "posições foram fechadas ou liquidadas: parte da alavancagem saiu do mercado"
+        }
+        Some(oi) if oi >= OI_MOVE && p.now >= CROWD_LONG => {
+            "entrou dinheiro novo e a maioria está comprada: se o preço virar para baixo, a queda pode ser rápida"
+        }
+        Some(oi) if oi >= OI_MOVE && p.now <= CROWD_SHORT => {
+            "entrou dinheiro novo vendido: se o preço subir, esses vendidos podem ser forçados a sair e acelerar a alta"
+        }
+        Some(oi) if oi >= OI_MOVE => "entrou dinheiro novo nos dois lados",
+        _ if p.now >= CROWD_LONG => {
+            "a alavancagem mudou pouco, mas o mercado continua cheio de comprados"
+        }
+        _ if p.now <= CROWD_SHORT => {
+            "a alavancagem mudou pouco, mas o mercado continua cheio de vendidos"
+        }
+        _ => "a alavancagem mudou pouco e os dois lados estão parecidos",
+    }
+}
+
+/// Zone range as distance from the price, e.g. "de 1,2% a 2,7% abaixo".
+fn zone_distance(z: &Zone, price: f64, below: bool) -> String {
+    let (near, far) = if below {
+        (
+            (1.0 - z.high / price) * 100.0,
+            (1.0 - z.low / price) * 100.0,
+        )
+    } else {
+        (
+            (z.low / price - 1.0) * 100.0,
+            (z.high / price - 1.0) * 100.0,
+        )
+    };
+    format!(
+        "de {} a {} {}",
+        pct_plain(near.max(0.0)),
+        pct_plain(far),
+        if below { "abaixo" } else { "acima" }
+    )
+}
+
+/// Buy levels of the report that sit inside or right next to a zone.
+fn levels_next_to(zone: &Zone, options: &[BuyOption]) -> Vec<String> {
+    options
+        .iter()
+        .filter(|o| matches!(o.order, Order::Limit(_)))
+        .filter(|o| {
+            o.price >= zone.low * (1.0 - NEAR_ZONE) && o.price <= zone.high * (1.0 + NEAR_ZONE)
+        })
+        .map(|o| o.place.clone())
+        .collect()
+}
+
+fn plan_explained(f: &Facts, o: &BuyOption) -> Option<String> {
+    let s = o.stats.as_ref()?;
+    let (mean, _) = s.mean_and_t();
+    let entry = o.price;
+    let target = entry + PLAN_TARGET_ATR * f.atr;
+    let stop = entry - PLAN_STOP_ATR * f.atr;
+    let start = match o.order {
+        Order::AtClose if o.active => format!(
+            "{}: COMPRAR AGORA, o dia fechou acima da máxima de 20 dias ({})",
+            f.name,
+            fmt_pt(entry)
+        ),
+        Order::AtClose => format!(
+            "{}: só vale comprar se um dia fechar acima de {} ({} acima do preço, pode demorar)",
+            f.name,
+            fmt_pt(entry),
+            pct_plain((entry / f.close - 1.0) * 100.0)
+        ),
+        Order::Limit(_) => format!("{}: vale deixar ordem de compra em {}", f.name, o.place),
+    };
+    let (wins, losses) = (s.wins(), s.losses());
+    let gain = pct_plain((target / entry - 1.0) * 100.0);
+    let loss = pct_plain((1.0 - stop / entry) * 100.0);
+    let why = if wins <= losses && mean > 0.0 {
+        format!(
+            "Ganhou {wins} e perdeu {losses}, e ainda assim o resultado médio é {} por trade, porque cada ganho (+{gain}) vale o dobro de cada perda (-{loss}).",
+            pct_pt(mean)
+        )
+    } else {
+        format!(
+            "No passado ganhou {wins} e perdeu {losses}; resultado médio {} por trade.",
+            pct_pt(mean)
+        )
+    };
+    Some(format!(
+        "{start}. Alvo {} (+{}), stop {} (-{}), até 30 dias. Em metade das vezes o preço chegou a {} em 30 dias. {why}",
+        fmt_pt(target),
+        pct_plain((target / entry - 1.0) * 100.0),
+        fmt_pt(stop),
+        pct_plain((1.0 - stop / entry) * 100.0),
+        fmt_pt(entry * (1.0 + s.median_reach / 100.0))
+    ))
+}
+
+/// Overall reading of the day.
+fn day_reading(items: &[SummaryItem], any_buy_now: bool) -> (&'static str, String) {
+    let crowded = items
+        .iter()
+        .filter(|i| i.positioning.is_some_and(|p| p.now >= CROWD_LONG))
+        .count();
+    let falling = items
+        .iter()
+        .filter(|i| i.facts.regime == Some(Regime::Down))
+        .count();
+    let below_heavier = items
+        .iter()
+        .filter(|i| {
+            i.positioning.is_some_and(|p| match (p.longs, p.shorts) {
+                (Some(l), Some(s)) => l.usd > s.usd && (p.price - l.high) < (s.low - p.price),
+                (Some(_), None) => true,
+                _ => false,
+            })
+        })
+        .count();
+    if any_buy_now {
+        return (
+            "OPORTUNIDADE",
+            "uma entrada com vantagem comprovada apareceu hoje (veja os planos).".to_owned(),
+        );
+    }
+    if crowded >= 2 && below_heavier >= 2 {
+        let mut why = Vec::new();
+        if falling >= 2 {
+            why.push("o mercado está em queda");
+        }
+        why.push("tem muita gente comprada com alavancagem");
+        why.push("a maior parte das liquidações estimadas está logo abaixo do preço");
+        return ("CUIDADO", format!("{}.", names_pt(&why)));
+    }
+    if falling >= 2 {
+        return (
+            "CUIDADO",
+            "o mercado está em queda e nenhum lugar de compra tem vantagem.".to_owned(),
+        );
+    }
+    (
+        "NEUTRO",
+        "nada fora do normal na alavancagem e nenhuma entrada com vantagem hoje.".to_owned(),
+    )
+}
+
+/// The daily summary sent to Telegram: the reading of the day, what
+/// happened, leverage and liquidation zones explained, plans, funding,
+/// upcoming events, the paper account and what to do. Returns the messages.
+#[allow(clippy::too_many_lines)] // one message built section by section, in reading order
+fn daily_summary(
+    date: NaiveDate,
+    items: &[SummaryItem],
+    events: &[(DateTime<chrono::Utc>, String)],
+    paper: &str,
+) -> Vec<String> {
+    let any_buy_now = items.iter().any(|i| {
+        i.facts
+            .options
+            .iter()
+            .any(|o| o.verdict == Verdict::Up && (o.active || matches!(o.order, Order::Limit(_))))
+    });
+    let (label, why) = day_reading(items, any_buy_now);
+    let mut first = vec![
+        format!("Leitura do dia {}: {label}", date.format("%d/%m")),
+        format!("Motivo: {why}"),
+        String::new(),
+        "O que aconteceu".to_owned(),
+    ];
+    let moves: Vec<String> = items
+        .iter()
+        .map(|i| moved(&i.facts.name, i.facts.change, i.facts.close))
+        .collect();
+    first.push(format!("{}.", moves.join("; ")));
+    let trends: Vec<String> = items
+        .iter()
+        .map(|i| {
+            let now = trend_word(i.facts.regime);
+            match i.previous {
+                Some(prev) if Some(prev) != i.facts.regime => format!(
+                    "{} {now} (mudou de {} desde ontem)",
+                    i.facts.name,
+                    trend_word(Some(prev))
+                ),
+                _ => format!("{} {now}", i.facts.name),
+            }
+        })
+        .collect();
+    first.push(format!("Tendência: {}.", trends.join("; ")));
+    let positioned: Vec<(&SummaryItem, &Positioning)> = items
+        .iter()
+        .filter_map(|i| i.positioning.map(|p| (i, p)))
+        .collect();
+    if !positioned.is_empty() {
+        let names = positioned
+            .iter()
+            .flat_map(|(_, p)| p.names.iter().copied())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        first.push(String::new());
+        first.push(format!("Alavancagem nos futuros ({})", names_pt(&names)));
+        for (i, p) in &positioned {
+            let oi = p.oi_change.map_or_else(String::new, |c| {
+                format!("; dinheiro em posições abertas {} em 24h", pct_pt(c))
+            });
+            first.push(format!(
+                "{}: {:.0}% das contas compradas e {:.0}% vendidas (ontem {:.0}% e {:.0}%){oi}. Quer dizer: {}.",
+                i.facts.name,
+                p.now * 100.0,
+                (1.0 - p.now) * 100.0,
+                p.before * 100.0,
+                (1.0 - p.before) * 100.0,
+                leverage_meaning(p, i.facts.change)
+            ));
+        }
+        first.push(String::new());
+        first.push("Onde estão as liquidações (estimativa)".to_owned());
+        let mut heavier_below = Vec::new();
+        for (i, p) in &positioned {
+            let mut parts = Vec::new();
+            if let Some(l) = p.longs {
+                parts.push(format!(
+                    "comprados entre {} e {} ({}), {}",
+                    fmt_pt(l.low),
+                    fmt_pt(l.high),
+                    usd_pt(l.usd),
+                    zone_distance(&l, p.price, true)
+                ));
+            }
+            if let Some(s) = p.shorts {
+                parts.push(format!(
+                    "vendidos entre {} e {} ({}), {}",
+                    fmt_pt(s.low),
+                    fmt_pt(s.high),
+                    usd_pt(s.usd),
+                    zone_distance(&s, p.price, false)
+                ));
+            }
+            if parts.is_empty() {
+                continue;
+            }
+            first.push(format!("{}: {}.", i.facts.name, parts.join("; ")));
+            if let Some(l) = p.longs {
+                let near = levels_next_to(&l, &i.facts.options);
+                if !near.is_empty() {
+                    first.push(format!(
+                        "  {}: {} {} na zona de baixo: é o tipo de lugar onde o preço costuma ir buscar liquidez.",
+                        i.facts.name,
+                        near.join(" e "),
+                        if near.len() == 1 { "fica colado" } else { "ficam colados" }
+                    ));
+                }
+                if p.shorts
+                    .is_none_or(|s| l.usd > s.usd && (p.price - l.high) < (s.low - p.price))
+                {
+                    heavier_below.push(i.facts.name.as_str());
+                }
+            }
+        }
+        if !heavier_below.is_empty() {
+            first.push(format!(
+                "Em {}, as liquidações de baixo estão mais perto e são maiores que as de cima.",
+                names_pt(&heavier_below)
+            ));
+        }
+        first.push("Isso é mapa de risco, não alvo: as zonas são estimadas e a ideia de o preço ir buscá-las não tem teste no histórico (as corretoras só guardam 30 dias desses dados).".to_owned());
+    }
+    let mut second = vec!["Planos".to_owned()];
+    let mut waiting = Vec::new();
+    let mut nothing = Vec::new();
+    for i in items {
+        let winners: Vec<String> = i
+            .facts
+            .options
+            .iter()
+            .filter(|o| o.verdict == Verdict::Up)
+            .filter_map(|o| plan_explained(i.facts, o))
+            .collect();
+        if winners.is_empty() {
+            nothing.push(i.facts.name.as_str());
+        } else {
+            second.extend(winners);
+            if i.facts
+                .options
+                .iter()
+                .any(|o| o.verdict == Verdict::Up && !o.active && o.order == Order::AtClose)
+            {
+                waiting.push(i.facts.name.as_str());
+            }
+        }
+    }
+    if !nothing.is_empty() {
+        second.push(format!(
+            "{}: nenhum lugar de compra vale agora (no passado, comprar nos suportes, nas mínimas e nos rompimentos de hoje perdeu dinheiro ou deu resultado igual ao acaso).",
+            names_pt(&nothing)
         ));
     }
-    if let Some(z) = shorts {
-        out.push(format!(
-            "  Vendidos seriam liquidados principalmente entre {} e {} (cerca de {}). Se o preço subir até lá, essas liquidações podem acelerar a alta.",
-            fmt_pt(z.low),
-            fmt_pt(z.high),
-            usd_pt(z.usd)
+    let funding: Vec<String> = items
+        .iter()
+        .filter_map(|i| {
+            let (v, high, rank) = i.facts.funding_note?;
+            let past = match v {
+                Verdict::Up => "no passado isso deu vantagem para comprar",
+                Verdict::Down => "no passado o preço caiu mais do que subiu depois disso",
+                Verdict::Tie | Verdict::FewCases => "no passado isso não deu vantagem",
+            };
+            Some(if high {
+                format!(
+                    "{}: muito alto (maior que {:.0}% dos dias do ano); os comprados estão pagando caro para segurar a posição; {past}.",
+                    i.facts.name,
+                    rank * 100.0
+                )
+            } else {
+                format!(
+                    "{}: muito baixo (menor que {:.0}% dos dias do ano); os vendidos estão pagando para segurar a posição; {past}.",
+                    i.facts.name,
+                    (1.0 - rank) * 100.0
+                )
+            })
+        })
+        .collect();
+    if !funding.is_empty() {
+        second.push(String::new());
+        second.push("Funding (taxa que comprados e vendidos pagam entre si)".to_owned());
+        second.extend(funding);
+    }
+    let crowded_below = items.iter().any(|i| {
+        i.positioning
+            .is_some_and(|p| p.now >= CROWD_LONG && p.longs.is_some())
+    });
+    if !events.is_empty() {
+        second.push(String::new());
+        second.push("Agenda".to_owned());
+        for (t, what) in events {
+            second.push(format!(
+                "{what} em {}: costuma mexer forte no preço.",
+                brt_pt(*t)
+            ));
+        }
+        if crowded_below {
+            second.push("Com tanta gente comprada e liquidações logo abaixo, um número ruim pode levar o preço direto para essas zonas.".to_owned());
+        }
+    }
+    second.push(String::new());
+    second.extend(paper.lines().map(str::to_owned));
+    second.push(String::new());
+    second.push("Para você (spot)".to_owned());
+    let buy_now: Vec<String> = items
+        .iter()
+        .flat_map(|i| {
+            i.facts
+                .options
+                .iter()
+                .filter(|o| {
+                    o.verdict == Verdict::Up && (o.active || matches!(o.order, Order::Limit(_)))
+                })
+                .map(|o| match o.order {
+                    Order::Limit(_) => format!("{} com ordem em {}", i.facts.name, o.place),
+                    Order::AtClose => format!("{} agora", i.facts.name),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    if buy_now.is_empty() {
+        second.push(if waiting.is_empty() {
+            "Esperar. Nenhuma entrada com vantagem hoje.".to_owned()
+        } else {
+            format!(
+                "Esperar. A única entrada com vantagem é no rompimento de {} (veja os planos).",
+                names_pt(&waiting)
+            )
+        });
+    } else {
+        second.push(format!("Comprar pelo plano: {}.", buy_now.join("; ")));
+    }
+    let risky: Vec<String> = positioned
+        .iter()
+        .filter(|(_, p)| p.now >= CROWD_LONG)
+        .filter_map(|(i, p)| {
+            p.longs.map(|l| {
+                format!(
+                    "{} entre {} e {}",
+                    i.facts.name,
+                    fmt_pt(l.low),
+                    fmt_pt(l.high)
+                )
+            })
+        })
+        .collect();
+    if buy_now.is_empty() && !risky.is_empty() {
+        second.push(format!(
+            "Se quiser comprar uma queda mesmo assim, as regiões onde o preço tem mais chance de ir são: {}. Pelos dados isso é 50/50, sem vantagem comprovada.",
+            risky.join("; ")
         ));
     }
-    if !out.is_empty() {
-        out.push("  (As zonas são estimativa: as corretoras não mostram as posições reais. O cálculo usa onde o dinheiro entrou nos últimos 20 dias e alavancagem de 10x a 50x.)".to_owned());
-    }
-    out
+    vec![first.join("\n"), second.join("\n")]
+}
+
+/// Trend of each asset in the previous report, from `trends.csv`.
+fn read_trends(path: &Path) -> BTreeMap<String, Regime> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| {
+            let (asset, word) = l.split_once(',')?;
+            let regime = match word.trim() {
+                "alta" => Regime::Up,
+                "queda" => Regime::Down,
+                "lateral" => Regime::Range,
+                "indefinida" => Regime::Transition,
+                _ => return None,
+            };
+            Some((format!("{}USDT", asset.trim()), regime))
+        })
+        .collect()
+}
+
+fn trends_csv(items: &[SummaryItem]) -> String {
+    items.iter().fold(String::new(), |mut out, i| {
+        let _ = writeln!(out, "{},{}", i.facts.name, trend_word(i.facts.regime));
+        out
+    })
 }
 
 /// Telegram HTML for a report section: everything escaped, with the asset
@@ -2366,14 +2892,15 @@ fn section_html(section: &str) -> String {
             let escaped = html_escape(line);
             let bold = i == 0
                 || [
-                    "O que fazer",
-                    "Se um dia fechar",
-                    "Comprar agora",
-                    "Ordem de compra",
-                    "Não vale comprar",
+                    "Leitura do dia",
+                    "O que aconteceu",
                     "Alavancagem",
+                    "Onde estão as liquidações",
+                    "Planos",
                     "Funding",
+                    "Agenda",
                     "Conta fictícia",
+                    "Para você",
                     "PRÉVIA",
                 ]
                 .iter()
@@ -2700,6 +3227,23 @@ struct Analysis {
     levels: Vec<(String, f64, Verdict)>,
     /// Daily funding used for the report, kept for replaying past days.
     funding: Option<BTreeMap<NaiveDate, f64>>,
+    /// The numbers behind the report, for the daily summary.
+    facts: Option<Facts>,
+}
+
+/// The day's numbers for one asset, used to write the daily summary.
+#[derive(Debug, Clone)]
+struct Facts {
+    name: String,
+    close: f64,
+    /// Daily ATR, the unit of the plan's target and stop.
+    atr: f64,
+    /// Change of the day, in percent.
+    change: f64,
+    regime: Option<Regime>,
+    options: Vec<BuyOption>,
+    /// Extreme funding: verdict, side (true = high) and rank in the year.
+    funding_note: Option<(Verdict, bool, f64)>,
 }
 
 fn fmt_price(v: f64) -> String {
@@ -3711,6 +4255,7 @@ mod tests {
             signals: Vec::new(),
             levels: vec![("do suporte do último ano".to_owned(), 83.74, Verdict::Tie)],
             funding: None,
+            facts: None,
         };
         let near = [hour_bar(0, 85.0, 85.2, 84.1, 84.5, 1.0)];
         let alerts = level_alerts("SOLUSDT", &analysis, &near);
@@ -3759,7 +4304,7 @@ mod tests {
             "{}",
             lines[1]
         );
-        assert!(extreme.is_some_and(|(_, _, high)| high));
+        assert!(extreme.is_some_and(|(_, _, high, _)| high));
         let flat: BTreeMap<NaiveDate, f64> = candles.iter().map(|c| (c.date(), 0.0001)).collect();
         let (lines, extreme) = funding_lines(&candles, &atr, &flat, last).unwrap();
         assert!(lines.is_empty());
@@ -3905,7 +4450,148 @@ mod tests {
             section_html("BTC: subiu\nTendência: x\nO que fazer: esperar <já>\n  detalhe & mais");
         assert_eq!(
             html,
-            "<b>BTC: subiu</b>\nTendência: x\n<b>O que fazer: esperar &lt;já&gt;</b>\n  detalhe &amp; mais"
+            "<b>BTC: subiu</b>\nTendência: x\nO que fazer: esperar &lt;já&gt;\n  detalhe &amp; mais"
         );
+    }
+
+    fn option(
+        place: &str,
+        price: f64,
+        order: Order,
+        verdict: Verdict,
+        stats: Option<PlanStats>,
+    ) -> BuyOption {
+        BuyOption {
+            place: place.to_owned(),
+            name_de: String::new(),
+            order,
+            price,
+            stats,
+            verdict,
+            active: false,
+            reach: Some(0.5),
+        }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // the whole day of 05/11 as test data
+    fn daily_summary_reads_like_a_written_analysis() {
+        let zone = |low: f64, high: f64, usd: f64| Zone { low, high, usd };
+        let btc = Facts {
+            name: "BTC".to_owned(),
+            close: 76_088.0,
+            atr: 2_100.0,
+            change: -5.5,
+            regime: Some(Regime::Down),
+            options: vec![
+                option(
+                    "75.244 (suporte do último ano)",
+                    75_244.0,
+                    Order::Limit(75_244.0),
+                    Verdict::Tie,
+                    None,
+                ),
+                option(
+                    "75.208 (mínima de 20 dias)",
+                    75_208.0,
+                    Order::Limit(75_208.0),
+                    Verdict::Tie,
+                    None,
+                ),
+                option(
+                    "se um dia fechar acima de 84.898",
+                    84_898.0,
+                    Order::AtClose,
+                    Verdict::Tie,
+                    None,
+                ),
+            ],
+            funding_note: None,
+        };
+        let sol_stats = PlanStats {
+            returns: vec![12.4; 18].into_iter().chain(vec![-6.2; 18]).collect(),
+            median_reach: 21.7,
+            q75_reach: 48.4,
+        };
+        let sol = Facts {
+            name: "SOL".to_owned(),
+            close: 89.33,
+            atr: 4.5,
+            change: -6.6,
+            regime: Some(Regime::Down),
+            options: vec![
+                option(
+                    "88,30 (mínima de 20 dias)",
+                    88.30,
+                    Order::Limit(88.30),
+                    Verdict::Down,
+                    None,
+                ),
+                option(
+                    "se um dia fechar acima de 109,20",
+                    109.20,
+                    Order::AtClose,
+                    Verdict::Up,
+                    Some(sol_stats),
+                ),
+            ],
+            funding_note: Some((Verdict::Tie, true, 0.93)),
+        };
+        let btc_pos = Positioning {
+            names: vec!["Binance", "Bybit", "OKX"],
+            now: 0.73,
+            before: 0.59,
+            top: Some((0.63, vec!["Binance", "OKX"])),
+            oi_change: Some(-6.7),
+            longs: Some(zone(74_015.0, 75_154.0, 904e6)),
+            shorts: Some(zone(83_124.0, 84_263.0, 385e6)),
+            price: 76_088.0,
+        };
+        let sol_pos = Positioning {
+            names: vec!["Binance", "Bybit", "OKX"],
+            now: 0.79,
+            before: 0.75,
+            top: None,
+            oi_change: Some(-8.0),
+            longs: Some(zone(85.74, 87.09, 88e6)),
+            shorts: Some(zone(104.59, 105.94, 34e6)),
+            price: 89.33,
+        };
+        let items = [
+            SummaryItem {
+                facts: &btc,
+                positioning: Some(&btc_pos),
+                previous: Some(Regime::Range),
+            },
+            SummaryItem {
+                facts: &sol,
+                positioning: Some(&sol_pos),
+                previous: Some(Regime::Down),
+            },
+        ];
+        let when = DateTime::from_timestamp(1_762_435_800, 0).unwrap();
+        let events = vec![(when, "Relatório de empregos dos EUA (payroll)".to_owned())];
+        let msgs = daily_summary(
+            NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+            &items,
+            &events,
+            "Conta fictícia: parada.",
+        );
+        println!("{}\n=====\n{}", msgs[0], msgs[1]);
+        assert!(msgs[0].starts_with("Leitura do dia 05/11: CUIDADO"));
+        assert!(
+            msgs[0].contains("Tendência: BTC queda (mudou de lateral desde ontem); SOL queda.")
+        );
+        assert!(msgs[0].contains("combustível para mais queda"));
+        assert!(
+            msgs[0].contains(
+                "75.244 (suporte do último ano) e 75.208 (mínima de 20 dias) ficam colados"
+            )
+        );
+        assert!(msgs[1].contains("SOL: só vale comprar se um dia fechar acima de 109,20"));
+        assert!(msgs[1].contains("vale o dobro de cada perda"));
+        assert!(msgs[1].contains("BTC: nenhum lugar de compra vale agora"));
+        assert!(msgs[1].contains("Se quiser comprar uma queda mesmo assim"));
+        assert!(msgs[0].len() < 4000 && msgs[1].len() < 4000);
     }
 }
