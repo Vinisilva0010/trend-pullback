@@ -155,7 +155,11 @@ enum Command {
         dry_run: bool,
     },
     /// Stormer setups over the history of the watchlist.
-    MarketStudy,
+    MarketStudy {
+        /// Study the larger trade universe (`config/trade_universe.csv`) instead.
+        #[arg(long)]
+        universe: bool,
+    },
     /// One trade a day on 15-minute and 1-hour charts (needs `scripts/futures_klines.py 15m`).
     DayStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
@@ -307,7 +311,14 @@ async fn main() -> ExitCode {
         Command::SmcStudy => cmd_smc_study(&cli.data_dir),
         Command::StormerStudy => stormer_study::cmd_stormer_study(&cli.data_dir),
         Command::Markets { dry_run } => markets::cmd_markets(&cli.data_dir, dry_run).await,
-        Command::MarketStudy => markets::cmd_market_study().await,
+        Command::MarketStudy { universe } => {
+            let list = if universe {
+                markets::TRADE_UNIVERSE
+            } else {
+                markets::WATCHLIST
+            };
+            markets::cmd_market_study(list).await
+        }
         Command::DayStudy => day_study::cmd_day_study(&cli.data_dir),
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),

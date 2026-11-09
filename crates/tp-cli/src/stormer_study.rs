@@ -87,6 +87,17 @@ pub fn line(label: &str, rows: &[Row], split_ms: i64, base: Option<Base>) -> (St
         _ if mean > 0.0 => "positivo, mas sem prova (pode ser sorte)",
         _ => "PERDEU",
     };
+    let span_weeks = rows.last().zip(rows.first()).map_or(0.0, |(l, f)| {
+        count_f64(usize::try_from((l.0 - f.0).max(0) / (7 * 24 * 3600 * 1000)).unwrap_or(0))
+    });
+    let pace = if span_weeks >= 4.0 {
+        format!(
+            " Cerca de {} trades por semana.",
+            format!("{:.1}", count_f64(rows.len()) / span_weeks).replace('.', ",")
+        )
+    } else {
+        String::new()
+    };
     let base_text = base.map_or_else(String::new, |b| {
         format!(
             " Base (entrar em qualquer dia com o mesmo stop): {} até out/2024 e {} depois.",
@@ -96,7 +107,7 @@ pub fn line(label: &str, rows: &[Row], split_ms: i64, base: Option<Base>) -> (St
     });
     (
         format!(
-            "   {label}: {} trades (alvo {targets}, stop {stops}); média {} por trade. Até out/2024: {} em {}; de nov/2024 até hoje: {} em {}.{base_text} {verdict}.",
+            "   {label}: {} trades (alvo {targets}, stop {stops}); média {} por trade. Até out/2024: {} em {}; de nov/2024 até hoje: {} em {}.{pace}{base_text} {verdict}.",
             rows.len(),
             r_pt(mean),
             r_pt(dev_mean),

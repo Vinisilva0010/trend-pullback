@@ -209,12 +209,22 @@ fn markets_json(now_ms: i64, loaded: &[Loaded]) -> Value {
     json!({ "version": 1, "generated_ms": now_ms, "assets": assets })
 }
 
-fn watchlist() -> Result<Vec<Item>, Box<dyn std::error::Error>> {
-    let items = parse_watchlist(&std::fs::read_to_string("config/watchlist.csv")?);
+/// The Mercados tab list.
+pub const WATCHLIST: &str = "config/watchlist.csv";
+/// The larger list searched for trades.
+pub const TRADE_UNIVERSE: &str = "config/trade_universe.csv";
+
+fn read_list(path: &str) -> Result<Vec<Item>, Box<dyn std::error::Error>> {
+    let items =
+        parse_watchlist(&std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?);
     if items.is_empty() {
-        return Err("config/watchlist.csv has no valid lines".into());
+        return Err(format!("{path} has no valid lines").into());
     }
     Ok(items)
+}
+
+fn watchlist() -> Result<Vec<Item>, Box<dyn std::error::Error>> {
+    read_list(WATCHLIST)
 }
 
 fn now_ms() -> Result<i64, Box<dyn std::error::Error>> {
@@ -251,14 +261,14 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool) -> CliResult {
 /// # Errors
 ///
 /// Returns an error when the watchlist is missing.
-pub async fn cmd_market_study() -> CliResult {
+pub async fn cmd_market_study(list: &str) -> CliResult {
     let now = now_ms()?;
     let split_ms = held_out_start()?
         .and_hms_opt(23, 59, 59)
         .ok_or("invalid date")?
         .and_utc()
         .timestamp_millis();
-    let loaded = load_all(&watchlist()?, now).await;
+    let loaded = load_all(&read_list(list)?, now).await;
     println!();
     println!(
         "Setups do Stormer nas ações, índices e ETFs da lista (até 10 anos). Mesmas regras do estudo de cripto: entrada no rompimento, stop na mínima do padrão, alvo em 2 vezes o risco, custos de 0,2% por trade."

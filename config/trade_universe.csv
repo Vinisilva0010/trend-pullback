@@ -1,0 +1,151 @@
+# group,symbol,name - larger list searched for Stormer trades (not shown on
+# the Mercados tab). Yahoo Finance tickers; a ticker Yahoo does not know is
+# skipped with a warning. Edit freely.
+# Brazil: most traded B3 stocks.
+Brasil,ITUB4.SA,Itaú
+Brasil,ITSA4.SA,Itaúsa
+Brasil,BBDC4.SA,Bradesco
+Brasil,BPAC11.SA,BTG Pactual
+Brasil,B3SA3.SA,B3
+Brasil,BBAS3.SA,Banco do Brasil
+Brasil,SANB11.SA,Santander Brasil
+Brasil,BBSE3.SA,BB Seguridade
+Brasil,PSSA3.SA,Porto Seguro
+Brasil,CXSE3.SA,Caixa Seguridade
+Brasil,VALE3.SA,Vale
+Brasil,PETR4.SA,Petrobras
+Brasil,PRIO3.SA,PRIO
+Brasil,BRAV3.SA,Brava Energia
+Brasil,RECV3.SA,PetroReconcavo
+Brasil,CSAN3.SA,Cosan
+Brasil,UGPA3.SA,Ultrapar
+Brasil,VBBR3.SA,Vibra
+Brasil,GGBR4.SA,Gerdau
+Brasil,GOAU4.SA,Metalúrgica Gerdau
+Brasil,CSNA3.SA,CSN
+Brasil,USIM5.SA,Usiminas
+Brasil,CMIN3.SA,CSN Mineração
+Brasil,SUZB3.SA,Suzano
+Brasil,KLBN11.SA,Klabin
+Brasil,BRKM5.SA,Braskem
+Brasil,WEGE3.SA,WEG
+Brasil,EMBJ3.SA,Embraer
+Brasil,RAIL3.SA,Rumo
+Brasil,RENT3.SA,Localiza
+Brasil,SBSP3.SA,Sabesp
+Brasil,CMIG4.SA,Cemig
+Brasil,CPLE3.SA,Copel
+Brasil,CPFE3.SA,CPFL
+Brasil,EQTL3.SA,Equatorial
+Brasil,EGIE3.SA,Engie Brasil
+Brasil,TAEE11.SA,Taesa
+Brasil,ENEV3.SA,Eneva
+Brasil,VIVT3.SA,Vivo
+Brasil,TIMS3.SA,TIM
+Brasil,TOTS3.SA,Totvs
+Brasil,RADL3.SA,Raia Drogasil
+Brasil,RDOR3.SA,Rede D'Or
+Brasil,HAPV3.SA,Hapvida
+Brasil,FLRY3.SA,Fleury
+Brasil,HYPE3.SA,Hypera
+Brasil,ABEV3.SA,Ambev
+Brasil,SMTO3.SA,São Martinho
+Brasil,SLCE3.SA,SLC Agrícola
+Brasil,ASAI3.SA,Assaí
+Brasil,LREN3.SA,Lojas Renner
+Brasil,MGLU3.SA,Magazine Luiza
+Brasil,AZZA3.SA,Azzas 2154
+Brasil,ALPA4.SA,Alpargatas
+Brasil,CYRE3.SA,Cyrela
+Brasil,MRVE3.SA,MRV
+Brasil,DIRR3.SA,Direcional
+Brasil,MULT3.SA,Multiplan
+Brasil,YDUQ3.SA,Yduqs
+Brasil,COGN3.SA,Cogna
+Brasil,BOVA11.SA,BOVA11 (Ibovespa)
+Brasil,SMAL11.SA,SMAL11 (small caps)
+# United States: large caps and sector ETFs.
+EUA,SPY,S&P 500 (SPY)
+EUA,QQQ,Nasdaq 100 (QQQ)
+EUA,DIA,Dow Jones (DIA)
+EUA,IWM,Russell 2000 (IWM)
+EUA,XLK,Tecnologia (XLK)
+EUA,XLF,Financeiro (XLF)
+EUA,XLE,Energia (XLE)
+EUA,XLV,Saúde (XLV)
+EUA,XLP,Consumo básico (XLP)
+EUA,XLY,Consumo discricionário (XLY)
+EUA,XLI,Indústria (XLI)
+EUA,XLU,Utilidades (XLU)
+EUA,XLB,Materiais (XLB)
+EUA,SMH,Semicondutores (SMH)
+EUA,GLD,Ouro (GLD)
+EUA,SLV,Prata (SLV)
+EUA,EWZ,Brasil em dólar (EWZ)
+EUA,AAPL,Apple
+EUA,MSFT,Microsoft
+EUA,NVDA,Nvidia
+EUA,AMZN,Amazon
+EUA,GOOGL,Google
+EUA,META,Meta
+EUA,TSLA,Tesla
+EUA,AVGO,Broadcom
+EUA,AMD,AMD
+EUA,ORCL,Oracle
+EUA,CRM,Salesforce
+EUA,ADBE,Adobe
+EUA,NFLX,Netflix
+EUA,INTC,Intel
+EUA,CSCO,Cisco
+EUA,QCOM,Qualcomm
+EUA,TXN,Texas Instruments
+EUA,IBM,IBM
+EUA,PLTR,Palantir
+EUA,SHOP,Shopify
+EUA,JPM,JPMorgan
+EUA,BAC,Bank of America
+EUA,GS,Goldman Sachs
+EUA,MS,Morgan Stanley
+EUA,V,Visa
+EUA,MA,Mastercard
+EUA,AXP,American Express
+EUA,BLK,BlackRock
+EUA,BRK-B,Berkshire Hathaway
+EUA,IBKR,Interactive Brokers
+EUA,XOM,ExxonMobil
+EUA,CVX,Chevron
+EUA,LLY,Eli Lilly
+EUA,UNH,UnitedHealth
+EUA,JNJ,Johnson & Johnson
+EUA,ABBV,AbbVie
+EUA,MRK,Merck
+EUA,PFE,Pfizer
+EUA,TMO,Thermo Fisher
+EUA,ABT,Abbott
+EUA,AMGN,Amgen
+EUA,ISRG,Intuitive Surgical
+EUA,PG,Procter & Gamble
+EUA,KO,Coca-Cola
+EUA,PEP,PepsiCo
+EUA,WMT,Walmart
+EUA,COST,Costco
+EUA,HD,Home Depot
+EUA,MCD,McDonald's
+EUA,NKE,Nike
+EUA,SBUX,Starbucks
+EUA,DIS,Disney
+EUA,T,AT&T
+EUA,VZ,Verizon
+EUA,CAT,Caterpillar
+EUA,DE,Deere
+EUA,GE,GE Aerospace
+EUA,HON,Honeywell
+EUA,BA,Boeing
+EUA,LMT,Lockheed Martin
+EUA,UNP,Union Pacific
+EUA,UPS,UPS
+EUA,NEE,NextEra Energy
+EUA,LIN,Linde
+EUA,AU,AngloGold Ashanti
+EUA,GFI,Gold Fields
+EUA,NEM,Newmont
