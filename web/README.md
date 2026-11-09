@@ -7,7 +7,8 @@ Upstash Redis (free plan) as the only storage.
 
 ## How data flows
 
-1. `tp alerts` (hourly) and `tp daily` (21:15) write `data/live/dashboard_*.json`.
+1. `tp alerts` (hourly), `tp daily` and `tp markets` (21:15) write
+   `data/live/dashboard_*.json`.
 2. When the tool's `.env` has `DASHBOARD_URL` and `DASHBOARD_TOKEN`, they
    `POST {DASHBOARD_URL}/api/ingest` with `Authorization: Bearer <token>`.
 3. `/api/ingest` validates the body with zod, stores it in Redis and sends a
@@ -24,7 +25,7 @@ Upstash Redis (free plan) as the only storage.
 - `proxy.ts` redirects every page to `/login` without a valid session and
   sets a strict nonce-based Content Security Policy.
 - `/api/ingest` needs `INGEST_TOKEN` (constant-time compare), limits the body
-  to 2 MB and rejects anything that does not match the schema.
+  to 4 MB and rejects anything that does not match the schema.
 - No exchange keys anywhere: the dashboard only reads public market data.
 
 ## Local run
