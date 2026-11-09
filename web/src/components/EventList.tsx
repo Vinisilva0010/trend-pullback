@@ -6,14 +6,15 @@ import { when } from "@/lib/format";
 
 const FILTERS = [
   { key: "importantes", label: "Importantes", test: (e: AppEvent) => e.notify },
-  { key: "smc", label: "Smart Money", test: (e: AppEvent) => e.kind === "smc" },
+  { key: "setups", label: "Setups", test: (e: AppEvent) => e.kind === "smc" || e.kind === "stormer" },
   { key: "noticia", label: "Notícias", test: (e: AppEvent) => e.kind === "noticia" },
-  { key: "mercado", label: "Mercado e níveis", test: (e: AppEvent) => !["smc", "noticia"].includes(e.kind) },
+  { key: "mercado", label: "Mercado e níveis", test: (e: AppEvent) => !["smc", "stormer", "noticia"].includes(e.kind) },
   { key: "tudo", label: "Tudo", test: () => true },
 ] as const;
 
 const KIND_LABEL: Record<string, string> = {
   smc: "Smart Money",
+  stormer: "Stormer",
   noticia: "Notícia",
   mercado: "Mercado",
   nivel: "Nível",
@@ -63,7 +64,7 @@ export function EventList({ events }: { events: AppEvent[] }) {
       <ul className="space-y-3">
         {shown.map((e) => {
           const [title, ...rest] = e.text.split("\n");
-          const candidate = e.text.includes("CANDIDATO:");
+          const candidate = e.text.includes("CANDIDATO");
           return (
             <li key={e.id} id={e.id} className={`rounded border-2 p-3 ${candidate ? "border-accent bg-accent-soft" : "border-line"}`}>
               <details open={e.notify}>

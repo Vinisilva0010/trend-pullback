@@ -2,6 +2,7 @@
 //! as JSON and published to the web app when `.env` has `DASHBOARD_URL` and
 //! `DASHBOARD_TOKEN`.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -171,6 +172,7 @@ fn frame_json(asset: &str, f: &FrameScan) -> Value {
 pub fn live_json(
     now_ms: i64,
     assets: &[(String, Vec<FrameScan>)],
+    stormer: &BTreeMap<String, Value>,
     books: &Books,
     events: &[Value],
 ) -> Value {
@@ -191,6 +193,7 @@ pub fn live_json(
                 "price": price,
                 "change_24h": change,
                 "frames": frames.iter().map(|f| frame_json(asset, f)).collect::<Vec<_>>(),
+                "stormer": stormer.get(asset).cloned().unwrap_or_else(|| json!([])),
             })
         })
         .collect();
@@ -237,11 +240,13 @@ pub fn live_snapshot(
     live_dir: &Path,
     now_ms: i64,
     assets: &[(String, Vec<FrameScan>)],
+    stormer: &BTreeMap<String, Value>,
     books: &Books,
 ) -> Value {
     live_json(
         now_ms,
         assets,
+        stormer,
         books,
         &recent_events(live_dir, EVENTS_IN_SNAPSHOT),
     )

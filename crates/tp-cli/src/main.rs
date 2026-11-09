@@ -61,6 +61,7 @@ use tp_data::universe::{
 
 mod dashboard;
 mod smc_live;
+mod stormer_live;
 mod stormer_study;
 
 type CliResult = Result<ExitCode, Box<dyn Error>>;
@@ -4057,6 +4058,14 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut smc_trades = String::new();
     let mut smc_events = Vec::new();
     let mut smc_assets = Vec::new();
+    let stormer_path = live_dir.join(stormer_live::SENT_FILE);
+    let stormer_sent: BTreeSet<String> = std::fs::read_to_string(&stormer_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let mut stormer_keys = String::new();
+    let mut stormer_view = BTreeMap::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         step(&format!("{asset}: buscando dados"));
         // One asset failing (network, bad data) must not silence the others.
@@ -4067,7 +4076,34 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
                 continue;
             }
         };
-        let frames = smc_live::scan_frames(&hourly, &daily_bars(&daily));
+        let daily_chart = daily_bars(&daily);
+        let charts = stormer_live::scan_charts(&daily_chart);
+        let (stages, trades) =
+            stormer_live::stage_alerts(asset, &charts, now_ms, &stormer_sent, &mut books);
+        for stage in stages {
+            let _ = writeln!(stormer_keys, "{}", stage.key);
+            println!(
+                "{}{}",
+                if stage.notify { "" } else { "[só no painel] " },
+                stage.message
+            );
+            smc_events.push(dashboard::Event {
+                id: stage.key,
+                ms: now_ms,
+                asset: asset_name(asset).to_owned(),
+                kind: "stormer",
+                text: stage.message,
+                notify: stage.notify,
+            });
+        }
+        for trade in trades {
+            let _ = writeln!(smc_trades, "{}", trade.csv());
+        }
+        stormer_view.insert(
+            asset.to_owned(),
+            stormer_live::dashboard_json(asset, &charts),
+        );
+        let frames = smc_live::scan_frames(&hourly, &daily_chart);
         let (stages, trades) =
             smc_live::stage_alerts(data_dir, asset, &frames, now_ms, &smc_sent, &mut books);
         for stage in stages {
@@ -4086,7 +4122,9 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
                 asset: asset_name(asset).to_owned(),
                 kind: "smc",
                 text: stage.message,
-                notify: stage.notify,
+                // Only the Stormer daily candidate notifies; 1h/4h setups
+                // stay on the dashboard.
+                notify: false,
             });
         }
         for trade in trades {
@@ -4168,6 +4206,13 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     step("salvando");
     std::fs::create_dir_all(&live_dir)?;
     smc_live::save(&live_dir, &books, &smc_keys, &smc_trades)?;
+    if !stormer_keys.is_empty() {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stormer_path)?;
+        std::io::Write::write_all(&mut f, stormer_keys.as_bytes())?;
+    }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -4185,7 +4230,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     }
     dashboard::append_events(&live_dir, &events)?;
     step("publicando no painel");
-    let snapshot = dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &books);
+    let snapshot = dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &stormer_view, &books);
     let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
     dashboard::save_and_publish(&live_dir, dashboard::LIVE_FILE, "live", &snapshot, &fresh).await?;
     Ok(ExitCode::SUCCESS)

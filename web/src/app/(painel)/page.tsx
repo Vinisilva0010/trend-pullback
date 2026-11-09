@@ -3,6 +3,7 @@ import { Freshness, NoData, SectionTitle } from "@/components/Common";
 import { LivePrice } from "@/components/LivePrices";
 import { LongShortBar } from "@/components/LongShortBar";
 import { PendingCard, SetupCard } from "@/components/SetupCard";
+import { StormerCard } from "@/components/StormerCard";
 import { LogoutButton } from "@/components/LogoutButton";
 import { getDaily, getLive } from "@/lib/data";
 import { change, money, pct, price, usdShort } from "@/lib/format";
@@ -18,6 +19,9 @@ export default async function Home() {
   const [live, daily] = await Promise.all([getLive(), getDaily()]);
   if (!live && !daily) return <NoData />;
   const reading = daily ? dayReading(daily.sections) : null;
+  const stormer = (live?.assets ?? []).flatMap((a) =>
+    a.stormer.filter((s) => s.status === "sinal" || s.status === "aberto").map((s) => ({ a, s })),
+  );
   const candidates = (live?.assets ?? []).flatMap((a) =>
     a.frames.flatMap((f) => [
       ...f.setups.filter((s) => s.candidate && (s.status === "armado" || s.status === "aberto")).map((s) => ({ kind: "setup" as const, a, f, s })),
@@ -93,7 +97,20 @@ export default async function Home() {
         })}
       </div>
 
-      <SectionTitle>Candidatos agora (spring/UTAD)</SectionTitle>
+      <SectionTitle>Stormer agora (sinais e trades abertos)</SectionTitle>
+      {stormer.length === 0 ? (
+        <p className="rounded bg-panel p-3">
+          Nenhum sinal do Stormer agora. O 123 de compra só aparece com a moeda em tendência de alta (média de 8 acima da de 80).
+        </p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {stormer.map(({ a, s }) => (
+            <StormerCard key={s.key} asset={a.name} item={s} />
+          ))}
+        </div>
+      )}
+
+      <SectionTitle>Smart Money agora (spring/UTAD, 1h e 4h)</SectionTitle>
       {candidates.length === 0 ? (
         <p className="rounded bg-panel p-3">Nenhum candidato armado, aberto ou formando agora.</p>
       ) : (

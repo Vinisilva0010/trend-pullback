@@ -24,10 +24,13 @@ import { price } from "@/lib/format";
 // estimated liquidation zones.
 
 type Zone = { low: number; high: number; usd: number } | null;
+type Level = { price: number; color: "entry" | "down" | "up"; title: string };
 type Props = {
   symbol: string;
   tf: "1h" | "4h" | "1d";
   frame: Frame | null;
+  /** Stormer signal or open trade levels for this chart. */
+  extra?: Level[];
   longsZone: Zone;
   shortsZone: Zone;
 };
@@ -63,7 +66,7 @@ async function loadCandles(symbol: string, tf: string): Promise<Kline[]> {
   return (await r.json()) as Kline[];
 }
 
-export function CandleChart({ symbol, tf, frame, longsZone, shortsZone }: Props) {
+export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [] }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -143,6 +146,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone }: Props)
         add(s.target, COLORS.up, "Alvo", LineStyle.Solid);
       }
       for (const p of frame?.pending ?? []) add(p.choch_level, COLORS.confirm, "Confirma o setup", LineStyle.Dashed);
+      for (const l of extra) add(l.price, COLORS[l.color], l.title, LineStyle.Solid, l.color === "entry" ? 3 : 2);
     }
     if (layers.liquidity && frame) {
       if (frame.liquidity.above != null) add(frame.liquidity.above, COLORS.liquidity, "Liquidez acima", LineStyle.Dotted, 1);
@@ -183,7 +187,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone }: Props)
       for (const l of lines) series.removePriceLine(l);
       markerApi.detach();
     };
-  }, [active, frame, longsZone, shortsZone, layers, tf, symbol]);
+  }, [active, frame, longsZone, shortsZone, layers, tf, symbol, extra]);
 
   const toggle = (k: keyof typeof layers) => setLayers((v) => ({ ...v, [k]: !v[k] }));
   const LAYER_LABEL: Record<keyof typeof layers, string> = {

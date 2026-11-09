@@ -1,6 +1,7 @@
 import { CandleChart } from "@/components/CandleChart";
 import { Freshness, NoData, Pill, SectionTitle } from "@/components/Common";
 import { PendingCard, SetupCard } from "@/components/SetupCard";
+import { StormerCard } from "@/components/StormerCard";
 import { getDaily, getLive } from "@/lib/data";
 import { price } from "@/lib/format";
 import { ASSETS, TF_LABEL, TIMEFRAMES, type AssetName, type Timeframe } from "@/lib/view";
@@ -15,6 +16,12 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
   const pos = daily?.assets.find((x) => x.name === asset)?.positioning ?? null;
   const active = frame?.setups.filter((s) => s.status === "armado" || s.status === "aberto") ?? [];
   const recent = (frame?.setups ?? []).filter((s) => !active.includes(s)).slice(-6).reverse();
+  const stormer = tf === "1d" ? (a?.stormer ?? []).filter((s) => s.tf === "1d" && (s.status === "sinal" || s.status === "aberto")) : [];
+  const extra = stormer.flatMap((s) => [
+    { price: s.trigger, color: "entry" as const, title: s.status === "sinal" ? "Stormer: gatilho" : "Stormer: entrada" },
+    { price: s.stop, color: "down" as const, title: "Stormer: stop" },
+    { price: s.target, color: "up" as const, title: "Stormer: alvo" },
+  ]);
 
   return (
     <div>
@@ -32,7 +39,7 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
           </Pill>
         ))}
       </div>
-      <CandleChart symbol={`${asset}USDT`} tf={tf} frame={frame} longsZone={pos?.longs_zone ?? null} shortsZone={pos?.shorts_zone ?? null} />
+      <CandleChart symbol={`${asset}USDT`} tf={tf} frame={frame} longsZone={pos?.longs_zone ?? null} shortsZone={pos?.shorts_zone ?? null} extra={extra} />
 
       <SectionTitle>O que as linhas querem dizer</SectionTitle>
       <ul className="space-y-1 leading-relaxed">
@@ -57,7 +64,14 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
       {frame ? (
         <>
           <SectionTitle>Agora em {asset} · {TF_LABEL[tf]}</SectionTitle>
-          {active.length === 0 && frame.pending.length === 0 ? <p className="rounded bg-panel p-3">Nada armado, aberto ou formando neste gráfico.</p> : null}
+          {stormer.length ? (
+            <div className="mb-3 grid gap-3 md:grid-cols-2">
+              {stormer.map((s) => (
+                <StormerCard key={s.key} asset={asset} item={s} />
+              ))}
+            </div>
+          ) : null}
+          {active.length === 0 && frame.pending.length === 0 && stormer.length === 0 ? <p className="rounded bg-panel p-3">Nada armado, aberto ou formando neste gráfico.</p> : null}
           <div className="grid gap-3 md:grid-cols-2">
             {active.map((s) => (
               <SetupCard key={s.key} asset={asset} frameLabel={frame.label} setup={s} />

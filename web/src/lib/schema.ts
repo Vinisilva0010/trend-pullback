@@ -62,12 +62,31 @@ export const FrameSchema = z.object({
   pending: z.array(PendingSchema).max(20),
 });
 
+export const StormerSchema = z.object({
+  key: z.string().max(200),
+  tf: z.enum(["1d", "1w"]),
+  pattern: z.string().max(40),
+  side,
+  role: z.enum(["candidato", "observacao"]),
+  status: z.enum(["sinal", "aberto", "alvo", "stop", "prazo"]),
+  trigger: num,
+  stop: num,
+  target: num,
+  signal_ms: ms,
+  deadline_ms: ms.nullable(),
+  entry_ms: ms.nullable(),
+  exit_ms: ms.nullable(),
+  exit: num.nullable(),
+  r: num.nullable(),
+});
+
 export const AssetSchema = z.object({
   symbol: z.string().regex(/^[A-Z0-9]{2,15}USDT$/),
   name: z.string().max(15),
   price: num.nullable(),
   change_24h: num.nullable(),
   frames: z.array(FrameSchema).max(5),
+  stormer: z.array(StormerSchema).max(200).default([]),
 });
 
 export const BookTradeSchema = z.object({
@@ -142,6 +161,7 @@ export type Setup = z.infer<typeof SetupSchema>;
 export type Pending = z.infer<typeof PendingSchema>;
 export type Frame = z.infer<typeof FrameSchema>;
 export type Asset = z.infer<typeof AssetSchema>;
+export type StormerItem = z.infer<typeof StormerSchema>;
 export type Book = z.infer<typeof BookSchema>;
 export type Live = z.infer<typeof LiveSchema>;
 export type Daily = z.infer<typeof DailySchema>;

@@ -1,5 +1,6 @@
 import { Freshness, NoData, Pill, SectionTitle } from "@/components/Common";
 import { PendingCard, SetupCard } from "@/components/SetupCard";
+import { StormerCard } from "@/components/StormerCard";
 import { getLive } from "@/lib/data";
 
 export default async function SetupsPage({ searchParams }: { searchParams: Promise<{ ver?: string }> }) {
@@ -15,6 +16,13 @@ export default async function SetupsPage({ searchParams }: { searchParams: Promi
     .filter((r) => ["alvo", "stop", "prazo"].includes(r.s.status) && keep(r.s.candidate))
     .sort((x, y) => (y.s.exit_ms ?? 0) - (x.s.exit_ms ?? 0))
     .slice(0, 20);
+  const stormerNow = live.assets.flatMap((a) =>
+    a.stormer.filter((s) => (s.status === "sinal" || s.status === "aberto") && (all || s.role === "candidato")).map((s) => ({ a, s })),
+  );
+  const stormerDone = live.assets
+    .flatMap((a) => a.stormer.filter((s) => s.exit_ms != null && (all || s.role === "candidato")).map((s) => ({ a, s })))
+    .sort((x, y) => (y.s.exit_ms ?? 0) - (x.s.exit_ms ?? 0))
+    .slice(0, 12);
   const pending = live.assets.flatMap((a) => a.frames.flatMap((f) => f.pending.filter((p) => keep(p.candidate)).map((p) => ({ a, f, p }))));
 
   const block = (title: string, items: React.ReactNode[], empty: string) => (
@@ -38,12 +46,14 @@ export default async function SetupsPage({ searchParams }: { searchParams: Promi
         </Pill>
       </div>
       <p className="mt-3 leading-relaxed">
-        Candidato é a varrida na borda de uma lateral (spring ou UTAD) no gráfico de 1h ou 4h: o único tipo que ficou positivo no histórico, ainda sem prova. Os outros perderam dinheiro no histórico e aparecem só para você acompanhar.
+        Candidato do Stormer é o 123 de compra no diário a favor da tendência: o único setup que ganhou nos dois períodos do histórico. Os traps do semanal e do diário estão em observação. No Smart Money (1h e 4h), candidato é a varrida na borda de uma lateral (spring ou UTAD), positiva no histórico mas sem prova.
       </p>
-      {block("Trades abertos", open.map((r) => <SetupCard key={r.s.key} asset={r.a.name} frameLabel={r.f.label} setup={r.s} />), "Nenhum trade aberto.")}
-      {block("Ordens armadas", armed.map((r) => <SetupCard key={r.s.key} asset={r.a.name} frameLabel={r.f.label} setup={r.s} />), "Nenhuma ordem armada.")}
+      {block("Stormer: sinais e trades abertos", stormerNow.map((r) => <StormerCard key={r.s.key} asset={r.a.name} item={r.s} />), "Nenhum sinal do Stormer agora.")}
+      {block("Stormer: fechados recentes", stormerDone.map((r) => <StormerCard key={r.s.key} asset={r.a.name} item={r.s} />), "Nenhum trade do Stormer fechado ainda.")}
+      {block("Smart Money: trades abertos", open.map((r) => <SetupCard key={r.s.key} asset={r.a.name} frameLabel={r.f.label} setup={r.s} />), "Nenhum trade aberto.")}
+      {block("Smart Money: ordens armadas", armed.map((r) => <SetupCard key={r.s.key} asset={r.a.name} frameLabel={r.f.label} setup={r.s} />), "Nenhuma ordem armada.")}
       {block("Varridas esperando confirmação", pending.map((r) => <PendingCard key={r.p.key} asset={r.a.name} frameLabel={r.f.label} pending={r.p} />), "Nenhuma varrida esperando.")}
-      {block("Fechados recentes", closed.map((r) => <SetupCard key={r.s.key} asset={r.a.name} frameLabel={r.f.label} setup={r.s} />), "Nenhum trade fechado ainda.")}
+      {block("Smart Money: fechados recentes", closed.map((r) => <SetupCard key={r.s.key} asset={r.a.name} frameLabel={r.f.label} setup={r.s} />), "Nenhum trade fechado ainda.")}
     </div>
   );
 }

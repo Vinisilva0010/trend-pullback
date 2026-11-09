@@ -26,7 +26,11 @@ pub const TRADES_FILE: &str = "smc_trades_v2.csv";
 /// Start time of each paper book.
 pub const BOOKS_FILE: &str = "smc_books_v2.csv";
 /// Timeframes that have a paper book (the daily one had too few trades to test).
-pub const BOOK_FRAMES: [(&str, &str); 2] = [("1h", "curto (1h)"), ("4h", "swing (4h)")];
+pub const BOOK_FRAMES: [(&str, &str); 3] = [
+    ("st1d", "Stormer diário (123)"),
+    ("1h", "curto (1h)"),
+    ("4h", "swing (4h)"),
+];
 const TRADES_HEADER: &str = "key,tf,asset,side,fill_ms,exit_ms,entry,stop,exit,r,status";
 
 /// One timeframe scanned for one asset.
@@ -129,12 +133,12 @@ fn side_upper(side: Side) -> &'static str {
     }
 }
 
-fn when(ms: i64) -> String {
+pub fn when(ms: i64) -> String {
     DateTime::from_timestamp_millis(ms).map_or_else(String::new, brt_pt)
 }
 
 /// Change from `from` to `to`, in percent.
-fn change_pct(from: f64, to: f64) -> f64 {
+pub fn change_pct(from: f64, to: f64) -> f64 {
     if from == 0.0 {
         0.0
     } else {
@@ -142,7 +146,7 @@ fn change_pct(from: f64, to: f64) -> f64 {
     }
 }
 
-fn signed_money(v: f64) -> String {
+pub fn signed_money(v: f64) -> String {
     if v > 0.0 {
         format!("+{}", money_pt(v))
     } else {
@@ -150,7 +154,7 @@ fn signed_money(v: f64) -> String {
     }
 }
 
-fn ratio_pt(v: f64) -> String {
+pub fn ratio_pt(v: f64) -> String {
     format!("{v:.1}").replace('.', ",")
 }
 
@@ -330,13 +334,25 @@ impl Books {
                 .product::<f64>()
     }
 
+    /// Balance of one paper book.
+    #[must_use]
+    pub fn equity_of(&self, tf: &str) -> f64 {
+        self.equity(tf)
+    }
+
+    /// True when the book already has this trade.
+    #[must_use]
+    pub fn has_trade_key(&self, key: &str) -> bool {
+        self.has_trade(key)
+    }
+
     fn has_trade(&self, key: &str) -> bool {
         self.trades.iter().any(|t| t.key == key)
     }
 }
 
 /// Position line for a paper book entering at `entry` with `stop`.
-fn position_line(label: &str, equity: f64, entry: f64, stop: f64) -> String {
+pub fn position_line(label: &str, equity: f64, entry: f64, stop: f64) -> String {
     let move_share = if entry == 0.0 {
         0.0
     } else {
