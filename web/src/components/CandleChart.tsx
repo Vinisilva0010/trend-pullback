@@ -1,0 +1,215 @@
+"use client";
+
+import {
+  CandlestickSeries,
+  ColorType,
+  createChart,
+  createSeriesMarkers,
+  CrosshairMode,
+  HistogramSeries,
+  LineStyle,
+  type IChartApi,
+  type IPriceLine,
+  type ISeriesApi,
+  type SeriesMarker,
+  type Time,
+  type UTCTimestamp,
+} from "lightweight-charts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Frame } from "@/lib/schema";
+import { price } from "@/lib/format";
+
+// Candles from Binance's public API (live through its websocket) with the
+// tool's levels drawn on top: active setup, sweeps waiting, liquidity and
+// estimated liquidation zones.
+
+type Zone = { low: number; high: number; usd: number } | null;
+type Props = {
+  symbol: string;
+  tf: "1h" | "4h" | "1d";
+  frame: Frame | null;
+  longsZone: Zone;
+  shortsZone: Zone;
+};
+
+const BRT_OFFSET = -3 * 3600;
+const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400 };
+
+const COLORS = {
+  up: "#0b8f5a",
+  down: "#d9304a",
+  entry: "#c99700",
+  liquidity: "#000000",
+  confirm: "#1f5fd1",
+};
+
+/** Chart time in Brasília (the library draws UTC). */
+function chartTime(ms: number): UTCTimestamp {
+  return (Math.floor(ms / 1000) + BRT_OFFSET) as UTCTimestamp;
+}
+
+type Kline = [number, string, string, string, string, string, ...unknown[]];
+
+async function loadCandles(symbol: string, tf: string): Promise<Kline[]> {
+  const direct = `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=500`;
+  try {
+    const r = await fetch(direct, { cache: "no-store" });
+    if (r.ok) return (await r.json()) as Kline[];
+  } catch {
+    // Falls back to the server route below.
+  }
+  const r = await fetch(`/api/klines?symbol=${symbol}&interval=${tf}`, { cache: "no-store" });
+  if (!r.ok) throw new Error("sem dados de preço");
+  return (await r.json()) as Kline[];
+}
+
+export function CandleChart({ symbol, tf, frame, longsZone, shortsZone }: Props) {
+  const box = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [layers, setLayers] = useState({ setup: true, liquidity: true, liquidations: true, history: true });
+
+  // Chart and candles: rebuilt when the asset or timeframe changes.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    setError(null);
+    const chart = createChart(el, {
+      autoSize: true,
+      layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#000000", fontSize: 13, fontFamily: "system-ui, sans-serif" },
+      grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#000000" },
+      timeScale: { borderColor: "#000000", timeVisible: tf !== "1d", secondsVisible: false, rightOffset: 6 },
+      localization: { locale: "pt-BR", priceFormatter: (p: number) => price(p) },
+    });
+    const candles = chart.addSeries(CandlestickSeries, {
+      upColor: COLORS.up,
+      downColor: COLORS.down,
+      borderVisible: false,
+      wickUpColor: COLORS.up,
+      wickDownColor: COLORS.down,
+      priceLineColor: "#000000",
+    });
+    const volume = chart.addSeries(HistogramSeries, { priceScaleId: "", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    chartRef.current = chart;
+    seriesRef.current = candles;
+
+    let ws: WebSocket | null = null;
+    let cancelled = false;
+    loadCandles(symbol, tf)
+      .then((rows) => {
+        if (cancelled) return;
+        candles.setData(rows.map((k) => ({ time: chartTime(k[0]), open: +k[1], high: +k[2], low: +k[3], close: +k[4] })));
+        volume.setData(
+          rows.map((k) => ({ time: chartTime(k[0]), value: +k[5], color: +k[4] >= +k[1] ? "#0b8f5a55" : "#d9304a55" })),
+        );
+        chart.timeScale().scrollToRealTime();
+        ws = new WebSocket(`wss://data-stream.binance.vision/ws/${symbol.toLowerCase()}@kline_${tf}`);
+        ws.onmessage = (event) => {
+          const k = (JSON.parse(String(event.data)) as { k?: { t: number; o: string; h: string; l: string; c: string; v: string } }).k;
+          if (!k) return;
+          const time = chartTime(k.t);
+          candles.update({ time, open: +k.o, high: +k.h, low: +k.l, close: +k.c });
+          volume.update({ time, value: +k.v, color: +k.c >= +k.o ? "#0b8f5a55" : "#d9304a55" });
+        };
+      })
+      .catch(() => setError("Não consegui carregar os candles agora. Tente de novo em instantes."));
+    return () => {
+      cancelled = true;
+      ws?.close();
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+    };
+  }, [symbol, tf]);
+
+  const active = useMemo(() => frame?.setups.filter((s) => s.status === "armado" || s.status === "aberto") ?? [], [frame]);
+
+  // Levels and markers: redrawn when the data or the chosen layers change.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    const lines: IPriceLine[] = [];
+    const add = (p: number, color: string, title: string, style: LineStyle, width: 1 | 2 | 3 = 2) =>
+      lines.push(series.createPriceLine({ price: p, color, title, lineStyle: style, lineWidth: width, axisLabelVisible: true }));
+    if (layers.setup) {
+      for (const s of active) {
+        const tag = s.candidate ? "" : " (só acompanhar)";
+        add(s.entry, COLORS.entry, `Entrada${tag}`, LineStyle.Solid, 3);
+        add(s.stop, COLORS.down, "Stop", LineStyle.Solid);
+        add(s.target, COLORS.up, "Alvo", LineStyle.Solid);
+      }
+      for (const p of frame?.pending ?? []) add(p.choch_level, COLORS.confirm, "Confirma o setup", LineStyle.Dashed);
+    }
+    if (layers.liquidity && frame) {
+      if (frame.liquidity.above != null) add(frame.liquidity.above, COLORS.liquidity, "Liquidez acima", LineStyle.Dotted, 1);
+      if (frame.liquidity.below != null) add(frame.liquidity.below, COLORS.liquidity, "Liquidez abaixo", LineStyle.Dotted, 1);
+    }
+    if (layers.liquidations) {
+      if (longsZone) {
+        add(longsZone.high, COLORS.down, "Liquidação comprados", LineStyle.LargeDashed, 1);
+        add(longsZone.low, COLORS.down, "", LineStyle.LargeDashed, 1);
+      }
+      if (shortsZone) {
+        add(shortsZone.low, COLORS.up, "Liquidação vendidos", LineStyle.LargeDashed, 1);
+        add(shortsZone.high, COLORS.up, "", LineStyle.LargeDashed, 1);
+      }
+    }
+    const step = STEP[tf];
+    // Candles open on UTC boundaries; snap each mark to its candle's open.
+    const snap = (ms: number) => chartTime(Math.floor(ms / (step * 1000)) * step * 1000);
+    const markers: SeriesMarker<Time>[] = [];
+    if (frame && layers.history) {
+      for (const s of frame.setups) {
+        const long = s.side === "long";
+        markers.push({ time: snap(s.sweep_ms), position: long ? "belowBar" : "aboveBar", color: COLORS.confirm, shape: long ? "arrowUp" : "arrowDown", text: "Varrida" });
+        if (s.fill_ms) markers.push({ time: snap(s.fill_ms - step * 1000), position: long ? "belowBar" : "aboveBar", color: COLORS.entry, shape: "circle", text: "Entrou" });
+        if (s.exit_ms && s.status !== "cancelado" && s.status !== "aberto") {
+          const won = s.status === "alvo" || (s.r ?? 0) > 0;
+          markers.push({ time: snap(s.exit_ms - step * 1000), position: long ? "aboveBar" : "belowBar", color: won ? COLORS.up : COLORS.down, shape: "square", text: won ? "Alvo" : s.status === "stop" ? "Stop" : "Prazo" });
+        }
+      }
+      for (const p of frame.pending) {
+        const long = p.side === "long";
+        markers.push({ time: snap(p.sweep_ms), position: long ? "belowBar" : "aboveBar", color: COLORS.confirm, shape: long ? "arrowUp" : "arrowDown", text: "Varrida" });
+      }
+    }
+    markers.sort((a, b) => Number(a.time) - Number(b.time));
+    const markerApi = createSeriesMarkers(series, markers);
+    return () => {
+      for (const l of lines) series.removePriceLine(l);
+      markerApi.detach();
+    };
+  }, [active, frame, longsZone, shortsZone, layers, tf, symbol]);
+
+  const toggle = (k: keyof typeof layers) => setLayers((v) => ({ ...v, [k]: !v[k] }));
+  const LAYER_LABEL: Record<keyof typeof layers, string> = {
+    setup: "Setup (entrada, stop, alvo)",
+    liquidity: "Liquidez",
+    liquidations: "Zonas de liquidação",
+    history: "Marcas no gráfico",
+  };
+
+  return (
+    <div>
+      <div ref={box} className="h-[58vh] min-h-[340px] w-full rounded border-2 border-ink" />
+      <div className="mt-2 flex flex-wrap gap-2">
+        {(Object.keys(layers) as (keyof typeof layers)[]).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => toggle(k)}
+            aria-pressed={layers[k]}
+            className={`rounded border-2 border-ink px-2.5 py-1 text-[13px] font-extrabold ${layers[k] ? "bg-ink text-paper" : "bg-paper text-ink"}`}
+          >
+            {LAYER_LABEL[k]}
+          </button>
+        ))}
+      </div>
+      {error ? <p className="mt-2 font-extrabold text-down">{error}</p> : null}
+    </div>
+  );
+}

@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Light, high-contrast theme: black bold text on white, Binance-like
+   green/red for up/down and yellow for the main accent. */
+@theme {
+  --color-ink: #000000;
+  --color-paper: #ffffff;
+  --color-panel: #f5f5f5;
+  --color-line: #d9d9d9;
+  --color-up: #0b8f5a;
+  --color-up-soft: #e3f7ee;
+  --color-down: #d9304a;
+  --color-down-soft: #fde8eb;
+  --color-accent: #f0b90b;
+  --color-accent-soft: #fff6d6;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  font-size: 17px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
