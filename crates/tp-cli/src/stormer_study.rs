@@ -43,20 +43,20 @@ fn pattern_name(p: Pattern) -> &'static str {
 }
 
 /// One closed trade: entry time and result.
-type Row = (i64, f64, Exit);
+pub type Row = (i64, f64, Exit);
 
 /// Mean result of the comparison base in each period.
 #[derive(Debug, Clone, Copy, Default)]
-struct Base {
-    dev: f64,
-    fin: f64,
+pub struct Base {
+    pub dev: f64,
+    pub fin: f64,
 }
 
 /// Verdict line, same rules as the SMC study (development t >= 2 with 30+
 /// trades and a positive final period with 10+ trades), plus: in both
 /// periods the setup must beat the base (entering on any candle with the
 /// same stop distance and target).
-fn line(label: &str, rows: &[Row], split_ms: i64, base: Option<Base>) -> (String, bool) {
+pub fn line(label: &str, rows: &[Row], split_ms: i64, base: Option<Base>) -> (String, bool) {
     if rows.is_empty() {
         return (format!("   {label}: nenhum trade."), false);
     }

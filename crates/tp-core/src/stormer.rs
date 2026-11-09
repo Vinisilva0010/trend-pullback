@@ -176,7 +176,9 @@ pub fn weekly(daily: &[Bar]) -> Vec<Bar> {
         .collect()
 }
 
-fn mirror(bars: &[Bar]) -> Vec<Bar> {
+/// The price series upside down, so short rules can reuse the long ones.
+#[must_use]
+pub fn mirror(bars: &[Bar]) -> Vec<Bar> {
     bars.iter()
         .map(|b| Bar {
             open_time_ms: b.open_time_ms,
@@ -437,7 +439,8 @@ pub fn median_risk(trades: &[&Trade]) -> Option<f64> {
 /// Runs a filled trade forward from its entry candle `k`. The stop is
 /// checked first on any candle that touches both levels, and the target is
 /// not taken on the entry candle (its order inside the candle is unknown).
-fn follow(m: &[Bar], k: usize, stop: f64, target: f64, max_hold: usize) -> (usize, f64, Exit) {
+#[must_use]
+pub fn follow(m: &[Bar], k: usize, stop: f64, target: f64, max_hold: usize) -> (usize, f64, Exit) {
     let n = m.len();
     if m[k].low <= stop {
         return (k, stop, Exit::Stop);
