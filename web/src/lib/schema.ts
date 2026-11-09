@@ -67,7 +67,7 @@ export const StormerSchema = z.object({
   tf: z.enum(["1d", "1w"]),
   pattern: z.string().max(40),
   side,
-  role: z.enum(["candidato", "observacao"]),
+  role: z.enum(["candidato", "observacao", "acompanhar"]),
   status: z.enum(["sinal", "aberto", "alvo", "stop", "prazo"]),
   trigger: num,
   stop: num,

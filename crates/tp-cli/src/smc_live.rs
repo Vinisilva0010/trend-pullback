@@ -27,7 +27,7 @@ pub const TRADES_FILE: &str = "smc_trades_v2.csv";
 pub const BOOKS_FILE: &str = "smc_books_v2.csv";
 /// Timeframes that have a paper book (the daily one had too few trades to test).
 pub const BOOK_FRAMES: [(&str, &str); 3] = [
-    ("st1d", "Stormer diário (123)"),
+    ("st1d", "Stormer diário (trap)"),
     ("1h", "curto (1h)"),
     ("4h", "swing (4h)"),
 ];

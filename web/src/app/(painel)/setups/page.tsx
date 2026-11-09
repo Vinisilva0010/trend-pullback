@@ -17,10 +17,10 @@ export default async function SetupsPage({ searchParams }: { searchParams: Promi
     .sort((x, y) => (y.s.exit_ms ?? 0) - (x.s.exit_ms ?? 0))
     .slice(0, 20);
   const stormerNow = live.assets.flatMap((a) =>
-    a.stormer.filter((s) => (s.status === "sinal" || s.status === "aberto") && (all || s.role === "candidato")).map((s) => ({ a, s })),
+    a.stormer.filter((s) => (s.status === "sinal" || s.status === "aberto") && (all || s.role !== "acompanhar")).map((s) => ({ a, s })),
   );
   const stormerDone = live.assets
-    .flatMap((a) => a.stormer.filter((s) => s.exit_ms != null && (all || s.role === "candidato")).map((s) => ({ a, s })))
+    .flatMap((a) => a.stormer.filter((s) => s.exit_ms != null && (all || s.role !== "acompanhar")).map((s) => ({ a, s })))
     .sort((x, y) => (y.s.exit_ms ?? 0) - (x.s.exit_ms ?? 0))
     .slice(0, 12);
   const pending = live.assets.flatMap((a) => a.frames.flatMap((f) => f.pending.filter((p) => keep(p.candidate)).map((p) => ({ a, f, p }))));
@@ -46,7 +46,7 @@ export default async function SetupsPage({ searchParams }: { searchParams: Promi
         </Pill>
       </div>
       <p className="mt-3 leading-relaxed">
-        Candidato do Stormer é o 123 de compra no diário a favor da tendência: o único setup que ganhou nos dois períodos do histórico. Os traps do semanal e do diário estão em observação. No Smart Money (1h e 4h), candidato é a varrida na borda de uma lateral (spring ou UTAD), positiva no histórico mas sem prova.
+        Cada setup foi comparado com entrar em qualquer dia com o mesmo stop e o mesmo alvo. Em BTC, ETH e SOL, o trap do Stormer (o preço passa de um fundo ou topo e volta, a varrida de liquidez com a entrada no rompimento) ficou acima dessa base nos dois períodos, mas ainda sem trades suficientes para provar: está em observação e gera aviso. O 123 de compra não ganhou da base e fica só para acompanhar. No Smart Money (1h e 4h), a varrida na borda de uma lateral (spring ou UTAD) segue em teste nas contas fictícias.
       </p>
       {block("Stormer: sinais e trades abertos", stormerNow.map((r) => <StormerCard key={r.s.key} asset={r.a.name} item={r.s} />), "Nenhum sinal do Stormer agora.")}
       {block("Stormer: fechados recentes", stormerDone.map((r) => <StormerCard key={r.s.key} asset={r.a.name} item={r.s} />), "Nenhum trade do Stormer fechado ainda.")}

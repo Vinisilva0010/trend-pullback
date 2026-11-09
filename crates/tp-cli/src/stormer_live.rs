@@ -1,9 +1,11 @@
-//! Live Stormer setups. The 1-2-3 buy on the daily chart in the direction
-//! of the trend is the one setup that passed the history test in both
-//! periods (BTC, ETH and SOL together), so it is the candidate: Telegram,
-//! phone notification, dashboard and its own paper book. The weekly trap
-//! (both sides) and the daily trap buy with the trend were positive without
-//! proof: they appear on the dashboard as "em observação".
+//! Live Stormer setups on BTC, ETH and SOL. After the comparison with
+//! entering on any candle (same stop and target), no setup is proven on
+//! these coins: the trap (failed breakdown or breakout, the liquidity sweep
+//! with Stormer's entry) beat that base in both periods on the daily and
+//! weekly charts, buys and sells, without enough trades yet. Those are "em
+//! observação": Telegram, phone, dashboard and the paper book (daily ones).
+//! The daily 1-2-3 buy with the trend did not beat the base and stays on the
+//! dashboard only.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -15,9 +17,9 @@ use tp_core::stormer::{Exit, Params, Pattern, Side, Signal, Trade, scan, weekly}
 use super::{asset_name, count_f64, fmt_pt, money_pt, pct_pt, r_mean_t, r_pt};
 use crate::smc_live::{Books, TradeRow, change_pct, position_line, ratio_pt, signed_money, when};
 
-/// Paper book of the candidate.
+/// Paper book of the daily setups followed with alerts.
 pub const BOOK: &str = "st1d";
-const BOOK_LABEL: &str = "Stormer diário (123)";
+const BOOK_LABEL: &str = "Stormer diário (trap)";
 /// Sent stage keys, one per line.
 pub const SENT_FILE: &str = "stormer_sent.txt";
 const DAY_MS: i64 = 24 * 3600 * 1000;
@@ -26,10 +28,12 @@ const WEEK_MS: i64 = 7 * DAY_MS;
 /// What the tool does with a pattern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
-    /// Passed the test: alerts and paper book.
+    /// Passed the test and beat the base: alerts and paper book.
     Candidate,
-    /// Positive without proof: dashboard only.
+    /// Above the base in both periods without proof: alerts and paper book.
     Watch,
+    /// Did not beat the base: dashboard only.
+    Info,
 }
 
 /// One chart scanned for one asset.
@@ -77,10 +81,41 @@ pub fn scan_charts(daily: &[Bar]) -> Vec<Chart> {
 #[must_use]
 pub fn role(tf: &str, pattern: Pattern, side: Side, with_trend: bool) -> Option<Role> {
     match (tf, pattern, side) {
-        ("1d", Pattern::OneTwoThree, Side::Long) if with_trend => Some(Role::Candidate),
-        ("1d", Pattern::Trap, Side::Long) if with_trend => Some(Role::Watch),
-        ("1w", Pattern::Trap, _) => Some(Role::Watch),
+        ("1d" | "1w", Pattern::Trap, _) => Some(Role::Watch),
+        ("1d", Pattern::OneTwoThreeInside, Side::Short) if with_trend => Some(Role::Watch),
+        ("1d", Pattern::OneTwoThree, Side::Long) if with_trend => Some(Role::Info),
         _ => None,
+    }
+}
+
+impl Role {
+    /// Alerts on Telegram and phone (and, on the daily chart, the paper book).
+    #[must_use]
+    pub fn alerts(self) -> bool {
+        self != Self::Info
+    }
+
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Candidate => "candidato",
+            Self::Watch => "observacao",
+            Self::Info => "acompanhar",
+        }
+    }
+
+    fn line(self) -> &'static str {
+        match self {
+            Self::Candidate => {
+                "CANDIDATO: passou no teste e ganhou de entrar em qualquer dia com o mesmo stop."
+            }
+            Self::Watch => {
+                "EM OBSERVAÇÃO: ficou acima da base (entrar em qualquer dia com o mesmo stop) nos dois períodos, mas ainda sem trades suficientes para provar."
+            }
+            Self::Info => {
+                "SÓ PARA ACOMPANHAR: no histórico não ganhou de entrar em qualquer dia com o mesmo stop."
+            }
+        }
     }
 }
 
@@ -134,17 +169,15 @@ fn key(asset: &str, c: &Chart, pattern: Pattern, side: Side, signal_index: usize
     )
 }
 
-/// History of the candidate on this asset, from the same scan.
-fn history_line(asset: &str, c: &Chart) -> String {
-    let rs: Vec<f64> = c
-        .trades
-        .iter()
-        .filter(|t| {
-            t.how != Exit::Open
-                && role(c.tf, t.pattern, t.side, t.with_trend) == Some(Role::Candidate)
-        })
-        .map(|t| t.r)
-        .collect();
+/// History of this pattern and side on this chart of this asset.
+fn history_line(asset: &str, c: &Chart, pattern: Pattern, side: Side, trend_only: bool) -> String {
+    let same = |t: &&Trade| {
+        t.how != Exit::Open
+            && t.pattern == pattern
+            && t.side == side
+            && (!trend_only || t.with_trend)
+    };
+    let rs: Vec<f64> = c.trades.iter().filter(same).map(|t| t.r).collect();
     if rs.is_empty() {
         return format!(
             "Histórico em {}: nenhum trade deste setup.",
@@ -154,14 +187,12 @@ fn history_line(asset: &str, c: &Chart) -> String {
     let hits = c
         .trades
         .iter()
-        .filter(|t| {
-            t.how == Exit::Target
-                && role(c.tf, t.pattern, t.side, t.with_trend) == Some(Role::Candidate)
-        })
+        .filter(same)
+        .filter(|t| t.how == Exit::Target)
         .count();
     let (mean, _) = r_mean_t(&rs);
     format!(
-        "Histórico em {}: {} trades, {}% no alvo, média {} por trade. Nas três moedas juntas foi o único setup que ganhou nos dois períodos (+0,24R por trade em 178 trades).",
+        "Histórico em {} neste gráfico: {} trades, {}% no alvo, média {} por trade.",
         asset_name(asset),
         rs.len(),
         ratio_pt(count_f64(hits) / count_f64(rs.len()) * 100.0),
@@ -200,7 +231,7 @@ pub fn stage_alerts(
             if sent.contains(&k) {
                 continue;
             }
-            let candidate = r == Role::Candidate;
+            let alerts = r.alerts();
             let deadline = c.close_ms(s.signal_index) + c.step_ms;
             let (verb, beyond) = match s.side {
                 Side::Long => ("comprar", "passar de"),
@@ -217,15 +248,7 @@ pub fn stage_alerts(
                     ""
                 }
             );
-            let _ = write!(
-                text,
-                "\n{}",
-                if candidate {
-                    "CANDIDATO: é o setup que passou no teste do histórico."
-                } else {
-                    "EM OBSERVAÇÃO: positivo no histórico, mas ainda sem trades suficientes para provar."
-                }
-            );
+            let _ = write!(text, "\n{}", r.line());
             let _ = write!(
                 text,
                 "\nPlano: {verb} se o preço {beyond} {} até {}. Se não acontecer, o sinal vence.\nStop {} ({}), alvo {} ({}), 2 vezes o risco.",
@@ -236,8 +259,14 @@ pub fn stage_alerts(
                 fmt_pt(s.target),
                 pct_pt(change_pct(s.trigger, s.target)),
             );
-            if candidate {
-                let _ = write!(text, "\n{}", history_line(asset, c));
+            let trend_only =
+                s.pattern == Pattern::OneTwoThreeInside || s.pattern == Pattern::OneTwoThree;
+            let _ = write!(
+                text,
+                "\n{}",
+                history_line(asset, c, s.pattern, s.side, trend_only)
+            );
+            if alerts && c.tf == "1d" {
                 let _ = write!(
                     text,
                     "\n{}",
@@ -247,7 +276,7 @@ pub fn stage_alerts(
             out.push(StageAlert {
                 key: k,
                 message: text,
-                notify: candidate,
+                notify: alerts,
             });
         }
         let start = books.starts.get(BOOK).copied().unwrap_or(i64::MAX);
@@ -256,9 +285,9 @@ pub fn stage_alerts(
             let Some(r) = role(c.tf, t.pattern, t.side, t.with_trend) else {
                 continue;
             };
-            let candidate = r == Role::Candidate;
+            let alerts = r.alerts();
             let base = key(asset, c, t.pattern, t.side, t.signal_index);
-            let in_book = candidate && c.close_ms(t.entry_index) > start;
+            let in_book = alerts && c.tf == "1d" && c.close_ms(t.entry_index) > start;
             let k_in = format!("{base}|entrou");
             if !sent.contains(&k_in) && (t.how == Exit::Open || recent(t.entry_index)) {
                 let mut text = format!(
@@ -287,7 +316,7 @@ pub fn stage_alerts(
                 out.push(StageAlert {
                     key: k_in,
                     message: text,
-                    notify: candidate,
+                    notify: alerts,
                 });
             }
             if t.how == Exit::Open {
@@ -302,7 +331,7 @@ pub fn stage_alerts(
                 out.push(StageAlert {
                     key: k_out,
                     message: closed_text(name, c, t, None),
-                    notify: candidate,
+                    notify: alerts,
                 });
             }
         }
@@ -365,7 +394,8 @@ pub fn stage_alerts(
             {
                 continue;
             }
-            let candidate = base.contains("|123|long|");
+            // Only the dashboard-only 1-2-3 buy expires silently.
+            let alerts = !base.contains("|123|long|");
             out.push(StageAlert {
                 key: format!("{base}|venceu"),
                 message: format!(
@@ -373,7 +403,7 @@ pub fn stage_alerts(
                     chart_word(c.tf),
                     if base.contains("|long|") { "compra" } else { "venda" }
                 ),
-                notify: candidate,
+                notify: alerts,
             });
         }
     }
@@ -436,7 +466,7 @@ pub fn items_json(
                 "tf": c.tf,
                 "pattern": pattern_word(s.pattern),
                 "side": side_code(s.side),
-                "role": if r == Role::Candidate { "candidato" } else { "observacao" },
+                "role": r.code(),
                 "status": "sinal",
                 "trigger": s.trigger,
                 "stop": s.stop,
@@ -459,7 +489,7 @@ pub fn items_json(
                 "tf": c.tf,
                 "pattern": pattern_word(t.pattern),
                 "side": side_code(t.side),
-                "role": if r == Some(Role::Candidate) { "candidato" } else { "observacao" },
+                "role": r.map_or("acompanhar", Role::code),
                 "status": match t.how { Exit::Open => "aberto", Exit::Target => "alvo", Exit::Stop => "stop", Exit::Time => "prazo" },
                 "trigger": t.entry,
                 "stop": t.stop,
@@ -506,30 +536,55 @@ mod tests {
         bars
     }
 
+    /// Flat days with a swing low of 95 on day 20, then day 30 trades down
+    /// to 94 and closes back above 95: a trap buy with trigger 101.
+    fn trap_story() -> Vec<Bar> {
+        let mut bars: Vec<Bar> = (0..30)
+            .map(|i| bar(i, 100.0, 101.0, if i == 20 { 95.0 } else { 98.0 }, 100.0))
+            .collect();
+        bars.push(bar(30, 99.0, 101.0, 94.0, 99.5));
+        bars
+    }
+
     #[test]
-    fn a_daily_123_goes_from_signal_to_entry_to_target_and_into_the_book() {
-        let mut bars = story();
+    fn a_daily_trap_goes_from_signal_to_entry_to_target_and_into_the_book() {
+        let mut bars = trap_story();
         let mut books = Books::default();
         books.starts.insert(BOOK.to_owned(), 0);
         let now = bars.last().unwrap().open_time_ms + DAY_MS + 60_000;
-        let charts = scan_charts(&bars);
-        let (alerts, rows) = stage_alerts("BTCUSDT", &charts, now, &BTreeSet::new(), &mut books);
+        let (alerts, rows) = stage_alerts(
+            "BTCUSDT",
+            &scan_charts(&bars),
+            now,
+            &BTreeSet::new(),
+            &mut books,
+        );
         let signal = alerts
             .iter()
-            .find(|a| a.key.ends_with("|123|long|10540800000|sinal"))
+            .find(|a| a.key == "BTCUSDT|1d|trap|long|2592000000|sinal")
             .unwrap();
         assert!(signal.notify);
-        assert!(signal.message.contains("CANDIDATO"), "{}", signal.message);
+        assert!(
+            signal.message.contains("EM OBSERVAÇÃO"),
+            "{}",
+            signal.message
+        );
         assert!(rows.is_empty());
         let sent: BTreeSet<String> = alerts.iter().map(|a| a.key.clone()).collect();
-        // Next day breaks 140.6 (entry), then the target 140.6 + 2 x 1.6 = 143.8 is hit.
-        bars.push(bar(123, 140.5, 141.0, 140.2, 140.9));
-        bars.push(bar(124, 140.9, 144.0, 140.7, 143.9));
+        // Fills at 101 (risk 7), then the target 115 is hit.
+        bars.push(bar(31, 100.5, 102.0, 99.0, 101.5));
+        bars.push(bar(32, 101.5, 116.0, 100.0, 115.5));
         let now = bars.last().unwrap().open_time_ms + DAY_MS + 60_000;
-        let charts = scan_charts(&bars);
-        let (alerts, rows) = stage_alerts("BTCUSDT", &charts, now, &sent, &mut books);
-        assert!(alerts.iter().any(|a| a.key.ends_with("|entrou")));
-        let out = alerts.iter().find(|a| a.key.ends_with("|saiu")).unwrap();
+        let (alerts, rows) = stage_alerts("BTCUSDT", &scan_charts(&bars), now, &sent, &mut books);
+        assert!(
+            alerts
+                .iter()
+                .any(|a| a.key.ends_with("trap|long|2592000000|entrou"))
+        );
+        let out = alerts
+            .iter()
+            .find(|a| a.key.ends_with("trap|long|2592000000|saiu"))
+            .unwrap();
         assert!(out.message.contains("SAIU no alvo"), "{}", out.message);
         assert!(out.message.contains("Conta fictícia"), "{}", out.message);
         assert_eq!(rows.len(), 1);
@@ -566,7 +621,11 @@ mod tests {
     fn only_the_tested_patterns_are_followed() {
         assert_eq!(
             role("1d", Pattern::OneTwoThree, Side::Long, true),
-            Some(Role::Candidate)
+            Some(Role::Info)
+        );
+        assert_eq!(
+            role("1d", Pattern::Trap, Side::Short, false),
+            Some(Role::Watch)
         );
         assert_eq!(role("1d", Pattern::OneTwoThree, Side::Long, false), None);
         assert_eq!(role("1d", Pattern::OneTwoThree, Side::Short, true), None);

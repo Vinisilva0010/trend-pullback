@@ -109,8 +109,9 @@ fn charts(l: &Loaded) -> Vec<Chart> {
 }
 
 /// Patterns shown for these assets, from `tp market-study` (each group
-/// pooled, 10 years, both periods). Candidates passed the test; watch ones
-/// were positive in both periods without proof. Sells lost everywhere.
+/// pooled, 10 years). Candidates passed both periods and beat the base
+/// (entering on any candle with the same stop and target); watch ones beat
+/// the base without proof. Sells lost everywhere.
 fn market_role(
     group: &str,
     tf: &str,
@@ -123,8 +124,9 @@ fn market_role(
         return None;
     }
     let candidate = match (group, tf) {
-        ("Brasil" | "EUA", "1w") => matches!(pattern, OneTwoThree | OneTwoThreeInside | Trap),
-        ("EUA" | "Cripto", "1d") => pattern == OneTwoThree,
+        ("Brasil", "1w") => pattern == Trap,
+        ("EUA", "1w") => matches!(pattern, Trap | OneTwoThreeInside),
+        ("Cripto", "1d") => pattern == OneTwoThree,
         _ => false,
     };
     if candidate {
@@ -133,7 +135,6 @@ fn market_role(
     let watch = match (group, tf) {
         ("Brasil", "1d") => pattern == GapTrap && with_trend,
         ("EUA", "1d") => pattern == Trap && with_trend,
-        ("Cripto", "1d") => pattern == Trap,
         _ => false,
     };
     watch.then_some(Role::Watch)
@@ -334,11 +335,12 @@ mod tests {
             Some(Role::Candidate)
         );
         assert_eq!(
-            market_role("Brasil", "1w", Pattern::OneTwoThree, Side::Long, false),
+            market_role("Brasil", "1w", Pattern::Trap, Side::Long, false),
             Some(Role::Candidate)
         );
+        // Positive, but no better than entering on any week.
         assert_eq!(
-            market_role("Brasil", "1d", Pattern::OneTwoThree, Side::Long, true),
+            market_role("Brasil", "1w", Pattern::OneTwoThree, Side::Long, false),
             None
         );
         assert_eq!(

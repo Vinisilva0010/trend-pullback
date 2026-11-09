@@ -15,7 +15,7 @@ export function StormerCard({ asset, item }: { asset: string; item: StormerItem 
   const candidate = item.role === "candidato";
   const closed = item.status === "alvo" || item.status === "stop" || item.status === "prazo";
   return (
-    <article className={`rounded border-2 p-3 ${candidate ? "border-accent" : "border-line"}`}>
+    <article className={`rounded border-2 p-3 ${item.role === "acompanhar" ? "border-line" : "border-accent"}`}>
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-sm font-black text-white ${long ? "bg-up" : "bg-down"}`}>{long ? "Compra" : "Venda (short)"}</span>
         <span className="text-lg font-black">{asset}</span>
@@ -23,9 +23,11 @@ export function StormerCard({ asset, item }: { asset: string; item: StormerItem 
           Stormer {item.pattern} · {item.tf === "1w" ? "semanal" : "diário"}
         </span>
         {candidate ? (
-          <span className="rounded bg-accent px-2 py-0.5 text-sm font-black">Candidato (passou no teste)</span>
+          <span className="rounded bg-accent px-2 py-0.5 text-sm font-black">Candidato (ganhou da base)</span>
+        ) : item.role === "observacao" ? (
+          <span className="rounded border-2 border-accent px-2 py-0.5 text-sm font-black">Em observação (acima da base, sem prova)</span>
         ) : (
-          <span className="rounded bg-panel px-2 py-0.5 text-sm font-extrabold">Em observação</span>
+          <span className="rounded bg-panel px-2 py-0.5 text-sm font-extrabold">Só acompanhar</span>
         )}
       </div>
       <p className="mt-2 text-lg font-black">

@@ -12,7 +12,7 @@ export default async function BooksPage() {
     <div>
       <Freshness ms={live.generated_ms} label="Contas" />
       <p className="leading-relaxed">
-        Cada conta começa com {money(2200)}. A Stormer diário entra no 123 de compra do diário a favor da tendência; a curto e a swing entram só nos spring/UTAD do seu gráfico. Cada trade arrisca 2% da conta, e a posição nunca passa do saldo: com stop curto, o risco fica menor que 2%.
+        Cada conta começa com {money(2200)}. A Stormer diário entra no trap do diário (compras e vendas); a curto e a swing entram só nos spring/UTAD do seu gráfico. Cada trade arrisca 2% da conta, e a posição nunca passa do saldo: com stop curto, o risco fica menor que 2%.
       </p>
       {live.books.map((b) => {
         const wins = b.trades.filter((t) => t.r > 0).length;

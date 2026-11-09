@@ -100,7 +100,7 @@ export default async function Home() {
       <SectionTitle>Stormer agora (sinais e trades abertos)</SectionTitle>
       {stormer.length === 0 ? (
         <p className="rounded bg-panel p-3">
-          Nenhum sinal do Stormer agora. O 123 de compra só aparece com a moeda em tendência de alta (média de 8 acima da de 80).
+          Nenhum sinal do Stormer agora. O que gera aviso é o trap (o preço passa de um fundo ou topo e volta), no diário e no semanal.
         </p>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
