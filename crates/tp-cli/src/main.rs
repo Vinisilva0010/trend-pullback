@@ -61,6 +61,7 @@ use tp_data::universe::{
 
 mod dashboard;
 mod smc_live;
+mod stormer_study;
 
 type CliResult = Result<ExitCode, Box<dyn Error>>;
 
@@ -142,6 +143,8 @@ enum Command {
     FundingStudy,
     /// Smart Money / Wyckoff setup over the history, per timeframe.
     SmcStudy,
+    /// Stormer setups (1-2-3, trap, inside bar, closed candle, gap) over the history.
+    StormerStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -289,6 +292,7 @@ async fn main() -> ExitCode {
         Command::Grid => cmd_grid(&cli.data_dir),
         Command::FundingStudy => cmd_funding_study(&cli.data_dir),
         Command::SmcStudy => cmd_smc_study(&cli.data_dir),
+        Command::StormerStudy => stormer_study::cmd_stormer_study(&cli.data_dir),
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
