@@ -22,9 +22,11 @@ pub const BOOK_RISK: f64 = 0.02;
 /// Sent stage keys, one per line, never forgotten.
 pub const SENT_FILE: &str = "smc_sent.txt";
 /// Closed trades of the paper books.
-pub const TRADES_FILE: &str = "smc_trades.csv";
+pub const TRADES_FILE: &str = "smc_trades_v2.csv";
 /// Start time of each paper book.
-pub const BOOKS_FILE: &str = "smc_books.csv";
+pub const BOOKS_FILE: &str = "smc_books_v2.csv";
+/// Timeframes that have a paper book (the daily one had too few trades to test).
+pub const BOOK_FRAMES: [(&str, &str); 2] = [("1h", "curto (1h)"), ("4h", "swing (4h)")];
 const TRADES_HEADER: &str = "key,tf,asset,side,fill_ms,exit_ms,entry,stop,exit,r,status";
 
 /// One timeframe scanned for one asset.
@@ -37,11 +39,11 @@ pub struct FrameScan {
 }
 
 impl FrameScan {
-    fn tf(&self) -> &'static str {
+    pub fn tf(&self) -> &'static str {
         tf_code(self.hours)
     }
 
-    fn label(&self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self.hours {
             1 => "curto (1h)",
             4 => "swing (4h)",
@@ -58,7 +60,7 @@ impl FrameScan {
     }
 
     /// Close time of candle `i`, also for candles after the data ends.
-    fn close_ms(&self, i: usize) -> i64 {
+    pub fn close_ms(&self, i: usize) -> i64 {
         let step = self.hours * HOUR_MS;
         let Some(last) = self.bars.len().checked_sub(1) else {
             return 0;
@@ -74,7 +76,7 @@ impl FrameScan {
         base + (extra + 1) * step
     }
 
-    fn open_ms(&self, i: usize) -> i64 {
+    pub fn open_ms(&self, i: usize) -> i64 {
         self.bars.get(i).map_or(0, |b| b.open_time_ms)
     }
 
@@ -85,6 +87,23 @@ impl FrameScan {
 
     fn last_close(&self) -> Option<f64> {
         self.bars.last().map(|b| b.close)
+    }
+}
+
+/// True for the only variant that was positive in the history study: a
+/// sweep at the floor or ceiling of a sideways range (Wyckoff spring or
+/// UTAD) on the 1h or 4h chart. Only these go to the paper books, Telegram
+/// and phone notifications; every setup still goes to the dashboard.
+#[must_use]
+pub fn is_candidate(hours: i64, wyckoff_range: bool) -> bool {
+    hours <= 4 && wyckoff_range
+}
+
+fn verdict_line(candidate: bool) -> &'static str {
+    if candidate {
+        "CANDIDATO: varrida na borda de uma lateral (spring/UTAD), o único tipo que ficou positivo no histórico (ainda sem prova)."
+    } else {
+        "SÓ PARA ACOMPANHAR: este tipo de setup perdeu dinheiro no histórico; a conta fictícia não entra."
     }
 }
 
@@ -274,7 +293,7 @@ impl Books {
             })
             .collect();
         let mut new_starts = false;
-        for tf in ["1h", "4h", "1d"] {
+        for (tf, _) in BOOK_FRAMES {
             starts.entry(tf.to_owned()).or_insert_with(|| {
                 new_starts = true;
                 now_ms
@@ -358,8 +377,19 @@ impl<'a> HistoryNotes<'a> {
         }
     }
 
-    fn note(&mut self, asset: &str, f: &FrameScan, side: Side) -> String {
-        let key = (asset.to_owned(), f.hours, side_code(side));
+    fn note(&mut self, asset: &str, f: &FrameScan, side: Side, wyckoff: bool) -> String {
+        let key = (
+            asset.to_owned(),
+            f.hours,
+            if wyckoff {
+                match side {
+                    Side::Long => "long-w",
+                    Side::Short => "short-w",
+                }
+            } else {
+                side_code(side)
+            },
+        );
         if let Some(n) = self.notes.get(&key) {
             return n.clone();
         }
@@ -383,20 +413,22 @@ impl<'a> HistoryNotes<'a> {
                 None => Vec::new(),
             }
         };
-        let note = history_text(asset_name(asset), &setups, side);
+        let note = history_text(asset_name(asset), &setups, side, wyckoff);
         self.notes.insert(key, note.clone());
         note
     }
 }
 
-fn history_text(name: &str, setups: &[Setup], side: Side) -> String {
+fn history_text(name: &str, setups: &[Setup], side: Side, wyckoff: bool) -> String {
     let closed: Vec<&Setup> = setups
         .iter()
-        .filter(|s| s.side == side && s.r.is_some())
+        .filter(|s| s.side == side && s.r.is_some() && (!wyckoff || s.wyckoff_range))
         .collect();
-    let what = match side {
-        Side::Long => "compras",
-        Side::Short => "vendas",
+    let what = match (side, wyckoff) {
+        (Side::Long, false) => "compras",
+        (Side::Short, false) => "vendas",
+        (Side::Long, true) => "compras com spring",
+        (Side::Short, true) => "vendas com UTAD",
     };
     if closed.is_empty() {
         return format!("Histórico: nenhum trade deste setup ({what}) em {name} neste gráfico.");
@@ -646,6 +678,8 @@ fn before_book(label: &str) -> String {
 pub struct StageAlert {
     pub key: String,
     pub message: String,
+    /// Goes to Telegram and phone notifications (otherwise dashboard only).
+    pub notify: bool,
 }
 
 /// Everything new for one asset this run: stage messages and closed trades
@@ -664,6 +698,7 @@ pub fn stage_alerts(
     let mut new_trades = Vec::new();
     for f in frames {
         let tf = f.tf();
+        let has_book = BOOK_FRAMES.iter().any(|(b, _)| *b == tf);
         let prefix = |side: Side, sweep_index: usize| {
             format!(
                 "{asset}|{tf}|{}|{}",
@@ -672,45 +707,66 @@ pub fn stage_alerts(
             )
         };
         let unsent = |key: &str| !sent.contains(key);
-        let mut push = |key: String, message: String| {
-            alerts.push(StageAlert { key, message });
+        let mut push = |key: String, message: String, notify: bool| {
+            alerts.push(StageAlert {
+                key,
+                message,
+                notify,
+            });
         };
         for p in &f.pending {
-            let key = format!("{}|varrida", prefix(p.side, p.sweep_index));
+            let base = prefix(p.side, p.sweep_index);
+            let key = format!("{base}|varrida");
             if unsent(&key) {
-                push(key, sweep_message(asset, f, p));
+                let notify = is_candidate(f.hours, p.wyckoff_range);
+                push(key, sweep_message(asset, f, p), notify);
+                if notify {
+                    // Marker so a later "did not become a setup" also notifies.
+                    push(format!("{base}|vw"), String::new(), false);
+                }
             }
         }
         let mut closed: Vec<&Setup> = Vec::new();
         for s in &f.setups {
             let base = prefix(s.side, s.sweep_index);
+            let candidate = is_candidate(f.hours, s.wyckoff_range);
             let start = books.start(tf);
-            let in_book = s.fill_index.is_some_and(|k| f.close_ms(k) > start);
+            let in_book =
+                has_book && candidate && s.fill_index.is_some_and(|k| f.close_ms(k) > start);
             if s.status == Status::Waiting {
                 let key = format!("{base}|armado");
                 if unsent(&key) {
-                    let note = history.note(asset, f, s.side);
-                    let pos = position_line(f.label(), books.equity(tf), s.entry, s.stop);
-                    push(key, armed_message(asset, f, s, &note, &pos));
+                    let note = history.note(asset, f, s.side, candidate);
+                    let pos = if candidate && has_book {
+                        position_line(f.label(), books.equity(tf), s.entry, s.stop)
+                    } else {
+                        String::new()
+                    };
+                    let text = with_verdict(&armed_message(asset, f, s, &note, &pos), candidate);
+                    push(key, text, candidate);
                 }
             }
             if let Some(k) = s.fill_index {
                 let key = format!("{base}|entrou");
                 if unsent(&key) && (s.status == Status::Open || f.recent(k, now_ms) || in_book) {
-                    let note = history.note(asset, f, s.side);
+                    let note = history.note(asset, f, s.side, candidate);
                     let pos = if in_book {
                         position_line(f.label(), books.equity(tf), s.entry, s.stop)
-                    } else {
+                    } else if candidate && has_book {
                         before_book(f.label())
+                    } else {
+                        String::new()
                     };
-                    push(key, filled_message(asset, f, s, k, &note, &pos));
+                    let text =
+                        with_verdict(&filled_message(asset, f, s, k, &note, &pos), candidate);
+                    push(key, text, candidate);
                 }
             }
             if s.status == Status::Cancelled {
                 let key = format!("{base}|cancelado");
                 let armed = sent.contains(&format!("{base}|armado"));
                 if armed && unsent(&key) {
-                    push(key, cancelled_message(asset, f, s));
+                    push(key, cancelled_message(asset, f, s), candidate);
                 }
             }
             if s.r.is_some() && in_book && !books.has_trade(&base) {
@@ -720,9 +776,11 @@ pub fn stage_alerts(
                 let key = format!("{base}|saiu");
                 if unsent(&key) && s.exit_index.is_some_and(|i| f.recent(i, now_ms)) {
                     let mut text = closed_message(asset, f, s, None);
-                    text.push('\n');
-                    text.push_str(&before_book(f.label()));
-                    push(key, text);
+                    if candidate && has_book {
+                        text.push('\n');
+                        text.push_str(&before_book(f.label()));
+                    }
+                    push(key, text, candidate);
                 }
             }
         }
@@ -749,7 +807,11 @@ pub fn stage_alerts(
             let after = books.equity(tf);
             let key = format!("{base}|saiu");
             if unsent(&key) {
-                push(key, closed_message(asset, f, s, Some((before, after))));
+                push(
+                    key,
+                    closed_message(asset, f, s, Some((before, after))),
+                    true,
+                );
             }
         }
         // Sweeps announced earlier that never became a setup.
@@ -793,10 +855,19 @@ pub fn stage_alerts(
                     f.label(),
                     when(sweep_ms)
                 ),
+                sent.contains(&format!("{base}|vw")),
             );
         }
     }
     (alerts, new_trades)
+}
+
+/// Puts the candidate or follow-only line right after the title line.
+fn with_verdict(message: &str, candidate: bool) -> String {
+    match message.split_once('\n') {
+        Some((title, rest)) => format!("{title}\n{}\n{rest}", verdict_line(candidate)),
+        None => format!("{message}\n{}", verdict_line(candidate)),
+    }
 }
 
 /// Section of the daily summary: paper books, open trades, armed orders,
@@ -807,15 +878,11 @@ pub fn summary_section(assets: &[(String, Vec<FrameScan>)], books: &Books) -> St
     let mut lines = vec![
         "Smart Money / Wyckoff".to_owned(),
         format!(
-            "Contas fictícias (cada uma começou com {}; cada trade arrisca 2% sem passar do saldo):",
+            "Contas fictícias (cada uma começou com {}; entram só nos candidatos spring/UTAD; cada trade arrisca 2% sem passar do saldo):",
             money_pt(BOOK_CAPITAL)
         ),
     ];
-    for (tf, label) in [
-        ("1h", "curto (1h)"),
-        ("4h", "swing (4h)"),
-        ("1d", "mês (diário)"),
-    ] {
+    for (tf, label) in BOOK_FRAMES {
         let mine: Vec<&TradeRow> = books.trades.iter().filter(|t| t.tf == tf).collect();
         let equity = books.equity(tf);
         let count = |status: &str| mine.iter().filter(|t| t.status == status).count();
@@ -844,9 +911,14 @@ pub fn summary_section(assets: &[(String, Vec<FrameScan>)], books: &Books) -> St
                     Side::Long => "comprado",
                     Side::Short => "vendido",
                 };
+                let tag = if is_candidate(f.hours, s.wyckoff_range) {
+                    "[candidato] "
+                } else {
+                    "(só acompanhar) "
+                };
                 match s.status {
                     Status::Open => open.push(format!(
-                        "{name} {}: {side} desde {}, stop {}, alvo {}; agora {} ({} a favor).",
+                        "{tag}{name} {}: {side} desde {}, stop {}, alvo {}; agora {} ({} a favor).",
                         f.label(),
                         fmt_pt(s.entry),
                         fmt_pt(s.stop),
@@ -855,7 +927,7 @@ pub fn summary_section(assets: &[(String, Vec<FrameScan>)], books: &Books) -> St
                         pct_pt(direction(s.side) * change_pct(s.entry, now))
                     )),
                     Status::Waiting => armed.push(format!(
-                        "{name} {}: ordem de {} em {}, stop {}, alvo {} ({} para 1); vale até {}.",
+                        "{tag}{name} {}: ordem de {} em {}, stop {}, alvo {} ({} para 1); vale até {}.",
                         f.label(),
                         if s.side == Side::Long {
                             "compra"
@@ -1035,7 +1107,7 @@ mod tests {
 
     #[test]
     fn history_text_handles_no_trades() {
-        assert!(history_text("SOL", &[], Side::Long).contains("nenhum trade"));
+        assert!(history_text("SOL", &[], Side::Long, false).contains("nenhum trade"));
     }
 
     #[test]

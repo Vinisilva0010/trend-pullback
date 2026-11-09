@@ -59,6 +59,7 @@ use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
 
+mod dashboard;
 mod smc_live;
 
 type CliResult = Result<ExitCode, Box<dyn Error>>;
@@ -825,7 +826,58 @@ async fn cmd_daily(data_dir: &Path, capital: f64, notify: bool, dry_run: bool) -
         send_sections(token, chat, &summary).await?;
         println!("telegram: sent");
     }
+    if !dry_run {
+        let data = daily_dashboard(now_ms, report_date, &summary, &items);
+        dashboard::save_and_publish(&live_dir, dashboard::DAILY_FILE, "daily", &data, &[]).await?;
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The daily report for the dashboard: the summary text plus the numbers
+/// behind it (trend, futures positioning, liquidation zones).
+fn daily_dashboard(
+    now_ms: i64,
+    date: NaiveDate,
+    summary: &[String],
+    items: &[SummaryItem],
+) -> serde_json::Value {
+    let zone = |z: Option<Zone>| {
+        z.map_or(
+            serde_json::Value::Null,
+            |z| serde_json::json!({ "low": z.low, "high": z.high, "usd": z.usd }),
+        )
+    };
+    let assets: Vec<serde_json::Value> = items
+        .iter()
+        .map(|i| {
+            let positioning = i.positioning.map_or(serde_json::Value::Null, |p| {
+                serde_json::json!({
+                    "long_share": p.now,
+                    "long_share_before": p.before,
+                    "top_long_share": p.top.as_ref().map(|(t, _)| *t),
+                    "oi_change_24h": p.oi_change,
+                    "longs_zone": zone(p.longs),
+                    "shorts_zone": zone(p.shorts),
+                    "exchanges": p.names,
+                })
+            });
+            serde_json::json!({
+                "name": i.facts.name,
+                "close": i.facts.close,
+                "change": i.facts.change,
+                "trend": trend_word(i.facts.regime),
+                "previous_trend": i.previous.map(|r| trend_word(Some(r))),
+                "positioning": positioning,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "version": 1,
+        "generated_ms": now_ms,
+        "date": date.to_string(),
+        "sections": summary,
+        "assets": assets,
+    })
 }
 
 fn append_signal_log(live_dir: &Path, log: &str) -> std::io::Result<PathBuf> {
@@ -3083,6 +3135,44 @@ fn smc_line(label: &str, setups: &[&Setup], bars: &[Bar], split_ms: i64) -> Stri
     )
 }
 
+/// Candles of the trend average per timeframe: about 50 candles of the next
+/// larger chart (50 x 4h for 1h, 50 days for 4h) and 200 days for the daily.
+fn trend_length(hours: i64) -> usize {
+    if hours == 4 { 300 } else { 200 }
+}
+
+/// Simple average of the last `n` closes at each candle (None until enough).
+fn trend_mean(bars: &[Bar], n: usize) -> Vec<Option<f64>> {
+    let mut out = vec![None; bars.len()];
+    if n == 0 {
+        return out;
+    }
+    let mut sum = 0.0;
+    for (i, b) in bars.iter().enumerate() {
+        sum += b.close;
+        if i >= n {
+            sum -= bars[i - n].close;
+        }
+        if i + 1 >= n {
+            out[i] = Some(sum / count_f64(n));
+        }
+    }
+    out
+}
+
+/// True when the setup trades with the larger trend at its `CHoCH`: buys
+/// above the trend average, sells below it.
+fn with_higher_trend(s: &Setup, bars: &[Bar], trend: &[Option<f64>]) -> bool {
+    let Some(avg) = trend.get(s.choch_index).copied().flatten() else {
+        return false;
+    };
+    let close = bars[s.choch_index].close;
+    match s.side {
+        Side::Long => close > avg,
+        Side::Short => close < avg,
+    }
+}
+
 fn cmd_smc_study(data_dir: &Path) -> CliResult {
     let split_ms = held_out_start()?
         .and_hms_opt(23, 59, 59)
@@ -3137,6 +3227,34 @@ fn cmd_smc_study(data_dir: &Path) -> CliResult {
                 smc_line(
                     "Só com volume de clímax na varrida",
                     &climax,
+                    &bars,
+                    split_ms
+                )
+            );
+            let trend = trend_mean(&bars, trend_length(frame.hours));
+            let with_trend: Vec<&Setup> = setups
+                .iter()
+                .filter(|s| with_higher_trend(s, &bars, &trend))
+                .collect();
+            let wyckoff_trend: Vec<&Setup> = with_trend
+                .iter()
+                .copied()
+                .filter(|s| s.wyckoff_range)
+                .collect();
+            println!(
+                "{}",
+                smc_line(
+                    "Só a favor da tendência do gráfico maior",
+                    &with_trend,
+                    &bars,
+                    split_ms
+                )
+            );
+            println!(
+                "{}",
+                smc_line(
+                    "Spring/UTAD e a favor da tendência maior",
+                    &wyckoff_trend,
                     &bars,
                     split_ms
                 )
@@ -3900,7 +4018,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
         Err(e) => return Err(e.into()),
     };
-    let mut messages = Vec::new();
+    let mut events: Vec<dashboard::Event> = Vec::new();
     let mut keys = String::new();
     let mut hourly_by_asset = BTreeMap::new();
     let now = DateTime::from_timestamp_millis(now_ms).ok_or("invalid clock")?;
@@ -3913,7 +4031,14 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
             continue;
         }
         println!("{msg}");
-        messages.push(msg);
+        events.push(dashboard::Event {
+            id: key.clone(),
+            ms: now_ms,
+            asset: "mercado".to_owned(),
+            kind: "mercado",
+            text: msg,
+            notify: true,
+        });
         let _ = writeln!(keys, "{key}");
     }
     let live_dir = data_dir.join("live");
@@ -3926,7 +4051,8 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut books = smc_live::Books::load(&live_dir, now_ms);
     let mut smc_keys = String::new();
     let mut smc_trades = String::new();
-    let mut smc_messages = Vec::new();
+    let mut smc_events = Vec::new();
+    let mut smc_assets = Vec::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         step(&format!("{asset}: buscando dados"));
         // One asset failing (network, bad data) must not silence the others.
@@ -3941,13 +4067,28 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         let (stages, trades) =
             smc_live::stage_alerts(data_dir, asset, &frames, now_ms, &smc_sent, &mut books);
         for stage in stages {
-            println!("{}", stage.message);
-            smc_messages.push(stage.message);
             let _ = writeln!(smc_keys, "{}", stage.key);
+            if stage.message.is_empty() {
+                continue;
+            }
+            println!(
+                "{}{}",
+                if stage.notify { "" } else { "[só no painel] " },
+                stage.message
+            );
+            smc_events.push(dashboard::Event {
+                id: stage.key,
+                ms: now_ms,
+                asset: asset_name(asset).to_owned(),
+                kind: "smc",
+                text: stage.message,
+                notify: stage.notify,
+            });
         }
         for trade in trades {
             let _ = writeln!(smc_trades, "{}", trade.csv());
         }
+        smc_assets.push((asset.to_owned(), frames));
         hourly_by_asset.insert(asset.to_owned(), hourly);
         for (name, msg) in alerts {
             let key = format!("{today},{asset},{name}");
@@ -3956,7 +4097,21 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
                 continue;
             }
             println!("{msg}");
-            messages.push(msg);
+            let kind = if name.starts_with("nivel") {
+                "nivel"
+            } else if name.starts_with("anomalia") {
+                "anomalia"
+            } else {
+                "rompimento"
+            };
+            events.push(dashboard::Event {
+                id: key.clone(),
+                ms: now_ms,
+                asset: asset_name(asset).to_owned(),
+                kind,
+                text: msg,
+                notify: true,
+            });
             let _ = writeln!(keys, "{key}");
         }
     }
@@ -3969,21 +4124,28 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     step("buscando notícias");
     let (news, new_links) = news_alerts(now, &news_sent, &hourly_by_asset).await;
     step("notícias prontas");
-    for msg in news {
+    for (i, msg) in news.into_iter().enumerate() {
         println!("{msg}");
-        messages.push(msg);
+        events.push(dashboard::Event {
+            id: format!("noticia-{now_ms}-{i}"),
+            ms: now_ms,
+            asset: "mercado".to_owned(),
+            kind: "noticia",
+            text: msg,
+            notify: true,
+        });
     }
-    messages.extend(smc_messages);
+    events.extend(smc_events);
     if dry_run {
         println!("dry run: nothing saved, nothing sent");
         return Ok(ExitCode::SUCCESS);
     }
-    if messages.is_empty() {
-        std::fs::create_dir_all(&live_dir)?;
-        smc_live::save(&live_dir, &books, &smc_keys, &smc_trades)?;
-        return Ok(ExitCode::SUCCESS);
-    }
-    if notify {
+    let messages: Vec<String> = events
+        .iter()
+        .filter(|e| e.notify)
+        .map(|e| e.text.clone())
+        .collect();
+    if notify && !messages.is_empty() {
         let env = parse_env(&std::fs::read_to_string(".env")?);
         let (Some(token), Some(chat)) =
             (env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"))
@@ -4017,6 +4179,11 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         let keep = all.len().saturating_sub(NEWS_MEMORY);
         std::fs::write(&news_path, all[keep..].join("\n") + "\n")?;
     }
+    dashboard::append_events(&live_dir, &events)?;
+    step("publicando no painel");
+    let snapshot = dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &books);
+    let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
+    dashboard::save_and_publish(&live_dir, dashboard::LIVE_FILE, "live", &snapshot, &fresh).await?;
     Ok(ExitCode::SUCCESS)
 }
 

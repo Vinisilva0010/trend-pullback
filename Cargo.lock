@@ -1728,6 +1728,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "serde_json",
  "tokio",
  "tp-backtest",
  "tp-core",
