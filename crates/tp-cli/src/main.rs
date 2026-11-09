@@ -3096,7 +3096,9 @@ fn cmd_smc_study(data_dir: &Path) -> CliResult {
         "1R = o que se perde quando bate o stop. Média +0,30R = em média ganha 30% do que arrisca por trade; -0,10R = perde 10%."
     );
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
-        let hourly_path = processed_dir(data_dir)
+        let hourly_path = data_dir
+            .join("processed")
+            .join("binance")
             .join("futures_1h")
             .join(format!("{asset}.csv"));
         let hourly = std::fs::read_to_string(&hourly_path)
@@ -3873,6 +3875,18 @@ fn alert_for(daily: &[Candle], hourly: &[Bar], asset: &str) -> Option<(String, S
     Some((name.to_owned(), msg))
 }
 
+/// Progress line with the time, so a run that stops shows where it stopped.
+fn step(what: &str) {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(0);
+    let time = DateTime::from_timestamp_millis(ms - 3 * HOUR_MS)
+        .map_or_else(String::new, |t| t.format("%H:%M:%S").to_string());
+    eprintln!("[{time} Brasília] {what}");
+}
+
 #[allow(clippy::too_many_lines)] // one run: market, assets, setups, news, send, save
 async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
@@ -3914,7 +3928,15 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut smc_trades = String::new();
     let mut smc_messages = Vec::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
-        let (alerts, hourly, daily) = alerts_for(data_dir, asset, now_ms).await?;
+        step(&format!("{asset}: buscando dados"));
+        // One asset failing (network, bad data) must not silence the others.
+        let (alerts, hourly, daily) = match alerts_for(data_dir, asset, now_ms).await {
+            Ok(found) => found,
+            Err(e) => {
+                eprintln!("error: {asset}: {e}");
+                continue;
+            }
+        };
         let frames = smc_live::scan_frames(&hourly, &daily_bars(&daily));
         let (stages, trades) =
             smc_live::stage_alerts(data_dir, asset, &frames, now_ms, &smc_sent, &mut books);
@@ -3944,7 +3966,9 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         .lines()
         .map(str::to_owned)
         .collect();
+    step("buscando notícias");
     let (news, new_links) = news_alerts(now, &news_sent, &hourly_by_asset).await;
+    step("notícias prontas");
     for msg in news {
         println!("{msg}");
         messages.push(msg);
@@ -3975,6 +3999,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         }
         println!("telegram: sent");
     }
+    step("salvando");
     std::fs::create_dir_all(&live_dir)?;
     smc_live::save(&live_dir, &books, &smc_keys, &smc_trades)?;
     let mut file = std::fs::OpenOptions::new()

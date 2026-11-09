@@ -11,7 +11,6 @@ use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::smc::{
     Setup, Side, SmcParams, Status, Sweep, nearest_liquidity, scan, scan_with_pending, stats,
 };
-use tp_data::history::processed_dir;
 use tp_data::intraday::parse_bars_csv;
 
 use super::{asset_name, brt_pt, count_f64, fmt_pt, money_pt, pct_pt, r_mean_t, r_pt, smc_frames};
@@ -148,7 +147,19 @@ pub fn scan_frames(hourly: &[Bar], daily: &[Bar]) -> Vec<FrameScan> {
                 24 => daily.to_vec(),
                 h => aggregate(hourly, h),
             };
-            let (setups, pending) = scan_with_pending(&bars, f.params);
+            let (setups, all_pending) = scan_with_pending(&bars, f.params);
+            // Several sweeps of nearby lows in one move say the same thing:
+            // keep only the latest one per side.
+            let pending: Vec<Sweep> = [Side::Long, Side::Short]
+                .into_iter()
+                .filter_map(|side| {
+                    all_pending
+                        .iter()
+                        .filter(|p| p.side == side)
+                        .max_by_key(|p| p.sweep_index)
+                        .cloned()
+                })
+                .collect();
             FrameScan {
                 hours: f.hours,
                 params: f.params,
@@ -357,7 +368,9 @@ impl<'a> HistoryNotes<'a> {
         } else {
             let data_dir = self.data_dir;
             let hourly = self.hourly.entry(asset.to_owned()).or_insert_with(|| {
-                let path = processed_dir(data_dir)
+                let path = data_dir
+                    .join("processed")
+                    .join("binance")
                     .join("futures_1h")
                     .join(format!("{asset}.csv"));
                 std::fs::read_to_string(path)
@@ -622,6 +635,12 @@ fn cancelled_message(asset: &str, f: &FrameScan, s: &Setup) -> String {
     )
 }
 
+fn before_book(label: &str) -> String {
+    format!(
+        "Esse trade começou antes de a conta fictícia {label} existir, então não conta no saldo dela."
+    )
+}
+
 /// One message to send, with the stage key to save.
 #[derive(Debug, Clone)]
 pub struct StageAlert {
@@ -682,7 +701,7 @@ pub fn stage_alerts(
                     let pos = if in_book {
                         position_line(f.label(), books.equity(tf), s.entry, s.stop)
                     } else {
-                        String::new()
+                        before_book(f.label())
                     };
                     push(key, filled_message(asset, f, s, k, &note, &pos));
                 }
@@ -700,7 +719,10 @@ pub fn stage_alerts(
             if s.r.is_some() && !in_book {
                 let key = format!("{base}|saiu");
                 if unsent(&key) && s.exit_index.is_some_and(|i| f.recent(i, now_ms)) {
-                    push(key, closed_message(asset, f, s, None));
+                    let mut text = closed_message(asset, f, s, None);
+                    text.push('\n');
+                    text.push_str(&before_book(f.label()));
+                    push(key, text);
                 }
             }
         }
@@ -766,7 +788,7 @@ pub fn stage_alerts(
             push(
                 format!("{base}|anulada"),
                 format!(
-                    "{} {}: a varrida de {} não virou setup de {word} (o preço passou do extremo da varrida, a confirmação não veio no prazo, ou não havia alvo que pagasse 2 para 1). Nada a fazer.",
+                    "{} {}: a varrida de {} não virou setup de {word} (o preço passou do extremo da varrida, fez uma varrida nova no lugar dela, a confirmação não veio no prazo, ou não havia alvo que pagasse 2 para 1). Nada a fazer.",
                     asset_name(asset),
                     f.label(),
                     when(sweep_ms)
