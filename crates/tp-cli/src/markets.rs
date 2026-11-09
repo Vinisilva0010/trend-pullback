@@ -92,13 +92,15 @@ async fn load_all(items: &[Item], now_ms: i64) -> Vec<Loaded> {
     out
 }
 
-/// From a Yahoo daily candle's time (the session open) to the close:
-/// 09:30 to 16:00 in New York, 10:00 to 17:00 on B3.
-fn session_ms(group: &str) -> Option<i64> {
+/// From a Yahoo candle's time to the close, (daily, weekly). A daily
+/// candle is stamped at the session open (09:30 in New York, 10:00 on B3),
+/// a weekly one at Monday midnight in the exchange's time zone; the week
+/// closes on Friday at 16:00 in New York, 17:00 on B3.
+fn session_ms(group: &str) -> Option<(i64, i64)> {
     const HOUR_MS: i64 = 3600 * 1000;
     match group {
-        "EUA" => Some(13 * HOUR_MS / 2),
-        "Brasil" => Some(7 * HOUR_MS),
+        "EUA" => Some((13 * HOUR_MS / 2, 4 * DAY_MS + 16 * HOUR_MS)),
+        "Brasil" => Some((7 * HOUR_MS, 4 * DAY_MS + 17 * HOUR_MS)),
         _ => None,
     }
 }
@@ -109,15 +111,14 @@ fn charts(l: &Loaded) -> Vec<Chart> {
     let daily = Chart::round_the_clock("1d", DAY_MS, l.daily.clone(), d);
     let weekly = Chart::round_the_clock("1w", 7 * DAY_MS, l.weekly.clone(), w);
     match session_ms(&l.item.group) {
-        // A stock week closes on Friday, four days after Monday's open.
-        Some(session) => vec![
+        Some((day, week)) => vec![
             Chart {
-                close_after_ms: session,
+                close_after_ms: day,
                 weekdays_only: true,
                 ..daily
             },
             Chart {
-                close_after_ms: 4 * DAY_MS + session,
+                close_after_ms: week,
                 weekdays_only: true,
                 ..weekly
             },
@@ -479,7 +480,7 @@ mod tests {
 
     #[test]
     fn a_us_daily_candle_closes_the_same_afternoon_and_expires_after_the_weekend() {
-        let friday = 1_762_522_200_000; // 2025-11-07 13:30 UTC, a Friday
+        let friday = 1_762_525_800_000; // 2025-11-07 14:30 UTC (09:30 New York), a Friday
         let bar = |ms: i64| Bar {
             open_time_ms: ms,
             open: 1.0,
@@ -495,10 +496,11 @@ mod tests {
                 name: "SPY".to_owned(),
             },
             daily: vec![bar(friday)],
-            weekly: vec![bar(friday - 4 * DAY_MS)],
+            // Monday 05:00 UTC, midnight in New York.
+            weekly: vec![bar(friday - 4 * DAY_MS - 9 * 3600 * 1000 - 1_800_000)],
         };
         let c = charts(&l);
-        // Closes 20:00 UTC (16:00 New York in winter time).
+        // Closes 21:00 UTC, 16:00 in New York.
         assert_eq!(c[0].close_ms(0), friday + 6 * 3600 * 1000 + 1_800_000);
         // Valid through Monday's close, not Saturday's.
         assert_eq!(c[0].deadline_ms(0), c[0].close_ms(0) + 3 * DAY_MS);
