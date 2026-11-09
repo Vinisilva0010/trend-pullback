@@ -27,7 +27,9 @@ type Zone = { low: number; high: number; usd: number } | null;
 type Level = { price: number; color: "entry" | "down" | "up"; title: string };
 type Props = {
   symbol: string;
-  tf: "1h" | "4h" | "1d";
+  tf: "1h" | "4h" | "1d" | "1w";
+  /** Candles given by the page ([open ms, open, high, low, close]); no live feed then. */
+  candles?: [number, number, number, number, number][];
   frame: Frame | null;
   /** Stormer signal or open trade levels for this chart. */
   extra?: Level[];
@@ -36,7 +38,7 @@ type Props = {
 };
 
 const BRT_OFFSET = -3 * 3600;
-const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400 };
+const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
 
 const COLORS = {
   up: "#0b8f5a",
@@ -66,7 +68,7 @@ async function loadCandles(symbol: string, tf: string): Promise<Kline[]> {
   return (await r.json()) as Kline[];
 }
 
-export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [] }: Props) {
+export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [], candles: given }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -84,7 +86,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: { borderColor: "#000000" },
-      timeScale: { borderColor: "#000000", timeVisible: tf !== "1d", secondsVisible: false, rightOffset: 6 },
+      timeScale: { borderColor: "#000000", timeVisible: tf === "1h" || tf === "4h", secondsVisible: false, rightOffset: 6 },
       localization: { locale: "pt-BR", priceFormatter: (p: number) => price(p) },
     });
     const candles = chart.addSeries(CandlestickSeries, {
@@ -102,7 +104,10 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
 
     let ws: WebSocket | null = null;
     let cancelled = false;
-    loadCandles(symbol, tf)
+    const source: Promise<Kline[]> = given
+      ? Promise.resolve(given.map((c) => [c[0], String(c[1]), String(c[2]), String(c[3]), String(c[4]), "0"] as Kline))
+      : loadCandles(symbol, tf);
+    source
       .then((rows) => {
         if (cancelled) return;
         candles.setData(rows.map((k) => ({ time: chartTime(k[0]), open: +k[1], high: +k[2], low: +k[3], close: +k[4] })));
@@ -110,6 +115,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
           rows.map((k) => ({ time: chartTime(k[0]), value: +k[5], color: +k[4] >= +k[1] ? "#0b8f5a55" : "#d9304a55" })),
         );
         chart.timeScale().scrollToRealTime();
+        if (given) return;
         ws = new WebSocket(`wss://data-stream.binance.vision/ws/${symbol.toLowerCase()}@kline_${tf}`);
         ws.onmessage = (event) => {
           const k = (JSON.parse(String(event.data)) as { k?: { t: number; o: string; h: string; l: string; c: string; v: string } }).k;
@@ -127,7 +133,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [symbol, tf]);
+  }, [symbol, tf, given]);
 
   const active = useMemo(() => frame?.setups.filter((s) => s.status === "armado" || s.status === "aberto") ?? [], [frame]);
 

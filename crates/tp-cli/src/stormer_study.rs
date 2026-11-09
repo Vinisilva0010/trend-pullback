@@ -100,7 +100,7 @@ fn rows(trades: &[Trade], bars: &[Bar], keep: impl Fn(&Trade) -> bool) -> Vec<Ro
 }
 
 /// Lines for one set of trades (one asset, or the three together).
-fn report(title: &str, sets: &[(Vec<Trade>, Vec<Bar>)], split_ms: i64, good: &mut Vec<String>) {
+pub fn report(title: &str, sets: &[(Vec<Trade>, Vec<Bar>)], split_ms: i64, good: &mut Vec<String>) {
     println!("  {title}");
     for pattern in Pattern::ALL {
         let collect = |keep: &dyn Fn(&Trade) -> bool| -> Vec<Row> {

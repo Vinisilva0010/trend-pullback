@@ -9,4 +9,11 @@ mkdir -p data/live
   code=0
   ./target/release/tp daily --notify --capital 2200 "$@" || code=$?
   echo "=== end $(date -Is), exit code $code ==="
+  # Mercados tab (stocks close before 21:15 Brasília); its failure never
+  # touches the daily report above.
+  if [[ " $* " != *" --dry-run "* ]]; then
+    mcode=0
+    timeout 10m ./target/release/tp markets || mcode=$?
+    echo "=== markets end $(date -Is), exit code $mcode ==="
+  fi
 } >> data/live/run.log 2>&1

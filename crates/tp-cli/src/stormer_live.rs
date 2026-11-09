@@ -415,10 +415,20 @@ fn closed_text(name: &str, c: &Chart, t: &Trade, book: Option<(f64, f64)>) -> St
 /// followed pattern.
 #[must_use]
 pub fn dashboard_json(asset: &str, charts: &[Chart]) -> Value {
+    items_json(asset, charts, &role)
+}
+
+/// Like [`dashboard_json`] with the roles decided by `role_of`.
+#[must_use]
+pub fn items_json(
+    asset: &str,
+    charts: &[Chart],
+    role_of: &dyn Fn(&str, Pattern, Side, bool) -> Option<Role>,
+) -> Value {
     let mut items = Vec::new();
     for c in charts {
         for s in &c.signals {
-            let Some(r) = role(c.tf, s.pattern, s.side, s.with_trend) else {
+            let Some(r) = role_of(c.tf, s.pattern, s.side, s.with_trend) else {
                 continue;
             };
             items.push(json!({
@@ -439,11 +449,11 @@ pub fn dashboard_json(asset: &str, charts: &[Chart]) -> Value {
         let followed: Vec<&Trade> = c
             .trades
             .iter()
-            .filter(|t| role(c.tf, t.pattern, t.side, t.with_trend).is_some())
+            .filter(|t| role_of(c.tf, t.pattern, t.side, t.with_trend).is_some())
             .collect();
-        let skip = followed.len().saturating_sub(15);
+        let skip = followed.len().saturating_sub(10);
         for t in &followed[skip..] {
-            let r = role(c.tf, t.pattern, t.side, t.with_trend);
+            let r = role_of(c.tf, t.pattern, t.side, t.with_trend);
             items.push(json!({
                 "key": key(asset, c, t.pattern, t.side, t.signal_index),
                 "tf": c.tf,

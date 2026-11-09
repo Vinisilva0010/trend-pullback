@@ -112,6 +112,7 @@ export function store(): Store {
 export const KEYS = {
   live: "tp:live",
   daily: "tp:daily",
+  markets: "tp:markets",
   subscriptions: "tp:push:subs",
   loginFails: (ip: string) => `tp:login:fail:${ip}`,
 } as const;

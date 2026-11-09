@@ -2,10 +2,10 @@ import Link from "next/link";
 import { ago, when } from "@/lib/format";
 
 /** Shows how old the data is, and warns when the tool stopped sending. */
-export function Freshness({ ms, label }: { ms: number | null | undefined; label: string }) {
+export function Freshness({ ms, label, maxHours = 2 }: { ms: number | null | undefined; label: string; maxHours?: number }) {
   if (!ms) return null;
   const hours = (Date.now() - ms) / 3_600_000;
-  if (hours > 2) {
+  if (hours > maxHours) {
     return (
       <div role="alert" className="mb-4 rounded border-2 border-down bg-down-soft p-3 font-extrabold text-ink">
         {label} sem atualização desde {when(ms)} ({ago(ms)}). O computador pode estar desligado, dormindo ou sem internet.

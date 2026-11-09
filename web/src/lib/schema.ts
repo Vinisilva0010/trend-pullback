@@ -151,9 +151,32 @@ export const DailySchema = z.object({
     .max(10),
 });
 
+const CandleSchema = z.tuple([ms, num, num, num, num]);
+
+export const MarketAssetSchema = z.object({
+  symbol: z.string().max(20),
+  name: z.string().max(60),
+  group: z.string().max(30),
+  price: num.nullable(),
+  change_day: num.nullable(),
+  change_week: num.nullable(),
+  trend: z.enum(["alta", "baixa", "lateral"]),
+  weekly_trend: z.enum(["alta", "baixa", "lateral"]),
+  daily: z.array(CandleSchema).max(400),
+  weekly: z.array(CandleSchema).max(400),
+  stormer: z.array(StormerSchema).max(100),
+});
+
+export const MarketsSchema = z.object({
+  version: z.literal(1),
+  generated_ms: ms,
+  assets: z.array(MarketAssetSchema).max(100),
+});
+
 export const IngestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("live"), data: LiveSchema, new_events: z.array(EventSchema).max(200) }),
   z.object({ kind: z.literal("daily"), data: DailySchema, new_events: z.array(EventSchema).max(200) }),
+  z.object({ kind: z.literal("markets"), data: MarketsSchema, new_events: z.array(EventSchema).max(200) }),
 ]);
 
 export type AppEvent = z.infer<typeof EventSchema>;
@@ -162,6 +185,8 @@ export type Pending = z.infer<typeof PendingSchema>;
 export type Frame = z.infer<typeof FrameSchema>;
 export type Asset = z.infer<typeof AssetSchema>;
 export type StormerItem = z.infer<typeof StormerSchema>;
+export type MarketAsset = z.infer<typeof MarketAssetSchema>;
+export type Markets = z.infer<typeof MarketsSchema>;
 export type Book = z.infer<typeof BookSchema>;
 export type Live = z.infer<typeof LiveSchema>;
 export type Daily = z.infer<typeof DailySchema>;

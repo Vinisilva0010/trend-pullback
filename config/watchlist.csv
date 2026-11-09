@@ -1,0 +1,42 @@
+# group,symbol,name - assets watched on the dashboard's Mercados tab.
+# Symbols are Yahoo Finance tickers (B3 ends in .SA). Edit freely.
+Brasil,^BVSP,Ibovespa
+Brasil,USDBRL=X,Dólar
+Brasil,ITUB4.SA,Itaú
+Brasil,ITSA4.SA,Itaúsa
+Brasil,BBDC4.SA,Bradesco
+Brasil,BPAC11.SA,BTG Pactual
+Brasil,B3SA3.SA,B3
+Brasil,BBAS3.SA,Banco do Brasil
+Brasil,VALE3.SA,Vale
+Brasil,PETR4.SA,Petrobras
+Brasil,PRIO3.SA,PRIO
+Brasil,SBSP3.SA,Sabesp
+Brasil,CMIG4.SA,Cemig
+Brasil,CPLE3.SA,Copel
+Brasil,CPFE3.SA,CPFL
+Brasil,LREN3.SA,Lojas Renner
+Brasil,ENEV3.SA,Eneva
+Brasil,PSSA3.SA,Porto Seguro
+Brasil,ALPA4.SA,Alpargatas
+Brasil,ABEV3.SA,Ambev
+EUA,SPY,S&P 500 (SPY)
+EUA,QQQ,Nasdaq 100 (QQQ)
+EUA,XLV,Saúde (XLV)
+EUA,XLP,Consumo básico (XLP)
+EUA,SMH,Semicondutores (SMH)
+EUA,GLD,Ouro (GLD)
+EUA,AU,AngloGold Ashanti
+EUA,GFI,Gold Fields
+EUA,T,AT&T
+EUA,IBKR,Interactive Brokers
+EUA,NVDA,Nvidia
+EUA,AAPL,Apple
+EUA,GOOGL,Google
+EUA,AMZN,Amazon
+EUA,PLTR,Palantir
+EUA,SHOP,Shopify
+EUA,SOFI,SoFi
+EUA,RKLB,Rocket Lab
+EUA,QTUM,Computação quântica (QTUM)
+Cripto,INJ-USD,Injective

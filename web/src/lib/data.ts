@@ -1,5 +1,5 @@
 import "server-only";
-import { DailySchema, LiveSchema, type Daily, type Live } from "./schema";
+import { DailySchema, LiveSchema, MarketsSchema, type Daily, type Live, type Markets } from "./schema";
 import { KEYS, store } from "./store";
 
 async function read<T>(key: string, parse: (v: unknown) => T): Promise<T | null> {
@@ -14,6 +14,10 @@ async function read<T>(key: string, parse: (v: unknown) => T): Promise<T | null>
 
 export function getLive(): Promise<Live | null> {
   return read(KEYS.live, (v) => LiveSchema.parse(v));
+}
+
+export function getMarkets(): Promise<Markets | null> {
+  return read(KEYS.markets, (v) => MarketsSchema.parse(v));
 }
 
 export function getDaily(): Promise<Daily | null> {

@@ -60,6 +60,7 @@ use tp_data::universe::{
 };
 
 mod dashboard;
+mod markets;
 mod smc_live;
 mod stormer_live;
 mod stormer_study;
@@ -146,6 +147,14 @@ enum Command {
     SmcStudy,
     /// Stormer setups (1-2-3, trap, inside bar, closed candle, gap) over the history.
     StormerStudy,
+    /// Fetches the watchlist (stocks, indexes, ETFs) and publishes the Mercados tab.
+    Markets {
+        /// Fetch and print only; nothing saved or sent.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Stormer setups over the history of the watchlist.
+    MarketStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -294,6 +303,8 @@ async fn main() -> ExitCode {
         Command::FundingStudy => cmd_funding_study(&cli.data_dir),
         Command::SmcStudy => cmd_smc_study(&cli.data_dir),
         Command::StormerStudy => stormer_study::cmd_stormer_study(&cli.data_dir),
+        Command::Markets { dry_run } => markets::cmd_markets(&cli.data_dir, dry_run).await,
+        Command::MarketStudy => markets::cmd_market_study().await,
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),

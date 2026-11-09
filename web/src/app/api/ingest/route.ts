@@ -8,7 +8,7 @@ import { env } from "@/lib/env";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_BYTES = 2_000_000;
+const MAX_BYTES = 4_000_000;
 
 // Called by the tool on the computer after each run, with the full state.
 export async function POST(request: Request) {
@@ -32,7 +32,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid data", issues: parsed.error.issues.slice(0, 5) }, { status: 400 });
   }
   const { kind, data, new_events } = parsed.data;
-  await store().set(kind === "live" ? KEYS.live : KEYS.daily, JSON.stringify(data));
+  const key = kind === "live" ? KEYS.live : kind === "daily" ? KEYS.daily : KEYS.markets;
+  await store().set(key, JSON.stringify(data));
   const sent = await notifyAll(new_events);
   return NextResponse.json({ ok: true, notifications: sent });
 }

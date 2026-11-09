@@ -11,3 +11,4 @@ pub mod news;
 pub mod notify;
 pub mod positioning;
 pub mod universe;
+pub mod yahoo;

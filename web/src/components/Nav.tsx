@@ -7,6 +7,7 @@ const ITEMS = [
   { href: "/", label: "Início" },
   { href: "/grafico", label: "Gráfico" },
   { href: "/setups", label: "Setups" },
+  { href: "/mercados", label: "Mercados" },
   { href: "/contas", label: "Contas" },
   { href: "/avisos", label: "Avisos" },
 ];
@@ -26,7 +27,7 @@ export function Nav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`block py-3 text-center text-[15px] font-extrabold md:py-4 ${
+                className={`block py-3 text-center text-[13px] font-extrabold sm:text-[15px] md:py-4 ${
                   active ? "bg-accent text-ink" : "text-ink hover:bg-panel"
                 }`}
               >
