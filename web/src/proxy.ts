@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
+import { env } from "@/lib/env";
 
 // Runs before every page: strict Content Security Policy with a fresh nonce,
 // and a redirect to /login without a valid session. API routes check the
@@ -29,7 +30,7 @@ function csp(nonce: string, dev: boolean): string {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (!PUBLIC_PAGES.has(pathname)) {
-    const ok = await verifySession(request.cookies.get(SESSION_COOKIE)?.value, process.env.SESSION_SECRET);
+    const ok = await verifySession(request.cookies.get(SESSION_COOKIE)?.value, env("SESSION_SECRET"));
     if (!ok) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";

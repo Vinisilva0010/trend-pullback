@@ -3,6 +3,7 @@ import { IngestSchema } from "@/lib/schema";
 import { KEYS, store } from "@/lib/store";
 import { notifyAll } from "@/lib/push";
 import { bearer, sameSecret } from "@/lib/secrets";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ const MAX_BYTES = 2_000_000;
 // Called by the tool on the computer after each run, with the full state.
 export async function POST(request: Request) {
   const token = bearer(request.headers.get("authorization"));
-  const expected = process.env.INGEST_TOKEN ?? "";
+  const expected = env("INGEST_TOKEN");
   if (expected.length < 32 || !sameSecret(token, expected)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

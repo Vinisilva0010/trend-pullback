@@ -2,6 +2,7 @@ import "server-only";
 import { Redis } from "@upstash/redis";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { env } from "./env";
 
 // Key-value store: Upstash Redis in production; a JSON file in .data/
 // during local development when Redis is not configured.
@@ -96,8 +97,8 @@ let cached: Store | null = null;
 
 export function store(): Store {
   if (cached) return cached;
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  const url = env("UPSTASH_REDIS_REST_URL") || env("KV_REST_API_URL");
+  const token = env("UPSTASH_REDIS_REST_TOKEN") || env("KV_REST_API_TOKEN");
   if (url && token) {
     cached = redisStore(url, token);
   } else if (process.env.NODE_ENV === "development" || process.env.LOCAL_FILE_STORE === "1") {

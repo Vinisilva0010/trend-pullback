@@ -3,6 +3,7 @@ import webpush from "web-push";
 import { z } from "zod";
 import type { AppEvent } from "./schema";
 import { KEYS, store } from "./store";
+import { env } from "./env";
 
 export const SubscriptionSchema = z.object({
   endpoint: z.string().url().max(1000).startsWith("https://"),
@@ -14,13 +15,13 @@ export type PushSubscriptionJson = z.infer<typeof SubscriptionSchema>;
 const MAX_SINGLE = 4;
 
 export function vapidPublicKey(): string | null {
-  return process.env.VAPID_PUBLIC_KEY || null;
+  return env("VAPID_PUBLIC_KEY") || null;
 }
 
 function configure(): boolean {
-  const pub = process.env.VAPID_PUBLIC_KEY;
-  const priv = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT;
+  const pub = env("VAPID_PUBLIC_KEY");
+  const priv = env("VAPID_PRIVATE_KEY");
+  const subject = env("VAPID_SUBJECT");
   if (!pub || !priv || !subject) return false;
   webpush.setVapidDetails(subject, pub, priv);
   return true;

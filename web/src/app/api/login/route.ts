@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createSession, SESSION_COOKIE, SESSION_DAYS } from "@/lib/session";
 import { sameSecret } from "@/lib/secrets";
 import { KEYS, store } from "@/lib/store";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +21,8 @@ export async function POST(request: Request) {
   if (origin && new URL(origin).host !== request.headers.get("host")) {
     return NextResponse.json({ error: "bad origin" }, { status: 403 });
   }
-  const password = process.env.DASHBOARD_PASSWORD ?? "";
-  const secret = process.env.SESSION_SECRET ?? "";
+  const password = env("DASHBOARD_PASSWORD");
+  const secret = env("SESSION_SECRET");
   if (password.length < 12 || secret.length < 32) {
     return NextResponse.json({ error: "server not configured" }, { status: 500 });
   }
