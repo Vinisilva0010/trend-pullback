@@ -376,6 +376,64 @@ fn scan_pattern(
     }
 }
 
+/// The comparison base for a pattern: enter at the open of every candle
+/// (optionally only after candles with the trend), with a stop `risk` away
+/// as a share of the entry and the same target, hold and cost rules.
+/// Returns (entry index, result in R) for every closed trade.
+#[must_use]
+pub fn baseline(
+    bars: &[Bar],
+    side: Side,
+    risk: f64,
+    trend_only: bool,
+    p: Params,
+) -> Vec<(usize, f64)> {
+    if !(risk > 0.0 && risk < 1.0) {
+        return Vec::new();
+    }
+    let view = match side {
+        Side::Long => bars.to_vec(),
+        Side::Short => mirror(bars),
+    };
+    let fast = ema(&view, p.fast);
+    let slow = ema(&view, p.slow);
+    let mut out = Vec::new();
+    for i in 0..view.len().saturating_sub(1) {
+        if trend_only && !trend_up(&fast, &slow, &view, i) {
+            continue;
+        }
+        let k = i + 1;
+        let entry = view[k].open;
+        let distance = risk * entry.abs();
+        let stop = entry - distance;
+        let target = entry + p.reward * distance;
+        let (_, exit, how) = follow(&view, k, stop, target, p.max_hold);
+        if how == Exit::Open {
+            continue;
+        }
+        out.push((
+            k,
+            (exit - entry) / distance - p.cost * entry.abs() / distance,
+        ));
+    }
+    out
+}
+
+/// Typical stop distance of some trades, as a share of the entry (median).
+#[must_use]
+pub fn median_risk(trades: &[&Trade]) -> Option<f64> {
+    let mut risks: Vec<f64> = trades
+        .iter()
+        .filter(|t| t.entry != 0.0)
+        .map(|t| ((t.entry - t.stop) / t.entry).abs())
+        .collect();
+    if risks.is_empty() {
+        return None;
+    }
+    risks.sort_by(f64::total_cmp);
+    Some(risks[risks.len() / 2])
+}
+
 /// Runs a filled trade forward from its entry candle `k`. The stop is
 /// checked first on any candle that touches both levels, and the target is
 /// not taken on the entry candle (its order inside the candle is unknown).
@@ -532,6 +590,26 @@ mod tests {
         assert_eq!(w[0].open_time_ms, 4 * DAY_MS);
         assert_eq!(w[0].high, 12.0);
         assert_eq!(w[1].open_time_ms, 11 * DAY_MS);
+    }
+
+    #[test]
+    fn the_baseline_enters_every_candle_with_the_given_stop() {
+        // Steady rise of 1 a candle from 100: with a 5% stop the target (+10%)
+        // is reached and the stop never is.
+        let bars: Vec<Bar> = (0..40)
+            .map(|i| {
+                let p = 100.0 + f64::from(u32::try_from(i).unwrap());
+                bar(i, p, p + 0.9, p - 0.1, p + 0.8)
+            })
+            .collect();
+        let base = baseline(&bars, Side::Long, 0.05, false, quiet());
+        assert!(!base.is_empty());
+        assert!(
+            base.iter()
+                .all(|(_, r)| (*r - 2.0).abs() < 1e-9 || *r > 0.0)
+        );
+        let short = baseline(&bars, Side::Short, 0.05, false, quiet());
+        assert!(short.iter().all(|(_, r)| *r < 0.0));
     }
 
     #[test]

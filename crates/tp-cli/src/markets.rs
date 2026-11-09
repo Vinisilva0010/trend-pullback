@@ -269,9 +269,9 @@ pub async fn cmd_market_study() -> CliResult {
         let mine: Vec<&Loaded> = loaded.iter().filter(|l| l.item.group == group).collect();
         println!();
         println!("{group} ({} ativos juntos)", mine.len());
-        for (tf, name) in [
-            ("1d", "diário (até 30 dias)"),
-            ("1w", "semanal (até 12 semanas)"),
+        for (tf, name, hold) in [
+            ("1d", "diário (até 30 dias)", 30),
+            ("1w", "semanal (até 12 semanas)", 12),
         ] {
             let sets: Vec<_> = mine
                 .iter()
@@ -284,11 +284,11 @@ pub async fn cmd_market_study() -> CliResult {
                     (chart.trades, chart.bars)
                 })
                 .collect();
-            report(&format!("{group} {name}"), &sets, split_ms, &mut good);
+            report(&format!("{group} {name}"), &sets, split_ms, hold, &mut good);
         }
     }
     println!();
-    println!("RESUMO: o que ficou positivo nos dois períodos");
+    println!("RESUMO: o que ficou positivo e acima da base nos dois períodos");
     if good.is_empty() {
         println!(" Nada.");
     }

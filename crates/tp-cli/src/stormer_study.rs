@@ -5,11 +5,11 @@
 use std::path::Path;
 
 use tp_core::intraday::{Bar, aggregate};
-use tp_core::stormer::{Exit, Params, Pattern, Side, Trade, scan, weekly};
+use tp_core::stormer::{Exit, Params, Pattern, Side, Trade, baseline, median_risk, scan, weekly};
 use tp_data::history::{processed_dir, read_series};
 use tp_data::intraday::parse_bars_csv;
 
-use super::{CliResult, asset_name, daily_bars, held_out_start, r_mean_t, r_pt};
+use super::{CliResult, asset_name, count_f64, daily_bars, held_out_start, r_mean_t, r_pt};
 
 struct Frame {
     name: &'static str,
@@ -45,9 +45,18 @@ fn pattern_name(p: Pattern) -> &'static str {
 /// One closed trade: entry time and result.
 type Row = (i64, f64, Exit);
 
-/// Verdict line, same rules as the SMC study: development t >= 2 with 30+
-/// trades and a positive final period with 10+ trades.
-fn line(label: &str, rows: &[Row], split_ms: i64) -> (String, bool) {
+/// Mean result of the comparison base in each period.
+#[derive(Debug, Clone, Copy, Default)]
+struct Base {
+    dev: f64,
+    fin: f64,
+}
+
+/// Verdict line, same rules as the SMC study (development t >= 2 with 30+
+/// trades and a positive final period with 10+ trades), plus: in both
+/// periods the setup must beat the base (entering on any candle with the
+/// same stop distance and target).
+fn line(label: &str, rows: &[Row], split_ms: i64, base: Option<Base>) -> (String, bool) {
     if rows.is_empty() {
         return (format!("   {label}: nenhum trade."), false);
     }
@@ -67,19 +76,27 @@ fn line(label: &str, rows: &[Row], split_ms: i64) -> (String, bool) {
     let (fin_mean, _) = r_mean_t(&fin);
     let targets = rows.iter().filter(|r| r.2 == Exit::Target).count();
     let stops = rows.iter().filter(|r| r.2 == Exit::Stop).count();
-    let passed = dev.len() >= 30 && dev_t >= 2.0 && fin.len() >= 10 && fin_mean > 0.0;
-    let verdict = if passed {
-        "GANHOU NOS DOIS PERÍODOS"
-    } else if mean > 0.0 && dev_mean > 0.0 && fin_mean > 0.0 {
-        "positivo nos dois períodos, mas sem prova"
-    } else if mean > 0.0 {
-        "positivo, mas sem prova (pode ser sorte)"
-    } else {
-        "PERDEU"
+    let proven = dev.len() >= 30 && dev_t >= 2.0 && fin.len() >= 10 && fin_mean > 0.0;
+    let positive = mean > 0.0 && dev_mean > 0.0 && fin_mean > 0.0;
+    let beats = base.is_some_and(|b| dev_mean > b.dev && fin_mean > b.fin);
+    let verdict = match (proven, positive, beats) {
+        (true, _, true) => "GANHOU NOS DOIS PERÍODOS E GANHOU DA BASE",
+        (true, _, false) => "ganhou nos dois períodos, mas NÃO ganhou de entrar em qualquer dia",
+        (false, true, true) => "positivo e acima da base nos dois períodos, mas sem prova",
+        (false, true, false) => "positivo nos dois períodos, mas não ganhou da base",
+        _ if mean > 0.0 => "positivo, mas sem prova (pode ser sorte)",
+        _ => "PERDEU",
     };
+    let base_text = base.map_or_else(String::new, |b| {
+        format!(
+            " Base (entrar em qualquer dia com o mesmo stop): {} até out/2024 e {} depois.",
+            r_pt(b.dev),
+            r_pt(b.fin)
+        )
+    });
     (
         format!(
-            "   {label}: {} trades (alvo {targets}, stop {stops}); média {} por trade. Até out/2024: {} em {}; de nov/2024 até hoje: {} em {}. {verdict}.",
+            "   {label}: {} trades (alvo {targets}, stop {stops}); média {} por trade. Até out/2024: {} em {}; de nov/2024 até hoje: {} em {}.{base_text} {verdict}.",
             rows.len(),
             r_pt(mean),
             r_pt(dev_mean),
@@ -87,7 +104,7 @@ fn line(label: &str, rows: &[Row], split_ms: i64) -> (String, bool) {
             r_pt(fin_mean),
             fin.len()
         ),
-        passed || (mean > 0.0 && dev_mean > 0.0 && fin_mean > 0.0),
+        positive && beats,
     )
 }
 
@@ -99,37 +116,98 @@ fn rows(trades: &[Trade], bars: &[Bar], keep: impl Fn(&Trade) -> bool) -> Vec<Ro
         .collect()
 }
 
-/// Lines for one set of trades (one asset, or the three together).
-pub fn report(title: &str, sets: &[(Vec<Trade>, Vec<Bar>)], split_ms: i64, good: &mut Vec<String>) {
+fn mean(xs: &[f64]) -> Option<f64> {
+    (!xs.is_empty()).then(|| xs.iter().sum::<f64>() / count_f64(xs.len()))
+}
+
+/// Base for one variant over all sets: per asset, enter on every candle
+/// with the median stop distance of that asset's trades; assets weigh as
+/// many trades as the setup made there in each period.
+fn base_for(
+    sets: &[(Vec<Trade>, Vec<Bar>)],
+    keep: &dyn Fn(&Trade) -> bool,
+    side: Side,
+    trend_only: bool,
+    max_hold: usize,
+    split_ms: i64,
+) -> Option<Base> {
+    let (mut dev_sum, mut dev_n, mut fin_sum, mut fin_n) = (0.0, 0usize, 0.0, 0usize);
+    for (trades, bars) in sets {
+        let mine: Vec<&Trade> = trades
+            .iter()
+            .filter(|t| t.how != Exit::Open && keep(t))
+            .collect();
+        let Some(risk) = median_risk(&mine) else {
+            continue;
+        };
+        let base = baseline(
+            bars,
+            side,
+            risk,
+            trend_only,
+            Params::with_max_hold(max_hold),
+        );
+        let period = |dev: bool| -> Vec<f64> {
+            base.iter()
+                .filter(|(k, _)| (bars[*k].open_time_ms <= split_ms) == dev)
+                .map(|(_, r)| *r)
+                .collect()
+        };
+        let in_dev = mine
+            .iter()
+            .filter(|t| bars[t.entry_index].open_time_ms <= split_ms)
+            .count();
+        let in_fin = mine.len() - in_dev;
+        if let Some(m) = mean(&period(true)) {
+            dev_sum += m * count_f64(in_dev);
+            dev_n += in_dev;
+        }
+        if let Some(m) = mean(&period(false)) {
+            fin_sum += m * count_f64(in_fin);
+            fin_n += in_fin;
+        }
+    }
+    (dev_n > 0 && fin_n > 0).then(|| Base {
+        dev: dev_sum / count_f64(dev_n),
+        fin: fin_sum / count_f64(fin_n),
+    })
+}
+
+/// Lines for one set of trades (one asset, or several together).
+pub fn report(
+    title: &str,
+    sets: &[(Vec<Trade>, Vec<Bar>)],
+    split_ms: i64,
+    max_hold: usize,
+    good: &mut Vec<String>,
+) {
     println!("  {title}");
     for pattern in Pattern::ALL {
-        let collect = |keep: &dyn Fn(&Trade) -> bool| -> Vec<Row> {
-            let mut out: Vec<Row> = sets
-                .iter()
-                .flat_map(|(trades, bars)| rows(trades, bars, |t| t.pattern == pattern && keep(t)))
-                .collect();
-            out.sort_by_key(|r| r.0);
-            out
-        };
-        let variants: [(&str, Vec<Row>); 4] = [
-            ("compras", collect(&|t| t.side == Side::Long)),
-            ("vendas", collect(&|t| t.side == Side::Short)),
+        println!("   {}", pattern_name(pattern));
+        let variants: [(&str, Side, bool); 4] = [
+            ("compras", Side::Long, false),
+            ("vendas", Side::Short, false),
             (
                 "compras a favor da tendência (médias 8 e 80)",
-                collect(&|t| t.side == Side::Long && t.with_trend),
+                Side::Long,
+                true,
             ),
-            (
-                "vendas a favor da tendência",
-                collect(&|t| t.side == Side::Short && t.with_trend),
-            ),
+            ("vendas a favor da tendência", Side::Short, true),
         ];
-        println!("   {}", pattern_name(pattern));
-        for (label, rows) in &variants {
-            let (text, ok) = line(label, rows, split_ms);
+        for (label, side, trend_only) in variants {
+            let keep =
+                |t: &Trade| t.pattern == pattern && t.side == side && (!trend_only || t.with_trend);
+            let mut all: Vec<Row> = sets
+                .iter()
+                .flat_map(|(trades, bars)| rows(trades, bars, keep))
+                .collect();
+            all.sort_by_key(|r| r.0);
+            let base = base_for(sets, &keep, side, trend_only, max_hold, split_ms);
+            let (text, ok) = line(label, &all, split_ms, base);
             println!(" {text}");
             if ok {
                 good.push(format!(
-                    "{title} · {} · {label}: {}",
+                    "{title} · {} · {}",
                     pattern_name(pattern),
                     text.trim()
                 ));
@@ -179,6 +257,7 @@ pub fn cmd_stormer_study(data_dir: &Path) -> CliResult {
                 &format!("{} {}", asset_name(asset), frame.name),
                 &set,
                 split_ms,
+                frame.max_hold,
                 &mut good,
             );
             per_frame[i].extend(set);
@@ -191,11 +270,12 @@ pub fn cmd_stormer_study(data_dir: &Path) -> CliResult {
             &format!("Os três {}", frame.name),
             sets,
             split_ms,
+            frame.max_hold,
             &mut good,
         );
     }
     println!();
-    println!("RESUMO: o que ficou positivo nos dois períodos");
+    println!("RESUMO: o que ficou positivo e acima da base nos dois períodos");
     if good.is_empty() {
         println!(" Nada.");
     }
