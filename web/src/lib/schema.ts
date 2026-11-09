@@ -170,7 +170,7 @@ export const MarketAssetSchema = z.object({
 export const MarketsSchema = z.object({
   version: z.literal(1),
   generated_ms: ms,
-  assets: z.array(MarketAssetSchema).max(100),
+  assets: z.array(MarketAssetSchema).max(200),
 });
 
 export const IngestSchema = z.discriminatedUnion("kind", [

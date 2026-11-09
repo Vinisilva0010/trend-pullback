@@ -34,7 +34,7 @@ export default async function MarketsPage() {
     <div>
       <Freshness ms={markets.generated_ms} label="Mercados" maxHours={50} />
       <p className="leading-relaxed">
-        Preço do último fechamento (as ações têm cerca de 15 minutos de atraso na fonte). Tendência pelas médias de 8 e 80 dias, como no 123 do Stormer. Candidatos são os setups de compra do Stormer que ganharam nos dois períodos do teste com 10 anos de histórico e também ganharam de comprar em qualquer dia com o mesmo stop: o trap semanal (Brasil e EUA), o 123 com o 3º candle dentro do 2º no semanal (EUA) e o 123 diário (Injective). Vendas perderam em todos os grupos.
+        Preço do último fechamento (as ações têm cerca de 15 minutos de atraso na fonte). Tendência pelas médias de 8 e 80 dias, como no 123 do Stormer. Candidatos são os setups de compra do Stormer que ganharam nos dois períodos do teste com 10 anos de histórico e também ganharam de comprar em qualquer dia com o mesmo stop. Nas 84 ações e ETFs dos EUA testados: o trap diário a favor da tendência e o trap semanal. Esses geram aviso no Telegram e no celular e entram na conta Ações EUA (trap); as ações dos EUA fora desta lista aparecem aqui enquanto tiverem sinal ou trade aberto. Nas 62 ações do Brasil nada ganhou da base. Em cripto, o 123 diário (Injective). Vendas perderam em todos os grupos.
       </p>
       {groups.map((g) => (
         <section key={g}>

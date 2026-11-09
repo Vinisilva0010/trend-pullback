@@ -1,8 +1,12 @@
 //! The Mercados tab: Brazilian and US stocks, indexes, ETFs and a few
 //! extra coins from `config/watchlist.csv`, with trend and Stormer signals.
-//! Dashboard only: nothing here goes to Telegram. `tp market-study` runs the
-//! Stormer history test on the same list before any signal is trusted.
+//! The US part of `config/trade_universe.csv` is searched too for the stock
+//! trades (`stock_trades`), which go to Telegram and the phone with
+//! `--notify`. `tp market-study` runs the Stormer history test on a list
+//! before any signal is trusted.
 
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -10,10 +14,11 @@ use tp_core::intraday::Bar;
 use tp_core::stormer::{Params, Pattern, Side, ema, scan};
 use tp_data::yahoo::{Interval, fetch_chart};
 
-use super::{CliResult, held_out_start};
-use crate::dashboard;
+use super::{CliResult, held_out_start, parse_env, send_telegram};
+use crate::stock_trades::{self, Stock};
 use crate::stormer_live::{Chart, Role, items_json};
 use crate::stormer_study::report;
+use crate::{dashboard, smc_live};
 
 const DAY_MS: i64 = 24 * 3600 * 1000;
 pub const MARKETS_FILE: &str = "dashboard_markets.json";
@@ -87,31 +92,44 @@ async fn load_all(items: &[Item], now_ms: i64) -> Vec<Loaded> {
     out
 }
 
-fn charts(l: &Loaded) -> Vec<Chart> {
-    let (dt, ds) = scan(&l.daily, Params::with_max_hold(30));
-    let (wt, ws) = scan(&l.weekly, Params::with_max_hold(12));
-    vec![
-        Chart {
-            tf: "1d",
-            step_ms: DAY_MS,
-            bars: l.daily.clone(),
-            trades: dt,
-            signals: ds,
-        },
-        Chart {
-            tf: "1w",
-            step_ms: 7 * DAY_MS,
-            bars: l.weekly.clone(),
-            trades: wt,
-            signals: ws,
-        },
-    ]
+/// From a Yahoo daily candle's time (the session open) to the close:
+/// 09:30 to 16:00 in New York, 10:00 to 17:00 on B3.
+fn session_ms(group: &str) -> Option<i64> {
+    const HOUR_MS: i64 = 3600 * 1000;
+    match group {
+        "EUA" => Some(13 * HOUR_MS / 2),
+        "Brasil" => Some(7 * HOUR_MS),
+        _ => None,
+    }
 }
 
-/// Patterns shown for these assets, from `tp market-study` (each group
-/// pooled, 10 years). Candidates passed both periods and beat the base
-/// (entering on any candle with the same stop and target); watch ones beat
-/// the base without proof. Sells lost everywhere.
+fn charts(l: &Loaded) -> Vec<Chart> {
+    let d = scan(&l.daily, Params::with_max_hold(30));
+    let w = scan(&l.weekly, Params::with_max_hold(12));
+    let daily = Chart::round_the_clock("1d", DAY_MS, l.daily.clone(), d);
+    let weekly = Chart::round_the_clock("1w", 7 * DAY_MS, l.weekly.clone(), w);
+    match session_ms(&l.item.group) {
+        // A stock week closes on Friday, four days after Monday's open.
+        Some(session) => vec![
+            Chart {
+                close_after_ms: session,
+                weekdays_only: true,
+                ..daily
+            },
+            Chart {
+                close_after_ms: 4 * DAY_MS + session,
+                weekdays_only: true,
+                ..weekly
+            },
+        ],
+        None => vec![daily, weekly],
+    }
+}
+
+/// Patterns shown for these assets, from `tp market-study`. US stocks: the
+/// two trap buys that beat the base on the 84 US assets of the trade
+/// universe (they are the stock trades). Brazil: nothing beat the base on
+/// its 62 assets. Coins: the daily 1-2-3 buy of the watchlist test.
 fn market_role(
     group: &str,
     tf: &str,
@@ -119,25 +137,13 @@ fn market_role(
     side: Side,
     with_trend: bool,
 ) -> Option<Role> {
-    use Pattern::{GapTrap, OneTwoThree, OneTwoThreeInside, Trap};
-    if side != Side::Long {
-        return None;
+    match group {
+        "EUA" => stock_trades::role(tf, pattern, side, with_trend),
+        "Cripto" if tf == "1d" && pattern == Pattern::OneTwoThree && side == Side::Long => {
+            Some(Role::Candidate)
+        }
+        _ => None,
     }
-    let candidate = match (group, tf) {
-        ("Brasil", "1w") => pattern == Trap,
-        ("EUA", "1w") => matches!(pattern, Trap | OneTwoThreeInside),
-        ("Cripto", "1d") => pattern == OneTwoThree,
-        _ => false,
-    };
-    if candidate {
-        return Some(Role::Candidate);
-    }
-    let watch = match (group, tf) {
-        ("Brasil", "1d") => pattern == GapTrap && with_trend,
-        ("EUA", "1d") => pattern == Trap && with_trend,
-        _ => false,
-    };
-    watch.then_some(Role::Watch)
 }
 
 /// "alta", "baixa" or "lateral" from the 8 and 80 day averages.
@@ -184,11 +190,23 @@ fn sig6(v: f64) -> f64 {
     (v * scale).round() / scale
 }
 
-fn markets_json(now_ms: i64, loaded: &[Loaded]) -> Value {
+/// The Mercados tab: every watchlist asset, plus the other US stocks
+/// while they have a signal or an open trade.
+fn markets_json(now_ms: i64, loaded: &[(&Loaded, Vec<Chart>, bool)]) -> Value {
     let assets: Vec<Value> = loaded
         .iter()
-        .map(|l| {
-            let c = charts(l);
+        .filter_map(|(l, c, listed)| {
+            let stormer = items_json(&l.item.symbol, c, &|tf, p, side, trend| {
+                market_role(&l.item.group, tf, p, side, trend)
+            });
+            let live = stormer.as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|i| i["status"] == "sinal" || i["status"] == "aberto")
+            });
+            (*listed || live).then_some((l, stormer))
+        })
+        .map(|(l, stormer)| {
             json!({
                 "symbol": l.item.symbol,
                 "name": l.item.name,
@@ -200,9 +218,7 @@ fn markets_json(now_ms: i64, loaded: &[Loaded]) -> Value {
                 "weekly_trend": trend_word(&l.weekly),
                 "daily": candles(&l.daily, DAILY_SENT),
                 "weekly": candles(&l.weekly, WEEKLY_SENT),
-                "stormer": items_json(&l.item.symbol, &c, &|tf, p, side, trend| {
-                    market_role(&l.item.group, tf, p, side, trend)
-                }),
+                "stormer": stormer,
             })
         })
         .collect();
@@ -232,27 +248,126 @@ fn now_ms() -> Result<i64, Box<dyn std::error::Error>> {
     Ok(i64::try_from(since.as_millis())?)
 }
 
-/// Fetches the watchlist and publishes the Mercados tab.
+/// Fetches the watchlist and the US part of the trade universe, follows
+/// the stock trades and publishes the Mercados tab. With `notify`, new
+/// stages go to Telegram.
 ///
 /// # Errors
 ///
-/// Returns an error when the watchlist is missing or the file cannot be saved.
-pub async fn cmd_markets(data_dir: &Path, dry_run: bool) -> CliResult {
+/// Returns an error when the watchlist is missing, Telegram refuses a
+/// message or a file cannot be saved.
+#[allow(clippy::too_many_lines)] // fetch, follow, send, save and publish in order
+pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliResult {
     let now = now_ms()?;
-    let loaded = load_all(&watchlist()?, now).await;
+    let listed = watchlist()?;
+    let listed_symbols: BTreeSet<&str> = listed.iter().map(|i| i.symbol.as_str()).collect();
+    let extra: Vec<Item> = match read_list(TRADE_UNIVERSE) {
+        Ok(items) => items
+            .into_iter()
+            .filter(|i| i.group == "EUA" && !listed_symbols.contains(i.symbol.as_str()))
+            .collect(),
+        Err(e) => {
+            eprintln!("warning: {e}; só a lista do painel");
+            Vec::new()
+        }
+    };
+    let all: Vec<Item> = listed.iter().cloned().chain(extra).collect();
+    let loaded = load_all(&all, now).await;
     if loaded.is_empty() {
         return Err("no market data: Yahoo Finance did not answer for any symbol".into());
     }
-    let data = markets_json(now, &loaded);
+    let scanned: Vec<(&Loaded, Vec<Chart>, bool)> = loaded
+        .iter()
+        .map(|l| {
+            (
+                l,
+                charts(l),
+                listed_symbols.contains(l.item.symbol.as_str()),
+            )
+        })
+        .collect();
+
+    let live_dir = data_dir.join("live");
+    let sent_path = live_dir.join(stock_trades::SENT_FILE);
+    // The first run would report every trade still open from weeks ago:
+    // only the current signals are sent, the rest is just marked as seen.
+    let first_run = !sent_path.exists();
+    let sent: BTreeSet<String> = std::fs::read_to_string(&sent_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let mut books = smc_live::Books::load(&live_dir, now);
+    let stocks: Vec<Stock> = scanned
+        .iter()
+        .filter(|(l, _, _)| l.item.group == "EUA")
+        .map(|(l, c, _)| Stock {
+            symbol: &l.item.symbol,
+            name: &l.item.name,
+            charts: c,
+        })
+        .collect();
+    let found = stock_trades::run(&stocks, now, &sent, &mut books);
+    let mut events = Vec::new();
+    for (name, stage) in found.stages {
+        if first_run && !stage.key.ends_with("|sinal") {
+            continue;
+        }
+        println!("{}", stage.message);
+        events.push(dashboard::Event {
+            id: stage.key,
+            ms: now,
+            asset: name,
+            kind: "stormer",
+            text: stage.message,
+            notify: stage.notify,
+        });
+    }
+    let data = markets_json(now, &scanned);
     if dry_run {
         println!(
-            "dry run: {} ativos carregados, nada salvo nem enviado",
-            loaded.len()
+            "dry run: {} ativos carregados, {} avisos de ações, nada salvo nem enviado",
+            loaded.len(),
+            events.len()
         );
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    dashboard::save_and_publish(&data_dir.join("live"), MARKETS_FILE, "markets", &data, &[])
-        .await?;
+    let messages: Vec<String> = events
+        .iter()
+        .filter(|e| e.notify)
+        .map(|e| e.text.clone())
+        .collect();
+    if notify && !messages.is_empty() {
+        let env = parse_env(&std::fs::read_to_string(".env")?);
+        let (Some(token), Some(chat)) =
+            (env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID"))
+        else {
+            return Err("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env".into());
+        };
+        for (i, text) in smc_live::pack_messages(&messages, 3800).iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            }
+            send_telegram(token, chat, text).await?;
+        }
+        println!("telegram: {} avisos de ações enviados", messages.len());
+    }
+    std::fs::create_dir_all(&live_dir)?;
+    let trades = found.rows.iter().fold(String::new(), |mut out, r| {
+        let _ = writeln!(out, "{}", r.csv());
+        out
+    });
+    smc_live::save(&live_dir, &books, "", &trades)?;
+    if !found.keys.is_empty() {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&sent_path)?;
+        std::io::Write::write_all(&mut f, (found.keys.join("\n") + "\n").as_bytes())?;
+    }
+    dashboard::append_events(&live_dir, &events)?;
+    let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
+    dashboard::save_and_publish(&live_dir, MARKETS_FILE, "markets", &data, &fresh).await?;
     Ok(std::process::ExitCode::SUCCESS)
 }
 
@@ -310,13 +425,7 @@ pub async fn cmd_market_study(list: &str) -> CliResult {
 }
 
 fn empty_chart() -> Chart {
-    Chart {
-        tf: "",
-        step_ms: DAY_MS,
-        bars: Vec::new(),
-        trades: Vec::new(),
-        signals: Vec::new(),
-    }
+    Chart::round_the_clock("", DAY_MS, Vec::new(), (Vec::new(), Vec::new()))
 }
 
 #[cfg(test)]
@@ -345,21 +454,55 @@ mod tests {
             Some(Role::Candidate)
         );
         assert_eq!(
-            market_role("Brasil", "1w", Pattern::Trap, Side::Long, false),
+            market_role("EUA", "1d", Pattern::Trap, Side::Long, true),
             Some(Role::Candidate)
         );
-        // Positive, but no better than entering on any week.
+        // Below the base on the 84 US assets.
         assert_eq!(
-            market_role("Brasil", "1w", Pattern::OneTwoThree, Side::Long, false),
+            market_role("EUA", "1w", Pattern::OneTwoThreeInside, Side::Long, true),
+            None
+        );
+        // Nothing beat the base on the 62 Brazilian assets.
+        assert_eq!(
+            market_role("Brasil", "1w", Pattern::Trap, Side::Long, false),
             None
         );
         assert_eq!(
             market_role("Brasil", "1d", Pattern::GapTrap, Side::Long, true),
-            Some(Role::Watch)
+            None
         );
         assert_eq!(
             market_role("EUA", "1w", Pattern::OneTwoThree, Side::Short, true),
             None
         );
+    }
+
+    #[test]
+    fn a_us_daily_candle_closes_the_same_afternoon_and_expires_after_the_weekend() {
+        let friday = 1_762_522_200_000; // 2025-11-07 13:30 UTC, a Friday
+        let bar = |ms: i64| Bar {
+            open_time_ms: ms,
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1.0,
+        };
+        let l = Loaded {
+            item: Item {
+                group: "EUA".to_owned(),
+                symbol: "SPY".to_owned(),
+                name: "SPY".to_owned(),
+            },
+            daily: vec![bar(friday)],
+            weekly: vec![bar(friday - 4 * DAY_MS)],
+        };
+        let c = charts(&l);
+        // Closes 20:00 UTC (16:00 New York in winter time).
+        assert_eq!(c[0].close_ms(0), friday + 6 * 3600 * 1000 + 1_800_000);
+        // Valid through Monday's close, not Saturday's.
+        assert_eq!(c[0].deadline_ms(0), c[0].close_ms(0) + 3 * DAY_MS);
+        // The week closes on Friday.
+        assert_eq!(c[1].close_ms(0), c[0].close_ms(0));
     }
 }

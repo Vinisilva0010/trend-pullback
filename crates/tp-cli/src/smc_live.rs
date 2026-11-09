@@ -26,10 +26,11 @@ pub const TRADES_FILE: &str = "smc_trades_v2.csv";
 /// Start time of each paper book.
 pub const BOOKS_FILE: &str = "smc_books_v2.csv";
 /// Timeframes that have a paper book (the daily one had too few trades to test).
-pub const BOOK_FRAMES: [(&str, &str); 3] = [
+pub const BOOK_FRAMES: [(&str, &str); 4] = [
     ("st1d", "Stormer diário (trap)"),
     ("1h", "curto (1h)"),
     ("4h", "swing (4h)"),
+    (crate::stock_trades::BOOK, crate::stock_trades::BOOK_LABEL),
 ];
 const TRADES_HEADER: &str = "key,tf,asset,side,fill_ms,exit_ms,entry,stop,exit,r,status";
 
@@ -212,10 +213,11 @@ pub struct TradeRow {
 
 impl TradeRow {
     /// Book growth factor: risk 2% of the book, but never a position larger
-    /// than the book itself (no leverage beyond the balance).
+    /// than the book allows (the whole balance, a third for the stock book
+    /// that holds up to three trades at once).
     #[must_use]
     pub fn growth(&self) -> f64 {
-        book_growth(self.entry, self.stop, self.r)
+        book_growth(self.entry, self.stop, self.r, position_cap(&self.tf))
     }
 
     #[must_use]
@@ -237,16 +239,26 @@ impl TradeRow {
     }
 }
 
+/// Largest position of a book as a share of its balance.
+#[must_use]
+pub fn position_cap(book: &str) -> f64 {
+    if book == crate::stock_trades::BOOK {
+        crate::stock_trades::POSITION_CAP
+    } else {
+        1.0
+    }
+}
+
 /// Share of the book at risk for a trade with this entry and stop.
-fn book_risk_share(entry: f64, stop: f64) -> f64 {
+fn book_risk_share(entry: f64, stop: f64, cap: f64) -> f64 {
     if entry == 0.0 {
         return 0.0;
     }
-    ((entry - stop) / entry).abs().min(BOOK_RISK)
+    (((entry - stop) / entry).abs() * cap).min(BOOK_RISK)
 }
 
-fn book_growth(entry: f64, stop: f64, r: f64) -> f64 {
-    1.0 + book_risk_share(entry, stop) * r
+fn book_growth(entry: f64, stop: f64, r: f64, cap: f64) -> f64 {
+    1.0 + book_risk_share(entry, stop, cap) * r
 }
 
 /// Parses the trades file, skipping the header and bad lines.
@@ -353,6 +365,11 @@ impl Books {
 
 /// Position line for a paper book entering at `entry` with `stop`.
 pub fn position_line(label: &str, equity: f64, entry: f64, stop: f64) -> String {
+    position_line_capped(label, equity, entry, stop, 1.0)
+}
+
+/// Like [`position_line`] with the position capped at `cap` of the balance.
+pub fn position_line_capped(label: &str, equity: f64, entry: f64, stop: f64, cap: f64) -> String {
     let move_share = if entry == 0.0 {
         0.0
     } else {
@@ -361,12 +378,14 @@ pub fn position_line(label: &str, equity: f64, entry: f64, stop: f64) -> String 
     if move_share <= 0.0 {
         return String::new();
     }
-    let size = (BOOK_RISK * equity / move_share).min(equity);
+    let size = (BOOK_RISK * equity / move_share).min(equity * cap);
     let risk = size * move_share;
-    let capped = if move_share < BOOK_RISK {
-        " (todo o saldo; o stop é curto e a posição não passa do saldo)"
-    } else {
+    let capped = if move_share * cap >= BOOK_RISK {
         ""
+    } else if cap < 1.0 {
+        " (o limite por trade; o stop é curto e a conta segura até três trades ao mesmo tempo)"
+    } else {
+        " (todo o saldo; o stop é curto e a posição não passa do saldo)"
     };
     format!(
         "Conta fictícia {label} (saldo {}): posição de {}{capped}, perde {} ({}% da conta) se bater o stop.",
@@ -1084,10 +1103,13 @@ mod tests {
     #[test]
     fn book_risks_two_percent_but_never_more_than_the_balance() {
         // Stop 5% away: position is 40% of the book, a full stop loses 2%.
-        assert!((book_growth(100.0, 95.0, -1.0) - 0.98).abs() < 1e-12);
+        assert!((book_growth(100.0, 95.0, -1.0, 1.0) - 0.98).abs() < 1e-12);
         // Stop 0.5% away: the position is capped at the book, a stop loses 0.5%.
-        assert!((book_growth(100.0, 99.5, -1.0) - 0.995).abs() < 1e-12);
-        assert!((book_growth(100.0, 95.0, 3.0) - 1.06).abs() < 1e-12);
+        assert!((book_growth(100.0, 99.5, -1.0, 1.0) - 0.995).abs() < 1e-12);
+        assert!((book_growth(100.0, 95.0, 3.0, 1.0) - 1.06).abs() < 1e-12);
+        // A third of the book at most: a 3% stop risks 1%, a 9% stop 2%.
+        assert!((book_growth(100.0, 97.0, -1.0, 1.0 / 3.0) - 0.99).abs() < 1e-12);
+        assert!((book_growth(100.0, 91.0, -1.0, 1.0 / 3.0) - 0.98).abs() < 1e-12);
     }
 
     #[test]
@@ -1134,6 +1156,9 @@ mod tests {
         let tight = position_line("curto (1h)", 2200.0, 100.0, 99.5);
         assert!(tight.contains("$2.200"), "{tight}");
         assert!(tight.contains("$11"), "{tight}");
+        let third = position_line_capped("Ações EUA (trap)", 2200.0, 100.0, 97.0, 1.0 / 3.0);
+        assert!(third.contains("$733"), "{third}");
+        assert!(third.contains("três trades"), "{third}");
     }
 }
 

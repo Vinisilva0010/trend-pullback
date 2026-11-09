@@ -15,7 +15,9 @@ use tp_core::intraday::Bar;
 use tp_core::stormer::{Exit, Params, Pattern, Side, Signal, Trade, scan, weekly};
 
 use super::{asset_name, count_f64, fmt_pt, money_pt, pct_pt, r_mean_t, r_pt};
-use crate::smc_live::{Books, TradeRow, change_pct, position_line, ratio_pt, signed_money, when};
+use crate::smc_live::{
+    Books, TradeRow, change_pct, position_line_capped, ratio_pt, signed_money, when,
+};
 
 /// Paper book of the daily setups followed with alerts.
 pub const BOOK: &str = "st1d";
@@ -40,16 +42,57 @@ pub enum Role {
 pub struct Chart {
     pub tf: &'static str,
     pub step_ms: i64,
+    /// From a candle's open to its close: the step for coins, the session
+    /// for stocks (a US daily candle opens 09:30 and closes 16:00 New York).
+    pub close_after_ms: i64,
+    /// Stocks: a deadline falling on Saturday or Sunday moves to Monday.
+    pub weekdays_only: bool,
     pub bars: Vec<Bar>,
     pub trades: Vec<Trade>,
     pub signals: Vec<Signal>,
 }
 
 impl Chart {
-    fn close_ms(&self, i: usize) -> i64 {
+    /// A chart that trades every day, its candles closing one step after
+    /// they open.
+    #[must_use]
+    pub fn round_the_clock(
+        tf: &'static str,
+        step_ms: i64,
+        bars: Vec<Bar>,
+        (trades, signals): (Vec<Trade>, Vec<Signal>),
+    ) -> Self {
+        Self {
+            tf,
+            step_ms,
+            close_after_ms: step_ms,
+            weekdays_only: false,
+            bars,
+            trades,
+            signals,
+        }
+    }
+
+    #[must_use]
+    pub fn close_ms(&self, i: usize) -> i64 {
         self.bars
             .get(i)
-            .map_or(0, |b| b.open_time_ms + self.step_ms)
+            .map_or(0, |b| b.open_time_ms + self.close_after_ms)
+    }
+
+    /// When a signal on candle `i` expires: the close of the next candle.
+    #[must_use]
+    pub fn deadline_ms(&self, i: usize) -> i64 {
+        let ms = self.close_ms(i) + self.step_ms;
+        if !self.weekdays_only {
+            return ms;
+        }
+        // 1970-01-01 was a Thursday: day 2 is Saturday, day 3 Sunday.
+        match ms.div_euclid(DAY_MS).rem_euclid(7) {
+            2 => ms + 2 * DAY_MS,
+            3 => ms + DAY_MS,
+            _ => ms,
+        }
     }
 }
 
@@ -57,23 +100,11 @@ impl Chart {
 #[must_use]
 pub fn scan_charts(daily: &[Bar]) -> Vec<Chart> {
     let week = weekly(daily);
-    let (dt, ds) = scan(daily, Params::with_max_hold(30));
-    let (wt, ws) = scan(&week, Params::with_max_hold(12));
+    let d = scan(daily, Params::with_max_hold(30));
+    let w = scan(&week, Params::with_max_hold(12));
     vec![
-        Chart {
-            tf: "1d",
-            step_ms: DAY_MS,
-            bars: daily.to_vec(),
-            trades: dt,
-            signals: ds,
-        },
-        Chart {
-            tf: "1w",
-            step_ms: WEEK_MS,
-            bars: week,
-            trades: wt,
-            signals: ws,
-        },
+        Chart::round_the_clock("1d", DAY_MS, daily.to_vec(), d),
+        Chart::round_the_clock("1w", WEEK_MS, week, w),
     ]
 }
 
@@ -159,7 +190,8 @@ fn chart_word(tf: &str) -> &'static str {
     if tf == "1w" { "semanal" } else { "diário" }
 }
 
-fn key(asset: &str, c: &Chart, pattern: Pattern, side: Side, signal_index: usize) -> String {
+/// Stage key of a setup: asset, chart, pattern, side and signal candle.
+pub fn key(asset: &str, c: &Chart, pattern: Pattern, side: Side, signal_index: usize) -> String {
     format!(
         "{asset}|{}|{}|{}|{}",
         c.tf,
@@ -170,7 +202,7 @@ fn key(asset: &str, c: &Chart, pattern: Pattern, side: Side, signal_index: usize
 }
 
 /// History of this pattern and side on this chart of this asset.
-fn history_line(asset: &str, c: &Chart, pattern: Pattern, side: Side, trend_only: bool) -> String {
+fn history_line(name: &str, c: &Chart, pattern: Pattern, side: Side, trend_only: bool) -> String {
     let same = |t: &&Trade| {
         t.how != Exit::Open
             && t.pattern == pattern
@@ -179,10 +211,7 @@ fn history_line(asset: &str, c: &Chart, pattern: Pattern, side: Side, trend_only
     };
     let rs: Vec<f64> = c.trades.iter().filter(same).map(|t| t.r).collect();
     if rs.is_empty() {
-        return format!(
-            "Histórico em {}: nenhum trade deste setup.",
-            asset_name(asset)
-        );
+        return format!("Histórico em {name}: nenhum trade deste setup.");
     }
     let hits = c
         .trades
@@ -193,7 +222,7 @@ fn history_line(asset: &str, c: &Chart, pattern: Pattern, side: Side, trend_only
     let (mean, _) = r_mean_t(&rs);
     format!(
         "Histórico em {} neste gráfico: {} trades, {}% no alvo, média {} por trade.",
-        asset_name(asset),
+        name,
         rs.len(),
         ratio_pt(count_f64(hits) / count_f64(rs.len()) * 100.0),
         r_pt(mean)
@@ -207,9 +236,32 @@ pub struct StageAlert {
     pub notify: bool,
 }
 
-/// New stages for one asset, and the closed trades for the paper book
+/// Whether a trade goes into the paper book.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    /// Into the book.
+    In,
+    /// Followed with alerts, kept out of the book for this reason.
+    Out(&'static str),
+    /// Not a book trade at all (no note in the messages).
+    None,
+}
+
+/// What a list of assets follows and which paper book it feeds.
+pub struct Follow<'a> {
+    pub role_of: &'a dyn Fn(&str, Pattern, Side, bool) -> Option<Role>,
+    pub book: &'a str,
+    pub book_label: &'a str,
+    /// Largest position as a share of the balance.
+    pub position_cap: f64,
+    /// Charts whose signals show the book position.
+    pub book_charts: &'a [&'a str],
+    /// Decides a triggered trade, given its key.
+    pub pick: &'a dyn Fn(&Chart, &Trade, &str) -> Pick,
+}
+
+/// New stages for one coin, and the closed trades for the paper book
 /// (which `books` is updated with).
-#[allow(clippy::too_many_lines)] // one pass over signals, entries, exits and expiries
 pub fn stage_alerts(
     asset: &str,
     charts: &[Chart],
@@ -217,13 +269,54 @@ pub fn stage_alerts(
     sent: &BTreeSet<String>,
     books: &mut Books,
 ) -> (Vec<StageAlert>, Vec<TradeRow>) {
+    let start = books.starts.get(BOOK).copied().unwrap_or(i64::MAX);
+    let pick = |c: &Chart, t: &Trade, _: &str| {
+        let followed = role(c.tf, t.pattern, t.side, t.with_trend).is_some_and(Role::alerts);
+        if followed && c.tf == "1d" && c.close_ms(t.entry_index) > start {
+            Pick::In
+        } else {
+            Pick::None
+        }
+    };
+    let follow = Follow {
+        role_of: &role,
+        book: BOOK,
+        book_label: BOOK_LABEL,
+        position_cap: 1.0,
+        book_charts: &["1d"],
+        pick: &pick,
+    };
+    stage_alerts_with(
+        asset,
+        asset_name(asset),
+        charts,
+        now_ms,
+        sent,
+        books,
+        &follow,
+    )
+}
+
+/// Like [`stage_alerts`] for any list of assets.
+#[allow(clippy::too_many_lines)] // one pass over signals, entries, exits and expiries
+pub fn stage_alerts_with(
+    asset: &str,
+    name: &str,
+    charts: &[Chart],
+    now_ms: i64,
+    sent: &BTreeSet<String>,
+    books: &mut Books,
+    follow: &Follow,
+) -> (Vec<StageAlert>, Vec<TradeRow>) {
     let mut out = Vec::new();
     let mut rows = Vec::new();
-    let name = asset_name(asset);
+    let equity = |books: &Books| books.equity_of(follow.book);
     for c in charts {
-        let recent = |i: usize| c.close_ms(i) >= now_ms - 2 * c.step_ms - 4 * 3600 * 1000;
+        // Stocks skip weekends: two more days before an exit is old news.
+        let slack = if c.weekdays_only { 2 * DAY_MS } else { 0 };
+        let recent = |i: usize| c.close_ms(i) >= now_ms - 2 * c.step_ms - 4 * 3600 * 1000 - slack;
         for s in &c.signals {
-            let Some(r) = role(c.tf, s.pattern, s.side, s.with_trend) else {
+            let Some(r) = (follow.role_of)(c.tf, s.pattern, s.side, s.with_trend) else {
                 continue;
             };
             let base = key(asset, c, s.pattern, s.side, s.signal_index);
@@ -232,7 +325,7 @@ pub fn stage_alerts(
                 continue;
             }
             let alerts = r.alerts();
-            let deadline = c.close_ms(s.signal_index) + c.step_ms;
+            let deadline = c.deadline_ms(s.signal_index);
             let (verb, beyond) = match s.side {
                 Side::Long => ("comprar", "passar de"),
                 Side::Short => ("vender", "cair abaixo de"),
@@ -264,13 +357,19 @@ pub fn stage_alerts(
             let _ = write!(
                 text,
                 "\n{}",
-                history_line(asset, c, s.pattern, s.side, trend_only)
+                history_line(name, c, s.pattern, s.side, trend_only)
             );
-            if alerts && c.tf == "1d" {
+            if alerts && follow.book_charts.contains(&c.tf) {
                 let _ = write!(
                     text,
                     "\n{}",
-                    position_line(BOOK_LABEL, books_equity(books), s.trigger, s.stop)
+                    position_line_capped(
+                        follow.book_label,
+                        equity(books),
+                        s.trigger,
+                        s.stop,
+                        follow.position_cap
+                    )
                 );
             }
             out.push(StageAlert {
@@ -279,15 +378,19 @@ pub fn stage_alerts(
                 notify: alerts,
             });
         }
-        let start = books.starts.get(BOOK).copied().unwrap_or(i64::MAX);
         let mut closed: Vec<&Trade> = Vec::new();
         for t in &c.trades {
-            let Some(r) = role(c.tf, t.pattern, t.side, t.with_trend) else {
+            let Some(r) = (follow.role_of)(c.tf, t.pattern, t.side, t.with_trend) else {
                 continue;
             };
             let alerts = r.alerts();
             let base = key(asset, c, t.pattern, t.side, t.signal_index);
-            let in_book = alerts && c.tf == "1d" && c.close_ms(t.entry_index) > start;
+            let pick = if alerts {
+                (follow.pick)(c, t, &base)
+            } else {
+                Pick::None
+            };
+            let in_book = pick == Pick::In;
             let k_in = format!("{base}|entrou");
             if !sent.contains(&k_in) && (t.how == Exit::Open || recent(t.entry_index)) {
                 let mut text = format!(
@@ -306,12 +409,28 @@ pub fn stage_alerts(
                     fmt_pt(t.target),
                     pct_pt(change_pct(t.entry, t.target)),
                 );
-                if in_book {
-                    let _ = write!(
-                        text,
-                        "\n{}",
-                        position_line(BOOK_LABEL, books_equity(books), t.entry, t.stop)
-                    );
+                match pick {
+                    Pick::In => {
+                        let _ = write!(
+                            text,
+                            "\n{}",
+                            position_line_capped(
+                                follow.book_label,
+                                equity(books),
+                                t.entry,
+                                t.stop,
+                                follow.position_cap
+                            )
+                        );
+                    }
+                    Pick::Out(why) => {
+                        let _ = write!(
+                            text,
+                            "\nFora da conta fictícia {}: {why}.",
+                            follow.book_label
+                        );
+                    }
+                    Pick::None => {}
                 }
                 out.push(StageAlert {
                     key: k_in,
@@ -330,7 +449,7 @@ pub fn stage_alerts(
             if !sent.contains(&k_out) && recent(t.exit_index) {
                 out.push(StageAlert {
                     key: k_out,
-                    message: closed_text(name, c, t, None),
+                    message: closed_text(name, c, t, None, follow.book_label),
                     notify: alerts,
                 });
             }
@@ -338,10 +457,10 @@ pub fn stage_alerts(
         closed.sort_by_key(|t| t.exit_index);
         for t in closed {
             let base = key(asset, c, t.pattern, t.side, t.signal_index);
-            let before = books_equity(books);
+            let before = equity(books);
             let row = TradeRow {
                 key: base.clone(),
-                tf: BOOK.to_owned(),
+                tf: follow.book.to_owned(),
                 asset: asset.to_owned(),
                 side: side_code(t.side).to_owned(),
                 fill_ms: c.close_ms(t.entry_index),
@@ -359,12 +478,12 @@ pub fn stage_alerts(
             };
             books.trades.push(row.clone());
             rows.push(row);
-            let after = books_equity(books);
+            let after = equity(books);
             let k_out = format!("{base}|saiu");
             if !sent.contains(&k_out) {
                 out.push(StageAlert {
                     key: k_out,
-                    message: closed_text(name, c, t, Some((before, after))),
+                    message: closed_text(name, c, t, Some((before, after)), follow.book_label),
                     notify: true,
                 });
             }
@@ -410,11 +529,13 @@ pub fn stage_alerts(
     (out, rows)
 }
 
-fn books_equity(books: &Books) -> f64 {
-    books.equity_of(BOOK)
-}
-
-fn closed_text(name: &str, c: &Chart, t: &Trade, book: Option<(f64, f64)>) -> String {
+fn closed_text(
+    name: &str,
+    c: &Chart,
+    t: &Trade,
+    book: Option<(f64, f64)>,
+    book_label: &str,
+) -> String {
     let how = match t.how {
         Exit::Target => "no alvo",
         Exit::Stop => "no stop",
@@ -433,7 +554,7 @@ fn closed_text(name: &str, c: &Chart, t: &Trade, book: Option<(f64, f64)>) -> St
     if let Some((before, after)) = book {
         let _ = write!(
             text,
-            "\nConta fictícia {BOOK_LABEL}: {} no trade, saldo agora {}.",
+            "\nConta fictícia {book_label}: {} no trade, saldo agora {}.",
             signed_money(after - before),
             money_pt(after)
         );
@@ -472,7 +593,7 @@ pub fn items_json(
                 "stop": s.stop,
                 "target": s.target,
                 "signal_ms": c.bars.get(s.signal_index).map_or(0, |b| b.open_time_ms),
-                "deadline_ms": c.close_ms(s.signal_index) + c.step_ms,
+                "deadline_ms": c.deadline_ms(s.signal_index),
                 "entry_ms": null, "exit_ms": null, "exit": null, "r": null,
             }));
         }

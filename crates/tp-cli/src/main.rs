@@ -63,6 +63,7 @@ mod dashboard;
 mod day_study;
 mod markets;
 mod smc_live;
+mod stock_trades;
 mod stormer_live;
 mod stormer_study;
 
@@ -148,11 +149,15 @@ enum Command {
     SmcStudy,
     /// Stormer setups (1-2-3, trap, inside bar, closed candle, gap) over the history.
     StormerStudy,
-    /// Fetches the watchlist (stocks, indexes, ETFs) and publishes the Mercados tab.
+    /// Fetches the watchlist (stocks, indexes, ETFs) and the US stocks of the
+    /// trade universe, follows the stock trades and publishes the Mercados tab.
     Markets {
         /// Fetch and print only; nothing saved or sent.
         #[arg(long)]
         dry_run: bool,
+        /// Send the stock trade stages to Telegram.
+        #[arg(long)]
+        notify: bool,
     },
     /// Stormer setups over the history of the watchlist.
     MarketStudy {
@@ -310,7 +315,9 @@ async fn main() -> ExitCode {
         Command::FundingStudy => cmd_funding_study(&cli.data_dir),
         Command::SmcStudy => cmd_smc_study(&cli.data_dir),
         Command::StormerStudy => stormer_study::cmd_stormer_study(&cli.data_dir),
-        Command::Markets { dry_run } => markets::cmd_markets(&cli.data_dir, dry_run).await,
+        Command::Markets { dry_run, notify } => {
+            markets::cmd_markets(&cli.data_dir, dry_run, notify).await
+        }
         Command::MarketStudy { universe } => {
             let list = if universe {
                 markets::TRADE_UNIVERSE
