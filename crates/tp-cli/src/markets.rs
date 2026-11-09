@@ -12,7 +12,7 @@ use tp_data::yahoo::{Interval, fetch_chart};
 
 use super::{CliResult, held_out_start};
 use crate::dashboard;
-use crate::stormer_live::{Chart, Role, items_json, role};
+use crate::stormer_live::{Chart, Role, items_json};
 use crate::stormer_study::report;
 
 const DAY_MS: i64 = 24 * 3600 * 1000;
@@ -108,13 +108,35 @@ fn charts(l: &Loaded) -> Vec<Chart> {
     ]
 }
 
-/// Patterns shown for these assets. Until `tp market-study` shows a setup
-/// works on stocks, every one is "em observação".
-fn market_role(tf: &str, pattern: Pattern, side: Side, with_trend: bool) -> Option<Role> {
-    let followed = role(tf, pattern, side, with_trend).is_some()
-        || (tf == "1w" && pattern == Pattern::GapTrap && side == Side::Long)
-        || (tf == "1w" && pattern == Pattern::OneTwoThree && side == Side::Long && with_trend);
-    followed.then_some(Role::Watch)
+/// Patterns shown for these assets, from `tp market-study` (each group
+/// pooled, 10 years, both periods). Candidates passed the test; watch ones
+/// were positive in both periods without proof. Sells lost everywhere.
+fn market_role(
+    group: &str,
+    tf: &str,
+    pattern: Pattern,
+    side: Side,
+    with_trend: bool,
+) -> Option<Role> {
+    use Pattern::{GapTrap, OneTwoThree, OneTwoThreeInside, Trap};
+    if side != Side::Long {
+        return None;
+    }
+    let candidate = match (group, tf) {
+        ("Brasil" | "EUA", "1w") => matches!(pattern, OneTwoThree | OneTwoThreeInside | Trap),
+        ("EUA" | "Cripto", "1d") => pattern == OneTwoThree,
+        _ => false,
+    };
+    if candidate {
+        return Some(Role::Candidate);
+    }
+    let watch = match (group, tf) {
+        ("Brasil", "1d") => pattern == GapTrap && with_trend,
+        ("EUA", "1d") => pattern == Trap && with_trend,
+        ("Cripto", "1d") => pattern == Trap,
+        _ => false,
+    };
+    watch.then_some(Role::Watch)
 }
 
 /// "alta", "baixa" or "lateral" from the 8 and 80 day averages.
@@ -177,7 +199,9 @@ fn markets_json(now_ms: i64, loaded: &[Loaded]) -> Value {
                 "weekly_trend": trend_word(&l.weekly),
                 "daily": candles(&l.daily, DAILY_SENT),
                 "weekly": candles(&l.weekly, WEEKLY_SENT),
-                "stormer": items_json(&l.item.symbol, &c, &market_role),
+                "stormer": items_json(&l.item.symbol, &c, &|tf, p, side, trend| {
+                    market_role(&l.item.group, tf, p, side, trend)
+                }),
             })
         })
         .collect();
@@ -304,17 +328,25 @@ mod tests {
     }
 
     #[test]
-    fn stock_signals_stay_in_observation() {
+    fn roles_follow_the_stock_study() {
         assert_eq!(
-            market_role("1d", Pattern::OneTwoThree, Side::Long, true),
+            market_role("EUA", "1w", Pattern::Trap, Side::Long, false),
+            Some(Role::Candidate)
+        );
+        assert_eq!(
+            market_role("Brasil", "1w", Pattern::OneTwoThree, Side::Long, false),
+            Some(Role::Candidate)
+        );
+        assert_eq!(
+            market_role("Brasil", "1d", Pattern::OneTwoThree, Side::Long, true),
+            None
+        );
+        assert_eq!(
+            market_role("Brasil", "1d", Pattern::GapTrap, Side::Long, true),
             Some(Role::Watch)
         );
         assert_eq!(
-            market_role("1w", Pattern::GapTrap, Side::Long, false),
-            Some(Role::Watch)
-        );
-        assert_eq!(
-            market_role("1d", Pattern::InsideBar, Side::Long, true),
+            market_role("EUA", "1w", Pattern::OneTwoThree, Side::Short, true),
             None
         );
     }

@@ -34,7 +34,7 @@ export default async function MarketsPage() {
     <div>
       <Freshness ms={markets.generated_ms} label="Mercados" maxHours={50} />
       <p className="leading-relaxed">
-        Preço do último fechamento (as ações têm cerca de 15 minutos de atraso na fonte). Tendência pelas médias de 8 e 80 dias, como no 123 do Stormer. Os sinais aqui ficam em observação até o teste nas ações confirmar.
+        Preço do último fechamento (as ações têm cerca de 15 minutos de atraso na fonte). Tendência pelas médias de 8 e 80 dias, como no 123 do Stormer. Candidatos são os setups de compra do Stormer que ganharam nos dois períodos do teste com 10 anos de histórico: no semanal, o 123 e o trap (Brasil e EUA); no diário, o 123 (EUA e Injective). Vendas perderam em todos os grupos.
       </p>
       {groups.map((g) => (
         <section key={g}>
