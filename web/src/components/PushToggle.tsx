@@ -17,31 +17,42 @@ export function PushToggle() {
   const [state, setState] = useState<State>("loading");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Why notifications cannot be turned on here, shown to tell the cases apart.
+  const [detail, setDetail] = useState<string | null>(null);
+  // Fetched on load: on the iPhone, the permission request has to be the
+  // first thing the tap does, with nothing awaited before it.
+  const [publicKey, setPublicKey] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     (async () => {
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
       const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
-      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      const mode = standalone ? "aberto como app" : "aberto no navegador";
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
         setState(ios && !standalone ? "ios-install" : "unsupported");
+        const missing = [!("serviceWorker" in navigator) && "serviceWorker", !("PushManager" in window) && "PushManager", !("Notification" in window) && "Notification"].filter(Boolean).join(", ");
+        setDetail(`${mode}; faltando: ${missing}`);
         return;
       }
       if (Notification.permission === "denied") {
         setState("blocked");
         return;
       }
+      const keyRes = await fetch("/api/push");
+      setPublicKey(((await keyRes.json()) as { publicKey: string | null }).publicKey);
       const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
       const sub = await reg.pushManager.getSubscription();
       setState(sub ? "on" : "off");
-    })().catch(() => setState("unsupported"));
+    })().catch((e: unknown) => {
+      setState("unsupported");
+      setDetail(`erro ao preparar: ${e instanceof Error ? e.message : String(e)}`);
+    });
   }, []);
 
   async function enable() {
     setBusy(true);
     setMessage(null);
     try {
-      const keyRes = await fetch("/api/push");
-      const { publicKey } = (await keyRes.json()) as { publicKey: string | null };
       if (!publicKey) {
         setState("no-keys");
         return;
@@ -57,8 +68,8 @@ export function PushToggle() {
       if (!r.ok) throw new Error();
       setState("on");
       setMessage("Pronto: este aparelho vai receber os avisos importantes.");
-    } catch {
-      setMessage("Não deu para ligar as notificações. Tente de novo.");
+    } catch (e) {
+      setMessage(`Não deu para ligar as notificações. Detalhe: ${e instanceof Error ? e.message : String(e)}.`);
     } finally {
       setBusy(false);
     }
@@ -104,6 +115,7 @@ export function PushToggle() {
         </button>
       ) : null}
       {message ? <p className="mt-2">{message}</p> : null}
+      {detail && (state === "unsupported" || state === "ios-install") ? <p className="mt-2 text-sm font-bold">Detalhe: {detail}.</p> : null}
     </div>
   );
 }
