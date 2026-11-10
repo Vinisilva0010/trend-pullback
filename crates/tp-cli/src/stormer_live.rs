@@ -138,13 +138,13 @@ impl Role {
     fn line(self) -> &'static str {
         match self {
             Self::Candidate => {
-                "CANDIDATO: passou no teste e ganhou de entrar em qualquer dia com o mesmo stop."
+                "CANDIDATO: no teste de 10 anos este setup ganhou dinheiro nos dois períodos e foi melhor que entrar em qualquer dia com o mesmo stop."
             }
             Self::Watch => {
-                "EM OBSERVAÇÃO: ficou acima da base (entrar em qualquer dia com o mesmo stop) nos dois períodos, mas ainda sem trades suficientes para provar."
+                "EM OBSERVAÇÃO: no teste ficou melhor que entrar em qualquer dia com o mesmo stop, mas ainda com poucos trades para ter certeza."
             }
             Self::Info => {
-                "SÓ PARA ACOMPANHAR: no histórico não ganhou de entrar em qualquer dia com o mesmo stop."
+                "SÓ PARA ACOMPANHAR: no teste não foi melhor que entrar em qualquer dia com o mesmo stop."
             }
         }
     }
@@ -186,6 +186,30 @@ fn side_word(s: Side) -> &'static str {
     }
 }
 
+/// What the pattern is, in plain words.
+fn pattern_story(p: Pattern, side: Side) -> &'static str {
+    match (p, side) {
+        (Pattern::Trap | Pattern::GapTrap, Side::Long) => {
+            "o preço passou abaixo do fundo anterior e voltou para cima. Quem vendeu achando que ia cair ficou preso, e quando o preço sobe essas pessoas precisam comprar de volta"
+        }
+        (Pattern::Trap | Pattern::GapTrap, Side::Short) => {
+            "o preço passou acima do topo anterior e voltou para baixo. Quem comprou achando que ia subir ficou preso, e quando o preço cai essas pessoas precisam vender"
+        }
+        (Pattern::OneTwoThree | Pattern::OneTwoThreeInside, Side::Long) => {
+            "três candles formaram um fundo: o do meio fez a mínima mais baixa e o terceiro já ficou acima dela"
+        }
+        (Pattern::OneTwoThree | Pattern::OneTwoThreeInside, Side::Short) => {
+            "três candles formaram um topo: o do meio fez a máxima mais alta e o terceiro já ficou abaixo dela"
+        }
+        (Pattern::InsideBar, _) => {
+            "o último candle ficou inteiro dentro do anterior, e o rompimento dele costuma dar a direção"
+        }
+        (Pattern::ClosedCandle, _) => {
+            "um candle muito largo fechou na ponta, e o rompimento dele costuma continuar"
+        }
+    }
+}
+
 fn chart_word(tf: &str) -> &'static str {
     if tf == "1w" { "semanal" } else { "diário" }
 }
@@ -211,7 +235,9 @@ fn history_line(name: &str, c: &Chart, pattern: Pattern, side: Side, trend_only:
     };
     let rs: Vec<f64> = c.trades.iter().filter(same).map(|t| t.r).collect();
     if rs.is_empty() {
-        return format!("Histórico em {name}: nenhum trade deste setup.");
+        return format!(
+            "Em {name}, neste gráfico, este setup ainda não deu nenhum trade no histórico."
+        );
     }
     let hits = c
         .trades
@@ -220,12 +246,21 @@ fn history_line(name: &str, c: &Chart, pattern: Pattern, side: Side, trend_only:
         .filter(|t| t.how == Exit::Target)
         .count();
     let (mean, _) = r_mean_t(&rs);
+    let result = if mean >= 0.0 {
+        format!(
+            "cada trade ganhou em média {} do valor arriscado",
+            ratio_pt(mean)
+        )
+    } else {
+        format!(
+            "cada trade perdeu em média {} do valor arriscado",
+            ratio_pt(-mean)
+        )
+    };
     format!(
-        "Histórico em {} neste gráfico: {} trades, {}% no alvo, média {} por trade.",
-        name,
+        "Só em {name}, neste gráfico: {} trades no histórico, {hits} bateram o alvo ({}%), e {result}. O teste que conta é o de todos os ativos juntos; um ativo sozinho tem poucos trades.",
         rs.len(),
         ratio_pt(count_f64(hits) / count_f64(rs.len()) * 100.0),
-        r_pt(mean)
     )
 }
 
@@ -331,20 +366,15 @@ pub fn stage_alerts_with(
                 Side::Short => ("vender", "cair abaixo de"),
             };
             let mut text = format!(
-                "{name} {}: SINAL DE {} ({}, Stormer){}.",
-                chart_word(c.tf),
+                "{name}: possível {} se passar de {} até {} (gráfico {}).",
                 side_word(s.side),
-                pattern_word(s.pattern),
-                if s.with_trend {
-                    ", a favor da tendência"
-                } else {
-                    ""
-                }
+                fmt_pt(s.trigger),
+                when(deadline),
+                chart_word(c.tf),
             );
-            let _ = write!(text, "\n{}", r.line());
             let _ = write!(
                 text,
-                "\nPlano: {verb} se o preço {beyond} {} até {}. Se não acontecer, o sinal vence.\nStop {} ({}), alvo {} ({}), 2 vezes o risco.",
+                "\nO que fazer: {verb} só se o preço {beyond} {} até {}. Se não passar, o sinal vence e não há nada a fazer.\nSe entrar: stop {} ({}, onde sai se der errado) e alvo {} ({}, onde realiza o lucro). O ganho possível é 2 vezes o risco.",
                 fmt_pt(s.trigger),
                 when(deadline),
                 fmt_pt(s.stop),
@@ -352,6 +382,19 @@ pub fn stage_alerts_with(
                 fmt_pt(s.target),
                 pct_pt(change_pct(s.trigger, s.target)),
             );
+            let _ = write!(
+                text,
+                "\nPor que apareceu: {}{}.",
+                pattern_story(s.pattern, s.side),
+                match (s.with_trend, s.side) {
+                    (false, _) => "",
+                    (true, Side::Long) =>
+                        "; e a tendência é de alta (preço acima da média de 8, e a de 8 acima da de 80)",
+                    (true, Side::Short) =>
+                        "; e a tendência é de queda (preço abaixo da média de 8, e a de 8 abaixo da de 80)",
+                }
+            );
+            let _ = write!(text, "\n{}", r.line());
             let trend_only =
                 s.pattern == Pattern::OneTwoThreeInside || s.pattern == Pattern::OneTwoThree;
             let _ = write!(
@@ -394,15 +437,14 @@ pub fn stage_alerts_with(
             let k_in = format!("{base}|entrou");
             if !sent.contains(&k_in) && (t.how == Exit::Open || recent(t.entry_index)) {
                 let mut text = format!(
-                    "{name} {}: ENTROU {} ({}) a {} (candle que fechou em {}).\nStop {} ({}), alvo {} ({}). Se nenhum bater, fecha pelo prazo.",
-                    chart_word(c.tf),
+                    "{name}: ENTROU {} a {} (gráfico {}, candle que fechou em {}).\nStop {} ({}), alvo {} ({}). Se nenhum dos dois bater, o trade fecha pelo prazo.",
                     if t.side == Side::Long {
                         "na compra"
                     } else {
                         "na venda (short)"
                     },
-                    pattern_word(t.pattern),
                     fmt_pt(t.entry),
+                    chart_word(c.tf),
                     when(c.close_ms(t.entry_index)),
                     fmt_pt(t.stop),
                     pct_pt(change_pct(t.entry, t.stop)),
@@ -518,9 +560,9 @@ pub fn stage_alerts_with(
             out.push(StageAlert {
                 key: format!("{base}|venceu"),
                 message: format!(
-                    "{name} {}: o sinal de {} não foi acionado (o preço não rompeu o gatilho no candle seguinte). Nada a fazer.",
-                    chart_word(c.tf),
-                    if base.contains("|long|") { "compra" } else { "venda" }
+                    "{name}: o sinal de {} venceu (gráfico {}). O preço não passou do gatilho a tempo. Nada a fazer.",
+                    if base.contains("|long|") { "compra" } else { "venda" },
+                    chart_word(c.tf)
                 ),
                 notify: alerts,
             });
@@ -543,9 +585,9 @@ fn closed_text(
     };
     let dir = if t.side == Side::Long { 1.0 } else { -1.0 };
     let mut text = format!(
-        "{name} {}: SAIU {how} a {} (candle que fechou em {}). Entrada foi {}. Resultado do trade: {} ({}, já com custos).",
-        chart_word(c.tf),
+        "{name}: SAIU {how} a {} (gráfico {}, candle que fechou em {}). A entrada foi {}. Resultado: {} ({} do valor arriscado, já com custos).",
         fmt_pt(t.exit),
+        chart_word(c.tf),
         when(c.close_ms(t.exit_index)),
         fmt_pt(t.entry),
         pct_pt(dir * change_pct(t.entry, t.exit)),

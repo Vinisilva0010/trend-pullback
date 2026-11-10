@@ -170,7 +170,7 @@ fn exits(w: &Watched, bars: &[tp_core::intraday::Bar], price: f64, out: &mut Vec
         (
             format!("{}|stopdia", w.key),
             format!(
-                "{} {}: BATEU NO STOP {} às {} (trap, Stormer). Preço agora {}.\nSe você comprou, venda agora: na Nomad, ordem a mercado.{book}",
+                "{} (gráfico {}): BATEU NO STOP {} às {}. Preço agora {}.\nSe você comprou, venda agora: na Nomad, ordem a mercado.{book}",
                 w.name,
                 chart_pt(&w.tf),
                 fmt_pt(w.stop),
@@ -182,7 +182,7 @@ fn exits(w: &Watched, bars: &[tp_core::intraday::Bar], price: f64, out: &mut Vec
         (
             format!("{}|alvodia", w.key),
             format!(
-                "{} {}: CHEGOU NO ALVO {} às {} (trap, Stormer). Preço agora {}.\nSe você comprou, venda agora para garantir o lucro: na Nomad, ordem a mercado ou limitada no alvo.{book}",
+                "{} (gráfico {}): CHEGOU NO ALVO {} às {}. Preço agora {}.\nSe você comprou, venda agora para garantir o lucro: na Nomad, ordem a mercado ou limitada no alvo.{book}",
                 w.name,
                 chart_pt(&w.tf),
                 fmt_pt(w.target),
@@ -200,7 +200,7 @@ fn exits(w: &Watched, bars: &[tp_core::intraday::Bar], price: f64, out: &mut Vec
 
 fn entry_text(w: &Watched, at_ms: i64, price: f64, delay_min: i64, account: Account) -> String {
     let mut text = format!(
-        "{} {}: PASSOU DO GATILHO {} às {} (trap, Stormer, compra).\nPreço agora {} ({} do gatilho",
+        "{} (gráfico {}): PASSOU DO GATILHO {} às {}. Hora de decidir a compra.\nPreço agora {} ({} do gatilho",
         w.name,
         chart_pt(&w.tf),
         fmt_pt(w.trigger),

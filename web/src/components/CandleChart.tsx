@@ -11,13 +11,14 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
+  type MouseEventParams,
   type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Frame } from "@/lib/schema";
-import { price } from "@/lib/format";
+import { change, pct, price } from "@/lib/format";
 
 // Candles from Binance's public API (live through its websocket) with the
 // tool's levels drawn on top: active setup, sweeps waiting, liquidity and
@@ -38,6 +39,9 @@ type Props = {
   /** Today's candle so far, drawn over the last given candle (stocks). */
   live?: [number, number, number, number, number] | null;
 };
+
+type Point = { logical: number; price: number };
+type Measure = { a: Point | null; b: Point | null; fixed: boolean };
 
 const BRT_OFFSET = -3 * 3600;
 const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
@@ -75,6 +79,10 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Ruler: two taps (or clicks) on the chart measure the move between them.
+  const [ruler, setRuler] = useState(false);
+  const [pts, setPts] = useState<Measure>({ a: null, b: null, fixed: false });
+  const [, setTick] = useState(0);
   const liveRef = useRef(live);
   liveRef.current = live;
   const drawLive = () => {
@@ -155,6 +163,38 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
     };
   }, [symbol, tf, given]);
 
+  // Ruler mode: the chart stops scrolling so taps and drags measure instead.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    if (!chart || !series || !ruler) return;
+    chart.applyOptions({ handleScroll: false, handleScale: false });
+    const toPoint = (param: MouseEventParams<Time>): Point | null => {
+      if (!param.point || param.logical == null) return null;
+      const p = series.coordinateToPrice(param.point.y);
+      return p == null ? null : { logical: Number(param.logical), price: p };
+    };
+    const onClick = (param: MouseEventParams<Time>) => {
+      const p = toPoint(param);
+      if (!p) return;
+      setPts((cur) => (!cur.a || cur.fixed ? { a: p, b: p, fixed: false } : { ...cur, b: p, fixed: true }));
+    };
+    const onMove = (param: MouseEventParams<Time>) => {
+      const p = toPoint(param);
+      if (p) setPts((cur) => (cur.a && !cur.fixed ? { ...cur, b: p } : cur));
+    };
+    const redraw = () => setTick((t) => t + 1);
+    chart.subscribeClick(onClick);
+    chart.subscribeCrosshairMove(onMove);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
+    return () => {
+      chart.unsubscribeClick(onClick);
+      chart.unsubscribeCrosshairMove(onMove);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw);
+      chart.applyOptions({ handleScroll: true, handleScale: true });
+    };
+  }, [ruler, symbol, tf, given]);
+
   // A new quote moves today's candle.
   useEffect(() => drawLive(), [live]);
 
@@ -226,10 +266,60 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
     history: "Marcas no gráfico",
   };
 
+  let overlay: React.ReactNode = null;
+  const chart = chartRef.current;
+  const series = seriesRef.current;
+  if (ruler && pts.a && pts.b && chart && series) {
+    const x1 = chart.timeScale().logicalToCoordinate(pts.a.logical as never);
+    const x2 = chart.timeScale().logicalToCoordinate(pts.b.logical as never);
+    const y1 = series.priceToCoordinate(pts.a.price);
+    const y2 = series.priceToCoordinate(pts.b.price);
+    if (x1 != null && x2 != null && y1 != null && y2 != null) {
+      const up = pts.b.price >= pts.a.price;
+      const move = change(pts.a.price, pts.b.price);
+      const bars = Math.round(Math.abs(pts.b.logical - pts.a.logical));
+      overlay = (
+        <>
+          <div
+            className="pointer-events-none absolute z-10 border-2"
+            style={{
+              left: Math.min(x1, x2) + 2,
+              top: Math.min(y1, y2) + 2,
+              width: Math.max(2, Math.abs(x2 - x1)),
+              height: Math.max(2, Math.abs(y2 - y1)),
+              background: up ? "#0b8f5a33" : "#d9304a33",
+              borderColor: up ? COLORS.up : COLORS.down,
+            }}
+          />
+          <div
+            className="pointer-events-none absolute z-10 whitespace-nowrap rounded px-2 py-1 text-sm font-black text-white"
+            style={{ left: Math.max(4, Math.min(x2 + 8, (box.current?.clientWidth ?? 300) - 190)), top: Math.max(4, y2 - 30), background: up ? COLORS.up : COLORS.down }}
+          >
+            {pct(move)} · {price(pts.b.price - pts.a.price)} · {bars} {bars === 1 ? "candle" : "candles"}
+          </div>
+        </>
+      );
+    }
+  }
+
   return (
     <div>
-      <div ref={box} className="h-[58vh] min-h-[340px] w-full rounded border-2 border-ink" />
+      <div className="relative">
+        <div ref={box} className="h-[58vh] min-h-[340px] w-full rounded border-2 border-ink" />
+        {overlay}
+      </div>
       <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setRuler((v) => !v);
+            setPts({ a: null, b: null, fixed: false });
+          }}
+          aria-pressed={ruler}
+          className={`rounded border-2 border-ink px-2.5 py-1 text-[13px] font-extrabold ${ruler ? "bg-accent text-ink" : "bg-paper text-ink"}`}
+        >
+          {ruler ? "Régua ligada (toque em 2 pontos)" : "Régua (medir %)"}
+        </button>
         {(Object.keys(layers) as (keyof typeof layers)[]).map((k) => (
           <button
             key={k}

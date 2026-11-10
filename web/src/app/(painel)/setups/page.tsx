@@ -36,7 +36,8 @@ export default async function SetupsPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <Freshness ms={live.generated_ms} label="Setups" />
+      <h1 className="text-2xl font-black">Sinais cripto (BTC, ETH e SOL)</h1>
+      <Freshness ms={live.generated_ms} label="Sinais" />
       <div className="flex flex-wrap gap-2">
         <Pill href="/setups" active={!all}>
           Só candidatos

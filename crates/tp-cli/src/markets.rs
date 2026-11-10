@@ -336,11 +336,19 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
         );
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let messages: Vec<String> = events
+    let mut messages: Vec<String> = events
         .iter()
         .filter(|e| e.notify)
         .map(|e| e.text.clone())
         .collect();
+    let new_signals: Vec<&stock_watch::Watched> = found
+        .watch
+        .iter()
+        .filter(|w| events.iter().any(|e| e.notify && e.id == format!("{}|sinal", w.key)))
+        .collect();
+    if let Some(summary) = signals_summary(&new_signals) {
+        messages.insert(0, summary);
+    }
     if notify && !messages.is_empty() {
         let env = parse_env(&std::fs::read_to_string(".env")?);
         let (Some(token), Some(chat)) =
@@ -382,6 +390,34 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
     let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
     dashboard::save_and_publish(&live_dir, MARKETS_FILE, "markets", &data, &fresh).await?;
     Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// One opening message when several stocks give a signal the same night:
+/// what they have in common and which one the paper book takes first.
+fn signals_summary(signals: &[&stock_watch::Watched]) -> Option<String> {
+    if signals.len() < 2 {
+        return None;
+    }
+    let mut sorted = signals.to_vec();
+    // The book takes the daily setup first, then the weekly one.
+    sorted.sort_by_key(|w| u8::from(w.tf != "1d"));
+    let mut text = format!(
+        "AÇÕES DOS EUA: {} possíveis compras para o próximo pregão.\nTodas são o mesmo setup (o preço passou abaixo de um fundo e voltou), que ganhou no teste de 10 anos. Nenhuma é compra agora: cada uma só vale se o preço passar do gatilho.\nA conta fictícia entra em uma por dia, na primeira que passar do gatilho; o gráfico diário tem preferência.\nLista:",
+        sorted.len()
+    );
+    for w in sorted {
+        let _ = write!(
+            text,
+            "\n- {}: acima de {} (gráfico {}), stop {}, alvo {}",
+            w.name,
+            super::fmt_pt(w.trigger),
+            if w.tf == "1w" { "semanal" } else { "diário" },
+            super::fmt_pt(w.stop),
+            super::fmt_pt(w.target)
+        );
+    }
+    text.push_str("\nOs detalhes de cada uma vêm nas mensagens abaixo. Durante o pregão, aviso quando alguma passar do gatilho.");
+    Some(text)
 }
 
 /// The Stormer history test on the watchlist, each group pooled.
@@ -518,5 +554,27 @@ mod tests {
         assert_eq!(c[0].deadline_ms(0), c[0].close_ms(0) + 3 * DAY_MS);
         // The week closes on Friday.
         assert_eq!(c[1].close_ms(0), c[0].close_ms(0));
+    }
+
+    #[test]
+    fn several_signals_get_one_summary_with_the_daily_first() {
+        let w = |name: &str, tf: &str| stock_watch::Watched {
+            key: format!("{name}|{tf}"),
+            symbol: name.to_owned(),
+            name: name.to_owned(),
+            tf: tf.to_owned(),
+            status: "sinal".to_owned(),
+            trigger: 10.0,
+            stop: 9.0,
+            target: 12.0,
+            from_ms: 0,
+            until_ms: Some(1),
+            in_book: false,
+        };
+        let (a, b) = (w("Oracle", "1w"), w("Texas", "1d"));
+        assert!(signals_summary(&[&a]).is_none());
+        let text = signals_summary(&[&a, &b]).unwrap();
+        assert!(text.starts_with("AÇÕES DOS EUA: 2 possíveis compras"), "{text}");
+        assert!(text.find("Texas").unwrap() < text.find("Oracle").unwrap(), "{text}");
     }
 }

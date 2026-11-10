@@ -10,13 +10,18 @@ self.addEventListener("push", (event) => {
     // Keeps the default text.
   }
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      tag: data.tag,
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      data: { url: data.url },
-    }),
+    self.registration
+      .showNotification(data.title, {
+        body: data.body,
+        tag: data.tag,
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        data: { url: data.url },
+      })
+      // Red number on the app icon: notifications still waiting to be seen.
+      .then(() => self.registration.getNotifications())
+      .then((list) => (self.navigator.setAppBadge ? self.navigator.setAppBadge(list.length) : undefined))
+      .catch(() => undefined),
   );
 });
 
