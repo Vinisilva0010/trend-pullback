@@ -7,7 +7,7 @@ const { payloadsFor } = await import("./push");
 
 describe("push payloads", () => {
   it("sends only important events and folds the rest into one summary", () => {
-    const base = { ms: 1, asset: "BTC", kind: "smc" };
+    const base = { ms: 1, asset: "BTC", kind: "smc", level: 2, lean: null, market: "cripto" as const };
     const events = Array.from({ length: 7 }, (_, i) => ({ ...base, id: `e${i}`, title: `Título ${i}`, text: `Título ${i}\nLinha ${i}`, notify: i !== 3 }));
     const out = payloadsFor(events);
     expect(out).toHaveLength(5);

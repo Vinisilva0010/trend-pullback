@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use tp_core::stormer::{Exit, Pattern, Side};
 
 use crate::smc_live::{Books, TradeRow};
+use crate::stock_watch::Watched;
 use crate::stormer_live::{Chart, Follow, Pick, Role, StageAlert, key, stage_alerts_with};
 
 /// Paper book of the stock trades.
@@ -147,6 +148,58 @@ pub struct Run {
     pub rows: Vec<TradeRow>,
     /// New lines for [`SENT_FILE`]: stage keys and book marks.
     pub keys: Vec<String>,
+    /// Signals and open trades for the intraday watch.
+    pub watch: Vec<Watched>,
+}
+
+/// Signals still waiting for their trigger and trades still open, for the
+/// intraday watch of the hourly alerts.
+fn watch_list(stocks: &[Stock], chosen: &BTreeMap<String, Pick>, now_ms: i64) -> Vec<Watched> {
+    let mut out = Vec::new();
+    for s in stocks {
+        for c in s.charts {
+            for g in &c.signals {
+                if role(c.tf, g.pattern, g.side, g.with_trend).is_none()
+                    || c.deadline_ms(g.signal_index) <= now_ms
+                {
+                    continue;
+                }
+                out.push(Watched {
+                    key: key(s.symbol, c, g.pattern, g.side, g.signal_index),
+                    symbol: s.symbol.to_owned(),
+                    name: s.name.to_owned(),
+                    tf: c.tf.to_owned(),
+                    status: "sinal".to_owned(),
+                    trigger: g.trigger,
+                    stop: g.stop,
+                    target: g.target,
+                    from_ms: c.close_ms(g.signal_index),
+                    until_ms: Some(c.deadline_ms(g.signal_index)),
+                    in_book: false,
+                });
+            }
+            for t in &c.trades {
+                if t.how != Exit::Open || role(c.tf, t.pattern, t.side, t.with_trend).is_none() {
+                    continue;
+                }
+                let k = key(s.symbol, c, t.pattern, t.side, t.signal_index);
+                out.push(Watched {
+                    in_book: chosen.get(&k) == Some(&Pick::In),
+                    key: k,
+                    symbol: s.symbol.to_owned(),
+                    name: s.name.to_owned(),
+                    tf: c.tf.to_owned(),
+                    status: "aberto".to_owned(),
+                    trigger: t.entry,
+                    stop: t.stop,
+                    target: t.target,
+                    from_ms: c.close_ms(t.entry_index),
+                    until_ms: None,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// New stages for every stock and the book trades that closed.
@@ -168,6 +221,7 @@ pub fn run(stocks: &[Stock], now_ms: i64, sent: &BTreeSet<String>, books: &mut B
         stages: Vec::new(),
         rows: Vec::new(),
         keys: Vec::new(),
+        watch: watch_list(stocks, &chosen, now_ms),
     };
     for s in stocks {
         let (stages, rows) =

@@ -1,0 +1,9 @@
+# US stock market news feeds read by the hourly alerts and the market
+# thermometer (one URL per line; # starts a comment). A feed that fails is
+# skipped with a warning; the others still run.
+https://feeds.content.dowjones.io/public/rss/mw_topstories
+https://www.cnbc.com/id/100003114/device/rss/rss.html
+https://feeds.bloomberg.com/markets/news.rss
+https://feeds.a.dj.com/rss/RSSMarketsMain.xml
+https://www.investing.com/rss/news.rss
+https://www.federalreserve.gov/feeds/press_all.xml

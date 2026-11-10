@@ -9,12 +9,46 @@ const ms = z.number().int().nonnegative();
 export const EventSchema = z.object({
   id: z.string().min(1).max(300),
   ms,
-  asset: z.string().max(20),
+  asset: z.string().max(60),
   kind: z.string().max(20),
   title: z.string().max(500),
   text: z.string().max(8000),
   notify: z.boolean(),
+  /** How much it matters, 1 to 3. */
+  level: z.number().int().min(1).max(3).optional(),
+  /** News only: which way it pushes prices. */
+  lean: z.enum(["alta", "queda", "incerto"]).nullable().optional(),
+  market: z.enum(["cripto", "acoes"]).optional(),
+})
+  // Events saved before these fields existed get the same defaults the tool uses.
+  .transform((e) => ({
+    ...e,
+    level: e.level ?? (e.notify ? (e.kind === "stormer" ? 3 : 2) : 1),
+    lean: e.lean ?? null,
+    market: e.market ?? (["BTC", "ETH", "SOL", "mercado"].includes(e.asset) ? "cripto" : "acoes"),
+  }));
+
+const MoodItemSchema = z.object({
+  title: z.string().max(300),
+  link: z.string().url().max(2000).refine((u) => u.startsWith("https://") || u.startsWith("http://")),
+  source: z.string().max(100),
+  ms,
+  kind: z.string().max(60),
+  lean: z.enum(["alta", "queda", "incerto"]),
+  level: z.number().int().min(1).max(3),
 });
+
+const MarketMoodSchema = z.object({
+  hours: z.number().int().positive(),
+  up: z.number().int().nonnegative(),
+  down: z.number().int().nonnegative(),
+  unclear: z.number().int().nonnegative(),
+  weight: num,
+  score: num,
+  items: z.array(MoodItemSchema).max(30),
+});
+
+export const MoodSchema = z.object({ cripto: MarketMoodSchema, acoes: MarketMoodSchema });
 
 const side = z.enum(["long", "short"]);
 
@@ -118,6 +152,7 @@ export const LiveSchema = z.object({
   assets: z.array(AssetSchema).max(10),
   books: z.array(BookSchema).max(5),
   events: z.array(EventSchema).max(1000),
+  mood: MoodSchema.nullable().default(null),
 });
 
 const ZoneSchema = z.object({ low: num, high: num, usd: num }).nullable();
@@ -180,6 +215,9 @@ export const IngestSchema = z.discriminatedUnion("kind", [
 ]);
 
 export type AppEvent = z.infer<typeof EventSchema>;
+export type Mood = z.infer<typeof MoodSchema>;
+export type MarketMood = z.infer<typeof MarketMoodSchema>;
+export type MoodItem = z.infer<typeof MoodItemSchema>;
 export type Setup = z.infer<typeof SetupSchema>;
 export type Pending = z.infer<typeof PendingSchema>;
 export type Frame = z.infer<typeof FrameSchema>;

@@ -23,7 +23,7 @@ pub const LIVE_FILE: &str = "dashboard_live.json";
 pub const DAILY_FILE: &str = "dashboard_daily.json";
 
 /// One alert as the dashboard shows it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Event {
     pub id: String,
     pub ms: i64,
@@ -34,9 +34,26 @@ pub struct Event {
     pub text: String,
     /// Also sent to Telegram and as a phone notification.
     pub notify: bool,
+    /// How much it matters, 1 to 3; 0 takes the default (3 for a Stormer
+    /// stage that notifies, 2 for any other alert that notifies, else 1).
+    pub level: u8,
+    /// For news: `alta`, `queda` or `incerto`.
+    pub lean: Option<&'static str>,
+    /// `cripto` (the default) or `acoes`.
+    pub market: &'static str,
 }
 
 impl Event {
+    #[must_use]
+    pub fn level(&self) -> u8 {
+        match (self.level, self.notify) {
+            (1..=3, _) => self.level,
+            (_, true) if self.kind == "stormer" => 3,
+            (_, true) => 2,
+            _ => 1,
+        }
+    }
+
     #[must_use]
     pub fn to_json(&self) -> Value {
         let title = self.text.lines().next().unwrap_or("").to_owned();
@@ -48,6 +65,9 @@ impl Event {
             "title": title,
             "text": self.text,
             "notify": self.notify,
+            "level": self.level(),
+            "lean": self.lean,
+            "market": if self.market.is_empty() { "cripto" } else { self.market },
         })
     }
 }
@@ -303,6 +323,7 @@ mod tests {
             kind: "smc",
             text: format!("título {i}\ncorpo"),
             notify: i % 2 == 0,
+            ..Event::default()
         };
         let events: Vec<Event> = (0..5).map(make).collect();
         append_events(&dir, &events).unwrap();

@@ -35,6 +35,8 @@ type Props = {
   extra?: Level[];
   longsZone: Zone;
   shortsZone: Zone;
+  /** Today's candle so far, drawn over the last given candle (stocks). */
+  live?: [number, number, number, number, number] | null;
 };
 
 const BRT_OFFSET = -3 * 3600;
@@ -68,11 +70,26 @@ async function loadCandles(symbol: string, tf: string): Promise<Kline[]> {
   return (await r.json()) as Kline[];
 }
 
-export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [], candles: given }: Props) {
+export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [], candles: given, live = null }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const drawLive = () => {
+    const c = liveRef.current;
+    const series = seriesRef.current;
+    if (!c || !series) return;
+    const last = series.data().at(-1);
+    // Only today's candle or a newer one: older times cannot be updated.
+    if (last && Number(last.time) > Number(chartTime(c[0]))) return;
+    try {
+      series.update({ time: chartTime(c[0]), open: c[1], high: c[2], low: c[3], close: c[4] });
+    } catch {
+      // A candle the chart cannot take is skipped; the next quote tries again.
+    }
+  };
   const [layers, setLayers] = useState({ setup: true, liquidity: true, liquidations: true, history: true });
 
   // Chart and candles: rebuilt when the asset or timeframe changes.
@@ -115,7 +132,10 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
           rows.map((k) => ({ time: chartTime(k[0]), value: +k[5], color: +k[4] >= +k[1] ? "#0b8f5a55" : "#d9304a55" })),
         );
         chart.timeScale().scrollToRealTime();
-        if (given) return;
+        if (given) {
+          drawLive();
+          return;
+        }
         ws = new WebSocket(`wss://data-stream.binance.vision/ws/${symbol.toLowerCase()}@kline_${tf}`);
         ws.onmessage = (event) => {
           const k = (JSON.parse(String(event.data)) as { k?: { t: number; o: string; h: string; l: string; c: string; v: string } }).k;
@@ -134,6 +154,9 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       seriesRef.current = null;
     };
   }, [symbol, tf, given]);
+
+  // A new quote moves today's candle.
+  useEffect(() => drawLive(), [live]);
 
   const active = useMemo(() => frame?.setups.filter((s) => s.status === "armado" || s.status === "aberto") ?? [], [frame]);
 

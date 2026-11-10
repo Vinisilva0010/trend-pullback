@@ -117,6 +117,76 @@ pub fn closed_only(mut bars: Vec<Bar>, interval: Interval, now_ms: i64) -> Vec<B
     bars
 }
 
+/// Today's and the last few sessions' 15-minute candles, with the last
+/// price and how many minutes the exchange's data is delayed.
+#[derive(Debug, Clone)]
+pub struct Intraday {
+    pub bars: Vec<Bar>,
+    pub price: Option<f64>,
+    pub delay_min: i64,
+}
+
+/// Reads an intraday chart response.
+///
+/// # Errors
+///
+/// Returns [`YahooError::Format`] when the response is not a chart.
+pub fn parse_intraday(text: &str) -> Result<Intraday, YahooError> {
+    let bars = parse_chart(text)?;
+    let v: Value = serde_json::from_str(text).map_err(|e| YahooError::Format(e.to_string()))?;
+    let meta = v.pointer("/chart/result/0/meta");
+    let price = number(meta.and_then(|m| m.get("regularMarketPrice")))
+        .or_else(|| bars.last().map(|b| b.close));
+    let delay_min = meta
+        .and_then(|m| m.get("exchangeDataDelayedBy"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    Ok(Intraday {
+        bars,
+        price,
+        delay_min,
+    })
+}
+
+async fn get_text(path: &str) -> Result<String, YahooError> {
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| YahooError::Fetch(e.without_url().to_string()))?;
+    let response = client
+        .get(format!("{URL}/{path}"))
+        .send()
+        .await
+        .map_err(|e| YahooError::Fetch(e.without_url().to_string()))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(YahooError::Status(status.as_u16()));
+    }
+    response
+        .text()
+        .await
+        .map_err(|e| YahooError::Fetch(e.without_url().to_string()))
+}
+
+fn encode(symbol: &str) -> String {
+    symbol.replace('^', "%5E").replace('=', "%3D")
+}
+
+/// Fetches the last five sessions in 15-minute candles (regular hours).
+///
+/// # Errors
+///
+/// Returns [`YahooError`] for a bad symbol, a network failure, a non-success
+/// answer or an unexpected body.
+pub async fn fetch_intraday(symbol: &str) -> Result<Intraday, YahooError> {
+    if !is_valid_symbol(symbol) {
+        return Err(YahooError::Symbol);
+    }
+    parse_intraday(&get_text(&format!("{}?range=5d&interval=15m", encode(symbol))).await?)
+}
+
 /// Fetches up to ten years of closed candles.
 ///
 /// # Errors
@@ -131,30 +201,11 @@ pub async fn fetch_chart(
     if !is_valid_symbol(symbol) {
         return Err(YahooError::Symbol);
     }
-    let encoded = symbol.replace('^', "%5E").replace('=', "%3D");
     let step = match interval {
         Interval::Day => "1d",
         Interval::Week => "1wk",
     };
-    let client = reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|e| YahooError::Fetch(e.without_url().to_string()))?;
-    let response = client
-        .get(format!("{URL}/{encoded}?range=10y&interval={step}"))
-        .send()
-        .await
-        .map_err(|e| YahooError::Fetch(e.without_url().to_string()))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(YahooError::Status(status.as_u16()));
-    }
-    let text = response
-        .text()
-        .await
-        .map_err(|e| YahooError::Fetch(e.without_url().to_string()))?;
+    let text = get_text(&format!("{}?range=10y&interval={step}", encode(symbol))).await?;
     Ok(closed_only(parse_chart(&text)?, interval, now_ms))
 }
 
@@ -205,5 +256,17 @@ mod tests {
         assert!(is_valid_symbol("BPAC11.SA"));
         assert!(!is_valid_symbol("ITUB4.SA/../x"));
         assert!(!is_valid_symbol(""));
+    }
+
+    #[test]
+    fn reads_the_last_price_and_the_delay() {
+        let text = SAMPLE.replace(
+            r#""symbol":"ITUB4.SA"}"#,
+            r#""symbol":"ITUB4.SA","regularMarketPrice":36.95,"exchangeDataDelayedBy":15}"#,
+        );
+        let d = parse_intraday(&text).unwrap();
+        assert_eq!(d.price, Some(36.95));
+        assert_eq!(d.delay_min, 15);
+        assert_eq!(d.bars.len(), 2);
     }
 }

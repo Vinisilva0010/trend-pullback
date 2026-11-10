@@ -5,8 +5,11 @@ import { LongShortBar } from "@/components/LongShortBar";
 import { PendingCard, SetupCard } from "@/components/SetupCard";
 import { StormerCard } from "@/components/StormerCard";
 import { LogoutButton } from "@/components/LogoutButton";
-import { getDaily, getLive } from "@/lib/data";
-import { change, money, pct, price, usdShort } from "@/lib/format";
+import { LiveQuotes, TriggerStatus } from "@/components/LiveQuotes";
+import { Thermometer } from "@/components/Thermometer";
+import { TopNews } from "@/components/TopNews";
+import { getDaily, getLive, getMarkets } from "@/lib/data";
+import { change, money, pct, price, usdShort, when } from "@/lib/format";
 import { dayReading, isHeading } from "@/lib/view";
 
 const READING_STYLE: Record<string, string> = {
@@ -16,8 +19,25 @@ const READING_STYLE: Record<string, string> = {
 };
 
 export default async function Home() {
-  const [live, daily] = await Promise.all([getLive(), getDaily()]);
+  const [live, daily, markets] = await Promise.all([getLive(), getDaily(), getMarkets()]);
   if (!live && !daily) return <NoData />;
+  const now = Date.now();
+  const cryptoTrends = daily?.assets ?? [];
+  const cryptoChanges = (live?.assets ?? []).map((a) => a.change_24h).filter((v): v is number => v != null);
+  const us = (markets?.assets ?? []).filter((a) => a.group === "EUA");
+  const spy = us.find((a) => a.symbol === "SPY");
+  const topNews = (["cripto", "acoes"] as const)
+    .flatMap((m) => (live?.mood?.[m].items ?? []).map((i) => ({ ...i, market: m })))
+    .filter((i) => i.level >= 2 && now - i.ms <= 24 * 3_600_000)
+    .sort((a, b) => b.level - a.level || b.ms - a.ms)
+    .slice(0, 6);
+  const tradeNews = (live?.events ?? [])
+    .filter((e) => (e.kind === "stormer" || e.kind === "smc") && e.level >= 3 && now - e.ms <= 48 * 3_600_000)
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, 5);
+  const stocksNow = us.flatMap((a) =>
+    a.stormer.filter((s) => s.role === "candidato" && (s.status === "sinal" || s.status === "aberto")).map((s) => ({ a, s })),
+  );
   const reading = daily ? dayReading(daily.sections) : null;
   const stormer = (live?.assets ?? []).flatMap((a) =>
     a.stormer.filter((s) => s.status === "sinal" || s.status === "aberto").map((s) => ({ a, s })),
@@ -40,7 +60,79 @@ export default async function Home() {
         </section>
       ) : null}
 
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <LiveQuotes symbols={["SPY", ...new Set(stocksNow.map((x) => x.a.symbol))]}>
+        <SectionTitle>Termômetro do mercado</SectionTitle>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Thermometer
+            title="Cripto"
+            mood={live?.mood?.cripto ?? null}
+            price={{
+              up: cryptoTrends.filter((d) => d.trend === "alta").length,
+              down: cryptoTrends.filter((d) => d.trend === "queda").length,
+              total: cryptoTrends.length,
+              change: cryptoChanges.length ? cryptoChanges.reduce((x, y) => x + y, 0) / cryptoChanges.length : null,
+              scale: 2,
+              changeLabel: "média de BTC, ETH e SOL em 24 h",
+            }}
+          />
+          <Thermometer
+            title="Ações dos EUA"
+            mood={live?.mood?.acoes ?? null}
+            price={{
+              up: us.filter((a) => a.trend === "alta").length,
+              down: us.filter((a) => a.trend === "baixa").length,
+              total: us.length,
+              change: spy?.change_day ?? null,
+              scale: 1,
+              changeLabel: "S&P 500 (SPY) no dia",
+              quoteSymbol: "SPY",
+            }}
+          />
+        </div>
+
+        <SectionTitle>Notícias mais importantes (24 h)</SectionTitle>
+        <TopNews items={topNews} />
+
+        <SectionTitle>Últimos avisos de trade</SectionTitle>
+        {tradeNews.length === 0 ? (
+          <p className="rounded bg-panel p-3">Nenhum aviso de trade nas últimas 48 horas.</p>
+        ) : (
+          <ul className="divide-y-2 divide-line rounded border-2 border-ink">
+            {tradeNews.map((e) => (
+              <li key={e.id} className="p-3">
+                <p className="num text-sm font-extrabold">
+                  {when(e.ms)} · {e.asset}
+                </p>
+                <p className="text-lg font-black leading-snug">{e.text.split("\n")[0]}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2">
+          <Link href="/avisos" className="font-black underline">
+            Ver todos os avisos e notícias
+          </Link>
+        </p>
+
+        <SectionTitle>Ações dos EUA agora (sinais e trades abertos)</SectionTitle>
+        {stocksNow.length === 0 ? (
+          <p className="rounded bg-panel p-3">Nenhum sinal de ação agora. Os sinais saem depois do fechamento de Nova York, na rodada das 21h15.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {stocksNow.map(({ a, s }) => (
+              <StormerCard key={s.key} asset={a.name} item={s}>
+                <TriggerStatus symbol={a.symbol} status={s.status} trigger={s.trigger} stop={s.stop} target={s.target} />
+                <Link href={`/mercados/${encodeURIComponent(a.symbol)}?tf=${s.tf}`} className="mt-2 inline-block font-black underline">
+                  Ver gráfico
+                </Link>
+              </StormerCard>
+            ))}
+          </div>
+        )}
+      </LiveQuotes>
+
+      <SectionTitle>Cripto agora</SectionTitle>
+      <div className="grid gap-4 md:grid-cols-3">
         {(live?.assets ?? []).map((a) => {
           const d = daily?.assets.find((x) => x.name === a.name);
           const pos = d?.positioning;

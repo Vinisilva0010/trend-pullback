@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { Freshness, SectionTitle } from "@/components/Common";
 import { getMarkets } from "@/lib/data";
-import { pct, price } from "@/lib/format";
+import { LiveQuotes, RowQuote, TriggerStatus } from "@/components/LiveQuotes";
+import { StormerCard } from "@/components/StormerCard";
+import { pct } from "@/lib/format";
 import type { MarketAsset } from "@/lib/schema";
 
 const TREND_STYLE: Record<MarketAsset["trend"], string> = {
@@ -30,12 +32,30 @@ export default async function MarketsPage() {
     );
   }
   const groups = [...new Set(markets.assets.map((a) => a.group))];
+  const usNow = markets.assets
+    .filter((a) => a.group === "EUA")
+    .flatMap((a) => a.stormer.filter((s) => s.role === "candidato" && (s.status === "sinal" || s.status === "aberto")).map((s) => ({ a, s })));
   return (
-    <div>
+    <LiveQuotes symbols={markets.assets.map((a) => a.symbol)}>
       <Freshness ms={markets.generated_ms} label="Mercados" maxHours={50} />
       <p className="leading-relaxed">
-        Preço do último fechamento (as ações têm cerca de 15 minutos de atraso na fonte). Tendência pelas médias de 8 e 80 dias, como no 123 do Stormer. Candidatos são os setups de compra do Stormer que ganharam nos dois períodos do teste com 10 anos de histórico e também ganharam de comprar em qualquer dia com o mesmo stop. Nas 84 ações e ETFs dos EUA testados: o trap diário a favor da tendência e o trap semanal. Esses geram aviso no Telegram e no celular e entram na conta Ações EUA (trap); as ações dos EUA fora desta lista aparecem aqui enquanto tiverem sinal ou trade aberto. Nas 62 ações do Brasil nada ganhou da base. Em cripto, o 123 diário (Injective). Vendas perderam em todos os grupos.
+        Preço atualizado a cada minuto enquanto a página está aberta, do Yahoo Finance; ao lado de cada preço aparece se está ao vivo, com atraso ou com o mercado fechado. Tendência pelas médias de 8 e 80 dias, como no 123 do Stormer. Candidatos são os setups de compra do Stormer que ganharam nos dois períodos do teste com 10 anos de histórico e também ganharam de comprar em qualquer dia com o mesmo stop. Nas 84 ações e ETFs dos EUA testados: o trap diário a favor da tendência e o trap semanal. Esses geram aviso no Telegram e no celular e entram na conta Ações EUA (trap); as ações dos EUA fora desta lista aparecem aqui enquanto tiverem sinal ou trade aberto. Nas 62 ações do Brasil nada ganhou da base. Em cripto, o 123 diário (Injective). Vendas perderam em todos os grupos.
       </p>
+      <SectionTitle>Ações dos EUA com sinal ou trade aberto</SectionTitle>
+      {usNow.length === 0 ? (
+        <p className="rounded bg-panel p-3">Nenhum agora. Os sinais saem depois do fechamento de Nova York, na rodada das 21h15.</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {usNow.map(({ a, s }) => (
+            <StormerCard key={s.key} asset={a.name} item={s}>
+              <TriggerStatus symbol={a.symbol} status={s.status} trigger={s.trigger} stop={s.stop} target={s.target} />
+              <Link href={`/mercados/${encodeURIComponent(a.symbol)}?tf=${s.tf}`} className="mt-2 inline-block font-black underline">
+                Ver gráfico
+              </Link>
+            </StormerCard>
+          ))}
+        </div>
+      )}
       {groups.map((g) => (
         <section key={g}>
           <SectionTitle>{g}</SectionTitle>
@@ -48,8 +68,7 @@ export default async function MarketsPage() {
                   <li key={a.symbol}>
                     <Link href={`/mercados/${encodeURIComponent(a.symbol)}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-3 hover:bg-panel">
                       <span className="min-w-[9rem] text-lg font-black">{a.name}</span>
-                      <span className="num text-lg font-black">{price(a.price)}</span>
-                      <Change v={a.change_day} label="dia" />
+                      <RowQuote symbol={a.symbol} fallback={a.price} fallbackChange={a.change_day} />
                       <Change v={a.change_week} label="semana" />
                       <span className={`rounded px-2 py-0.5 text-sm font-black ${TREND_STYLE[a.trend]}`}>{a.trend}</span>
                       {signals ? <span className="rounded bg-accent px-2 py-0.5 text-sm font-black">{signals} sinal{signals > 1 ? "is" : ""}</span> : null}
@@ -60,6 +79,6 @@ export default async function MarketsPage() {
           </ul>
         </section>
       ))}
-    </div>
+    </LiveQuotes>
   );
 }

@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CandleChart } from "@/components/CandleChart";
 import { Freshness, Pill, SectionTitle } from "@/components/Common";
 import { StormerCard } from "@/components/StormerCard";
 import { getMarkets } from "@/lib/data";
-import { pct, price } from "@/lib/format";
+import { BigQuote, LiveMarketChart, LiveQuotes, TriggerStatus } from "@/components/LiveQuotes";
 
 const TREND_TEXT = {
   alta: "em alta: preço acima da média de 8, e a de 8 acima da de 80",
@@ -33,15 +32,12 @@ export default async function MarketAssetPage({
   ]);
   const href = (t: string) => `/mercados/${encodeURIComponent(asset.symbol)}?tf=${t}`;
   return (
-    <div>
+    <LiveQuotes symbols={[asset.symbol]}>
       <Link href="/mercados" className="font-extrabold underline">
         ← Mercados
       </Link>
       <h1 className="mt-2 text-3xl font-black">{asset.name}</h1>
-      <p className="num text-2xl font-black">
-        {price(asset.price)} <span className={(asset.change_day ?? 0) >= 0 ? "text-up" : "text-down"}>{pct(asset.change_day)}</span>{" "}
-        <span className="text-base font-bold">no dia</span>
-      </p>
+      <BigQuote symbol={asset.symbol} fallback={asset.price} fallbackChange={asset.change_day} />
       <p className="mt-1">Diário {TREND_TEXT[asset.trend]}.</p>
       <p>Semanal {TREND_TEXT[asset.weekly_trend]}.</p>
       <Freshness ms={markets.generated_ms} label="Dados" maxHours={50} />
@@ -53,7 +49,7 @@ export default async function MarketAssetPage({
           Semanal
         </Pill>
       </div>
-      <CandleChart
+      <LiveMarketChart
         symbol={asset.symbol}
         tf={tf}
         frame={null}
@@ -66,7 +62,9 @@ export default async function MarketAssetPage({
       {live.length ? (
         <div className="grid gap-3 md:grid-cols-2">
           {live.map((s) => (
-            <StormerCard key={s.key} asset={asset.name} item={s} />
+            <StormerCard key={s.key} asset={asset.name} item={s}>
+              <TriggerStatus symbol={asset.symbol} status={s.status} trigger={s.trigger} stop={s.stop} target={s.target} />
+            </StormerCard>
           ))}
         </div>
       ) : (
@@ -82,6 +80,6 @@ export default async function MarketAssetPage({
           </div>
         </>
       ) : null}
-    </div>
+    </LiveQuotes>
   );
 }

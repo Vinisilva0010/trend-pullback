@@ -10,7 +10,7 @@ const STATUS: Record<StormerItem["status"], string> = {
 };
 
 /** One Stormer signal or trade in plain words. */
-export function StormerCard({ asset, item }: { asset: string; item: StormerItem }) {
+export function StormerCard({ asset, item, children }: { asset: string; item: StormerItem; children?: React.ReactNode }) {
   const long = item.side === "long";
   const candidate = item.role === "candidato";
   const closed = item.status === "alvo" || item.status === "stop" || item.status === "prazo";
@@ -47,6 +47,7 @@ export function StormerCard({ asset, item }: { asset: string; item: StormerItem 
       <p className="num mt-1">
         Stop {price(item.stop)} ({pct(change(item.trigger, item.stop))}) · Alvo {price(item.target)} ({pct(change(item.trigger, item.target))}), 2 vezes o risco.
       </p>
+      {children}
     </article>
   );
 }

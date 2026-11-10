@@ -69,6 +69,16 @@ Each followed setup sends up to four messages:
    costs.
 4. **VENCEU**: the trigger was not reached in time. Nothing to do.
 
+**US stocks during the session.** Nomad takes only market and limit
+orders, so the trap's buy stop and its stop and target cannot be left as
+orders. Each hourly run during the New York session checks the stocks with
+a signal or an open trade and alerts when the price passes the trigger
+(with the number of whole shares to buy, for `STOCK_ACCOUNT_USD` in `.env`
+or the paper balance), hits the stop or reaches the target. The test bought
+exactly at the trigger: the alert says how much buying later changes the
+reward to risk. The paper book still records entries and exits from closed
+candles.
+
 Only one "SINAL" is sent per setup. Sent stages are saved, so a message is
 never repeated. On the first stock run, only the current signals are sent.
 Trades still open from earlier weeks are marked as seen, without a message.

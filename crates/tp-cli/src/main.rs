@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use crate::mood::Market as NewsMarket;
 use chrono::{DateTime, Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use tp_backtest::allocation::needs_rebalance;
@@ -29,7 +30,9 @@ use tp_core::intraday::{Bar, HOUR_MS, aggregate};
 use tp_core::liquidity::{LiquidityResult, mean_and_t, study_symbol};
 use tp_core::liquidity::{odds_after_break, round_above, round_below, simple_atr};
 use tp_core::market::Candle;
-use tp_core::news::{Coins, Kind, classify_headline};
+use tp_core::news::{
+    Coins, Kind, Lean, classify_headline, classify_stock_headline, lean_of, level_of,
+};
 use tp_core::odds::{
     Entry, Forward, Plan, PlanStats, Race, Shape, forward_stats, plan_stats, race_odds, touch_odds,
     weekly,
@@ -62,8 +65,10 @@ use tp_data::universe::{
 mod dashboard;
 mod day_study;
 mod markets;
+mod mood;
 mod smc_live;
 mod stock_trades;
+mod stock_watch;
 mod stormer_live;
 mod stormer_study;
 
@@ -3602,7 +3607,11 @@ fn fmt_price(v: f64) -> String {
 
 /// Hours back a news item may be published to still be alerted.
 const NEWS_WINDOW_HOURS: i64 = 3;
-/// News messages sent at most per hourly run.
+/// Crypto news feeds, one URL per line.
+const NEWS_FEEDS: &str = "config/news_feeds.txt";
+/// US stock market news feeds, one URL per line.
+const STOCK_NEWS_FEEDS: &str = "config/news_feeds_stocks.txt";
+/// News messages sent at most per hourly run and market.
 const MAX_NEWS_MESSAGES: usize = 4;
 /// Distance from 1.00 at which USDC/USDT counts as off its peg.
 const DEPEG_LIMIT: f64 = 0.005;
@@ -3725,48 +3734,103 @@ fn domain_of(link: &str) -> &str {
     host.strip_prefix("www.").unwrap_or(host)
 }
 
-/// News alerts from the configured feeds: recent stories that name BTC, ETH
-/// or SOL (or are market-wide) and fit a price-moving kind, grouped by kind
-/// and coins, most serious first. Returns the messages and the new links.
-async fn news_alerts(
-    now: DateTime<chrono::Utc>,
-    sent: &BTreeSet<String>,
-    hourly: &BTreeMap<String, Vec<Bar>>,
-) -> (Vec<String>, Vec<String>) {
-    let mut groups: BTreeMap<(Kind, String), Vec<(NewsItem, Coins)>> = BTreeMap::new();
-    let mut new_links = Vec::new();
-    for url in config_lines("config/news_feeds.txt") {
-        let items = match fetch_feed(&url).await {
-            Ok(items) => items,
-            Err(e) => {
-                eprintln!("warning: news feed skipped: {e}");
-                continue;
-            }
-        };
-        for item in items {
-            let recent = item
-                .published
-                .is_some_and(|p| p <= now && now - p <= chrono::Duration::hours(NEWS_WINDOW_HOURS));
-            if !recent || sent.contains(&item.link) || new_links.contains(&item.link) {
-                continue;
-            }
-            let Some(c) = classify_headline(&item.title, &item.summary) else {
-                continue;
-            };
-            new_links.push(item.link.clone());
-            groups
-                .entry((c.kind, c.coins.label_pt()))
-                .or_default()
-                .push((item, c.coins));
+/// One news alert: its message and how the dashboard sorts it.
+struct NewsAlert {
+    text: String,
+    lean: Lean,
+    level: u8,
+    market: NewsMarket,
+    notify: bool,
+}
+
+/// Every item of every feed listed in `file`; a feed that fails is skipped.
+async fn fetch_feeds(file: &str) -> Vec<NewsItem> {
+    let mut out = Vec::new();
+    for url in config_lines(file) {
+        match fetch_feed(&url).await {
+            Ok(items) => out.extend(items),
+            Err(e) => eprintln!("warning: news feed skipped: {e}"),
         }
     }
-    let messages = groups
+    out
+}
+
+/// A headline with the coins it names and its lean.
+type NewsRead<'a> = (&'a NewsItem, Coins, Lean);
+
+/// The lean most items of a group share (unclear on a tie).
+fn group_lean(leans: &[Lean]) -> Lean {
+    let up = leans.iter().filter(|l| **l == Lean::Up).count();
+    let down = leans.iter().filter(|l| **l == Lean::Down).count();
+    match up.cmp(&down) {
+        std::cmp::Ordering::Greater => Lean::Up,
+        std::cmp::Ordering::Less => Lean::Down,
+        std::cmp::Ordering::Equal => Lean::Unclear,
+    }
+}
+
+/// News alerts of one market from items not sent yet, grouped by kind (and
+/// coins for crypto). Crypto news always notifies; stock news notifies only
+/// for macro or geopolitics carried by two or more sources, the rest stays
+/// on the dashboard.
+fn news_alerts(
+    market: NewsMarket,
+    now: DateTime<chrono::Utc>,
+    items: &[NewsItem],
+    sent: &BTreeSet<String>,
+    hourly: &BTreeMap<String, Vec<Bar>>,
+    new_links: &mut Vec<String>,
+) -> Vec<NewsAlert> {
+    let mut groups: BTreeMap<(Kind, String), Vec<NewsRead>> = BTreeMap::new();
+    for item in items {
+        let recent = item
+            .published
+            .is_some_and(|p| p <= now && now - p <= chrono::Duration::hours(NEWS_WINDOW_HOURS));
+        if !recent || sent.contains(&item.link) || new_links.contains(&item.link) {
+            continue;
+        }
+        let (kind, coins, label) = match market {
+            NewsMarket::Crypto => {
+                let Some(c) = classify_headline(&item.title, &item.summary) else {
+                    continue;
+                };
+                (c.kind, c.coins, c.coins.label_pt())
+            }
+            NewsMarket::Stocks => {
+                let Some(kind) = classify_stock_headline(&item.title, &item.summary) else {
+                    continue;
+                };
+                (kind, Coins::default(), "ações dos EUA".to_owned())
+            }
+        };
+        new_links.push(item.link.clone());
+        let lean = lean_of(kind, &item.title, &item.summary);
+        groups
+            .entry((kind, label))
+            .or_default()
+            .push((item, coins, lean));
+    }
+    groups
         .into_iter()
-        .take(MAX_NEWS_MESSAGES)
-        .map(|((kind, coins), items)| {
-            let sources: BTreeSet<&str> = items.iter().map(|(i, _)| domain_of(&i.link)).collect();
+        .filter_map(|((kind, label), items)| {
+            let sources: BTreeSet<&str> =
+                items.iter().map(|(i, _, _)| domain_of(&i.link)).collect();
+            let level = level_of(kind, sources.len());
+            let lean = group_lean(&items.iter().map(|(_, _, l)| *l).collect::<Vec<_>>());
+            let notify = match market {
+                NewsMarket::Crypto => true,
+                NewsMarket::Stocks => level == 3 && matches!(kind, Kind::Macro | Kind::Geopolitics),
+            };
+            // Price moves of the stock market only describe the past.
+            if market == NewsMarket::Stocks && level < 2 {
+                return None;
+            }
+            let meaning = match market {
+                NewsMarket::Crypto => kind.meaning_pt(),
+                NewsMarket::Stocks => kind.meaning_stocks_pt(),
+            };
             let mut msg = format!(
-                "NOTÍCIA: {} ({coins}), {} {}\nO que costuma acontecer: {}\nNotícias:",
+                "NOTÍCIA: {} ({label}), {} {}, {}\nO que costuma acontecer: {meaning}\nNotícias:",
                 kind.label_pt(),
                 sources.len(),
                 if sources.len() == 1 {
@@ -3774,9 +3838,9 @@ async fn news_alerts(
                 } else {
                     "fontes"
                 },
-                kind.meaning_pt()
+                lean.label_pt()
             );
-            for (item, _) in items.iter().take(3) {
+            for (item, _, _) in items.iter().take(3) {
                 let _ = write!(
                     msg,
                     "\n- {} ({}{}) {}",
@@ -3787,11 +3851,19 @@ async fn news_alerts(
                     item.link
                 );
             }
-            msg.push_str(&price_line(items[0].1, hourly));
-            msg
+            if market == NewsMarket::Crypto {
+                msg.push_str(&price_line(items[0].1, hourly));
+            }
+            Some(NewsAlert {
+                text: msg,
+                lean,
+                level,
+                market,
+                notify,
+            })
         })
-        .collect();
-    (messages, new_links)
+        .take(MAX_NEWS_MESSAGES)
+        .collect()
 }
 
 /// Alert when USDC trades away from one USDT.
@@ -4076,6 +4148,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
             kind: "mercado",
             text: msg,
             notify: true,
+            ..Default::default()
         });
         let _ = writeln!(keys, "{key}");
     }
@@ -4127,6 +4200,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
                 kind: "stormer",
                 text: stage.message,
                 notify: stage.notify,
+                ..Default::default()
             });
         }
         for trade in trades {
@@ -4158,6 +4232,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
                 // Only the Stormer daily candidate notifies; 1h/4h setups
                 // stay on the dashboard.
                 notify: false,
+                ..Default::default()
             });
         }
         for trade in trades {
@@ -4186,6 +4261,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
                 kind,
                 text: msg,
                 notify: true,
+                ..Default::default()
             });
             let _ = writeln!(keys, "{key}");
         }
@@ -4197,20 +4273,82 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         .map(str::to_owned)
         .collect();
     step("buscando notícias");
-    let (news, new_links) = news_alerts(now, &news_sent, &hourly_by_asset).await;
+    let crypto_news = fetch_feeds(NEWS_FEEDS).await;
+    let stock_news = fetch_feeds(STOCK_NEWS_FEEDS).await;
+    let mut new_links = Vec::new();
+    let mut news = news_alerts(
+        NewsMarket::Crypto,
+        now,
+        &crypto_news,
+        &news_sent,
+        &hourly_by_asset,
+        &mut new_links,
+    );
+    news.extend(news_alerts(
+        NewsMarket::Stocks,
+        now,
+        &stock_news,
+        &news_sent,
+        &hourly_by_asset,
+        &mut new_links,
+    ));
+    let mood = mood::mood_json(&crypto_news, &stock_news, now);
     step("notícias prontas");
-    for (i, msg) in news.into_iter().enumerate() {
-        println!("{msg}");
+    for (i, n) in news.into_iter().enumerate() {
+        println!(
+            "{}{}",
+            if n.notify { "" } else { "[só no painel] " },
+            n.text
+        );
         events.push(dashboard::Event {
             id: format!("noticia-{now_ms}-{i}"),
             ms: now_ms,
-            asset: "mercado".to_owned(),
+            asset: if n.market == NewsMarket::Stocks {
+                "Ações EUA".to_owned()
+            } else {
+                "mercado".to_owned()
+            },
             kind: "noticia",
-            text: msg,
-            notify: true,
+            text: n.text,
+            notify: n.notify,
+            level: n.level,
+            lean: Some(n.lean.code()),
+            market: n.market.code(),
         });
     }
     events.extend(smc_events);
+    step("ações: gatilho, stop e alvo no pregão");
+    let stock_sent_path = live_dir.join(stock_trades::SENT_FILE);
+    let stock_sent: BTreeSet<String> = std::fs::read_to_string(&stock_sent_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let account = std::fs::read_to_string(".env")
+        .ok()
+        .and_then(|t| parse_env(&t).get("STOCK_ACCOUNT_USD").cloned())
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map_or_else(
+            || stock_watch::Account::Paper(books.equity_of(stock_trades::BOOK)),
+            stock_watch::Account::Real,
+        );
+    let mut stock_keys = String::new();
+    for (name, stage) in stock_watch::check(&live_dir, now_ms, &stock_sent, account).await {
+        println!("{}", stage.message);
+        let _ = writeln!(stock_keys, "{}", stage.key);
+        events.push(dashboard::Event {
+            id: stage.key,
+            ms: now_ms,
+            asset: name,
+            kind: "stormer",
+            text: stage.message,
+            notify: stage.notify,
+            level: 3,
+            lean: None,
+            market: "acoes",
+        });
+    }
     if dry_run {
         println!("dry run: nothing saved, nothing sent");
         return Ok(ExitCode::SUCCESS);
@@ -4239,6 +4377,13 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     step("salvando");
     std::fs::create_dir_all(&live_dir)?;
     smc_live::save(&live_dir, &books, &smc_keys, &smc_trades)?;
+    if !stock_keys.is_empty() {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stock_sent_path)?;
+        std::io::Write::write_all(&mut f, stock_keys.as_bytes())?;
+    }
     if !stormer_keys.is_empty() {
         let mut f = std::fs::OpenOptions::new()
             .create(true)
@@ -4263,7 +4408,9 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     }
     dashboard::append_events(&live_dir, &events)?;
     step("publicando no painel");
-    let snapshot = dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &stormer_view, &books);
+    let mut snapshot =
+        dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &stormer_view, &books);
+    snapshot["mood"] = mood;
     let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
     dashboard::save_and_publish(&live_dir, dashboard::LIVE_FILE, "live", &snapshot, &fresh).await?;
     Ok(ExitCode::SUCCESS)

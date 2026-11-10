@@ -16,6 +16,7 @@ use tp_data::yahoo::{Interval, fetch_chart};
 
 use super::{CliResult, held_out_start, parse_env, send_telegram};
 use crate::stock_trades::{self, Stock};
+use crate::stock_watch;
 use crate::stormer_live::{Chart, Role, items_json};
 use crate::stormer_study::report;
 use crate::{dashboard, smc_live};
@@ -322,6 +323,8 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             kind: "stormer",
             text: stage.message,
             notify: stage.notify,
+            market: "acoes",
+            ..Default::default()
         });
     }
     let data = markets_json(now, &scanned);
@@ -366,6 +369,15 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             .open(&sent_path)?;
         std::io::Write::write_all(&mut f, (found.keys.join("\n") + "\n").as_bytes())?;
     }
+    let watch: Vec<Value> = found
+        .watch
+        .iter()
+        .map(stock_watch::Watched::to_json)
+        .collect();
+    std::fs::write(
+        live_dir.join(stock_watch::WATCH_FILE),
+        Value::Array(watch).to_string(),
+    )?;
     dashboard::append_events(&live_dir, &events)?;
     let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
     dashboard::save_and_publish(&live_dir, MARKETS_FILE, "markets", &data, &fresh).await?;
