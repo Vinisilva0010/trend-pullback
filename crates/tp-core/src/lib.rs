@@ -9,6 +9,7 @@ pub mod market;
 pub mod news;
 pub mod odds;
 pub mod regime;
+pub mod runner;
 pub mod smc;
 pub mod stormer;
 pub mod strategy;

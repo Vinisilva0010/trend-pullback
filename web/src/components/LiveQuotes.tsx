@@ -8,7 +8,7 @@ import { change, pct, price, when } from "@/lib/format";
 const REFRESH_MS = 60_000;
 const BATCH = 60;
 
-const QuotesContext = createContext<Record<string, Quote>>({});
+const QuotesContext = createContext<{ quotes: Record<string, Quote>; failed: Record<string, string> }>({ quotes: {}, failed: {} });
 
 /**
  * Fetches the last prices of `symbols` every minute while the page is
@@ -16,6 +16,7 @@ const QuotesContext = createContext<Record<string, Quote>>({});
  */
 export function LiveQuotes({ symbols, children }: { symbols: string[]; children: React.ReactNode }) {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  const [failed, setFailed] = useState<Record<string, string>>({});
   const key = symbols.join(",");
   useEffect(() => {
     let stopped = false;
@@ -23,17 +24,22 @@ export function LiveQuotes({ symbols, children }: { symbols: string[]; children:
     const load = async () => {
       if (document.visibilityState !== "visible" || list.length === 0) return;
       const next: Record<string, Quote> = {};
+      const bad: Record<string, string> = {};
       for (let i = 0; i < list.length; i += BATCH) {
         try {
           const r = await fetch(`/api/quotes?symbols=${encodeURIComponent(list.slice(i, i + BATCH).join(","))}`, { cache: "no-store" });
           if (!r.ok) continue;
-          const body = (await r.json()) as { quotes: Quote[] };
+          const body = (await r.json()) as { quotes: Quote[]; failed?: { symbol: string; reason: string }[] };
           for (const q of body.quotes) next[q.symbol] = q;
+          for (const f of body.failed ?? []) bad[f.symbol] = f.reason;
         } catch {
           // The page keeps the last close the tool sent.
         }
       }
-      if (!stopped) setQuotes((old) => ({ ...old, ...next }));
+      if (!stopped) {
+        setQuotes((old) => ({ ...old, ...next }));
+        setFailed(bad);
+      }
     };
     void load();
     const timer = window.setInterval(load, REFRESH_MS);
@@ -45,11 +51,16 @@ export function LiveQuotes({ symbols, children }: { symbols: string[]; children:
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [key]);
-  return <QuotesContext.Provider value={quotes}>{children}</QuotesContext.Provider>;
+  return <QuotesContext.Provider value={{ quotes, failed }}>{children}</QuotesContext.Provider>;
 }
 
 export function useQuote(symbol: string): Quote | undefined {
-  return useContext(QuotesContext)[symbol];
+  return useContext(QuotesContext).quotes[symbol];
+}
+
+/** Why the live price of a symbol did not come, if it failed. */
+export function useQuoteFailure(symbol: string): string | undefined {
+  return useContext(QuotesContext).failed[symbol];
 }
 
 /** Change of the day from the previous close, live when a quote arrived. */
@@ -59,8 +70,9 @@ export function dayChange(q: Quote | undefined, fallback: number | null): number
 }
 
 /** "ao vivo", "atraso de 15 min" or "fechado", with the time of the last price. */
-export function QuoteStatus({ q }: { q: Quote | undefined }) {
-  if (!q) return <span className="text-xs font-bold">último fechamento</span>;
+export function QuoteStatus({ q, symbol }: { q: Quote | undefined; symbol?: string }) {
+  const failure = useQuoteFailure(symbol ?? q?.symbol ?? "");
+  if (!q) return <span className="text-xs font-bold">{failure ? `último fechamento (preço ao vivo indisponível: ${failure})` : "último fechamento"}</span>;
   const label = !q.open ? `fechado, último preço ${when(q.time_ms)}` : q.delay_min > 0 ? `atraso de ${q.delay_min} min` : "ao vivo";
   return <span className={`text-xs font-bold ${q.open ? "text-up" : ""}`}>{q.open ? "● " : ""}{label}</span>;
 }
@@ -76,7 +88,7 @@ export function RowQuote({ symbol, fallback, fallbackChange }: { symbol: string;
       <span className={`num font-extrabold ${color}`}>
         {pct(ch)} <span className="font-bold text-ink">dia</span>
       </span>
-      <QuoteStatus q={q} />
+      <QuoteStatus q={q} symbol={symbol} />
     </>
   );
 }
@@ -88,7 +100,7 @@ export function BigQuote({ symbol, fallback, fallbackChange }: { symbol: string;
   return (
     <p className="num text-2xl font-black">
       {price(q?.price ?? fallback)} <span className={(ch ?? 0) >= 0 ? "text-up" : "text-down"}>{pct(ch)}</span>{" "}
-      <span className="text-base font-bold">no dia</span> <QuoteStatus q={q} />
+      <span className="text-base font-bold">no dia</span> <QuoteStatus q={q} symbol={symbol} />
     </p>
   );
 }
@@ -124,8 +136,25 @@ export function TriggerStatus({ symbol, status, trigger, stop, target }: { symbo
   );
 }
 
-/** The asset chart with today's candle moving (daily chart only). */
+/**
+ * The candle in progress for the chart's timeframe: today, this week or
+ * this month. Weekly and monthly candles are stamped differently from the
+ * daily ones, so the live candle takes the time of the chart's last candle
+ * when it is the same week or month, and a newer time otherwise.
+ */
+export function liveCandle(tf: string, q: Quote | undefined, lastMs: number | undefined): Quote["day"] {
+  const c = tf === "1d" ? q?.day : tf === "1w" ? q?.week : tf === "1M" ? q?.month : null;
+  if (!c) return null;
+  if (tf === "1d" || lastMs == null) return c;
+  const same =
+    tf === "1w"
+      ? c[0] - lastMs < 3 * 86_400_000
+      : new Date(c[0]).getUTCMonth() === new Date(lastMs).getUTCMonth() && new Date(c[0]).getUTCFullYear() === new Date(lastMs).getUTCFullYear();
+  return [same ? lastMs : Math.max(c[0], lastMs + 1000), c[1], c[2], c[3], c[4]];
+}
+
+/** The asset chart with the candle in progress moving. */
 export function LiveMarketChart(props: Omit<React.ComponentProps<typeof CandleChart>, "live">) {
   const q = useQuote(props.symbol);
-  return <CandleChart {...props} live={props.tf === "1d" ? (q?.day ?? null) : null} />;
+  return <CandleChart {...props} live={liveCandle(props.tf, q, props.candles?.at(-1)?.[0])} />;
 }

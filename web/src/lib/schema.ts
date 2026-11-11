@@ -199,6 +199,20 @@ export const MarketAssetSchema = z.object({
   weekly_trend: z.enum(["alta", "baixa", "lateral"]),
   daily: z.array(CandleSchema).max(400),
   weekly: z.array(CandleSchema).max(400),
+  monthly: z.array(CandleSchema).max(400).default([]),
+  /** Ten years seen from far: all-time high, 52 weeks, 12 months, 10-month average. */
+  long: z
+    .object({
+      ath: num,
+      from_ath: num.nullable(),
+      high_52w: num,
+      low_52w: num,
+      change_12m: num.nullable(),
+      trend_10m: z.enum(["alta", "baixa"]).nullable(),
+      years: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .default(null),
   stormer: z.array(StormerSchema).max(100),
 });
 

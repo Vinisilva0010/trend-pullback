@@ -26,6 +26,7 @@ pub const MARKETS_FILE: &str = "dashboard_markets.json";
 /// Candles sent to the dashboard per chart.
 const DAILY_SENT: usize = 150;
 const WEEKLY_SENT: usize = 104;
+const MONTHLY_SENT: usize = 120;
 
 /// One line of the watchlist.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,13 +59,13 @@ pub fn parse_watchlist(text: &str) -> Vec<Item> {
 }
 
 /// An item with its candles.
-struct Loaded {
-    item: Item,
-    daily: Vec<Bar>,
-    weekly: Vec<Bar>,
+pub(crate) struct Loaded {
+    pub(crate) item: Item,
+    pub(crate) daily: Vec<Bar>,
+    pub(crate) weekly: Vec<Bar>,
 }
 
-async fn load_all(items: &[Item], now_ms: i64) -> Vec<Loaded> {
+pub(crate) async fn load_all(items: &[Item], now_ms: i64) -> Vec<Loaded> {
     let mut out = Vec::new();
     for item in items {
         let daily = fetch_chart(&item.symbol, Interval::Day, now_ms).await;
@@ -181,6 +182,58 @@ fn candles(bars: &[Bar], keep: usize) -> Vec<[f64; 5]> {
         .collect()
 }
 
+/// Monthly candles from weekly ones: each week goes to the month of its
+/// Monday (a week across two months counts in the first).
+fn monthly(weekly: &[Bar]) -> Vec<Bar> {
+    let mut out: Vec<Bar> = Vec::new();
+    let month_of = |ms: i64| {
+        chrono::DateTime::from_timestamp_millis(ms).map(|d| {
+            use chrono::Datelike;
+            (d.year(), d.month())
+        })
+    };
+    for w in weekly {
+        match out.last_mut() {
+            Some(m) if month_of(m.open_time_ms) == month_of(w.open_time_ms) => {
+                m.high = m.high.max(w.high);
+                m.low = m.low.min(w.low);
+                m.close = w.close;
+                m.volume += w.volume;
+            }
+            _ => out.push(*w),
+        }
+    }
+    out
+}
+
+/// The long view of an asset from ten years of weekly candles: the
+/// all-time high (over the history fetched), how far the price is from it,
+/// the 52-week range, the 12-month change and the 10-month average trend
+/// (price above the average of the last 10 monthly closes).
+fn long_view(weekly: &[Bar]) -> Value {
+    let Some(last) = weekly.last() else {
+        return Value::Null;
+    };
+    let ath = weekly.iter().map(|b| b.high).fold(f64::MIN, f64::max);
+    let year = &weekly[weekly.len().saturating_sub(52)..];
+    let high_52 = year.iter().map(|b| b.high).fold(f64::MIN, f64::max);
+    let low_52 = year.iter().map(|b| b.low).fold(f64::MAX, f64::min);
+    let months = monthly(weekly);
+    let closes: Vec<f64> = months.iter().rev().take(10).map(|m| m.close).collect();
+    #[allow(clippy::cast_precision_loss)] // ten closes
+    let sma10 = (closes.len() == 10).then(|| closes.iter().sum::<f64>() / closes.len() as f64);
+    let pct = |a: f64, b: f64| (b > 0.0).then(|| (a / b - 1.0) * 100.0);
+    json!({
+        "ath": sig6(ath),
+        "from_ath": pct(last.close, ath),
+        "high_52w": sig6(high_52),
+        "low_52w": sig6(low_52),
+        "change_12m": change(weekly, 52),
+        "trend_10m": sma10.map(|s| if last.close > s { "alta" } else { "baixa" }),
+        "years": weekly.len() / 52,
+    })
+}
+
 /// Six significant digits: enough for any chart, a third of the JSON size.
 fn sig6(v: f64) -> f64 {
     if v == 0.0 || !v.is_finite() {
@@ -220,6 +273,8 @@ fn markets_json(now_ms: i64, loaded: &[(&Loaded, Vec<Chart>, bool)]) -> Value {
                 "weekly_trend": trend_word(&l.weekly),
                 "daily": candles(&l.daily, DAILY_SENT),
                 "weekly": candles(&l.weekly, WEEKLY_SENT),
+                "monthly": candles(&monthly(&l.weekly), MONTHLY_SENT),
+                "long": long_view(&l.weekly),
                 "stormer": stormer,
             })
         })
@@ -232,7 +287,7 @@ pub const WATCHLIST: &str = "config/watchlist.csv";
 /// The larger list searched for trades.
 pub const TRADE_UNIVERSE: &str = "config/trade_universe.csv";
 
-fn read_list(path: &str) -> Result<Vec<Item>, Box<dyn std::error::Error>> {
+pub(crate) fn read_list(path: &str) -> Result<Vec<Item>, Box<dyn std::error::Error>> {
     let items =
         parse_watchlist(&std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?);
     if items.is_empty() {
@@ -245,7 +300,7 @@ fn watchlist() -> Result<Vec<Item>, Box<dyn std::error::Error>> {
     read_list(WATCHLIST)
 }
 
-fn now_ms() -> Result<i64, Box<dyn std::error::Error>> {
+pub(crate) fn now_ms() -> Result<i64, Box<dyn std::error::Error>> {
     let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
     Ok(i64::try_from(since.as_millis())?)
 }
@@ -344,7 +399,11 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
     let new_signals: Vec<&stock_watch::Watched> = found
         .watch
         .iter()
-        .filter(|w| events.iter().any(|e| e.notify && e.id == format!("{}|sinal", w.key)))
+        .filter(|w| {
+            events
+                .iter()
+                .any(|e| e.notify && e.id == format!("{}|sinal", w.key))
+        })
         .collect();
     if let Some(summary) = signals_summary(&new_signals) {
         messages.insert(0, summary);
@@ -574,7 +633,38 @@ mod tests {
         let (a, b) = (w("Oracle", "1w"), w("Texas", "1d"));
         assert!(signals_summary(&[&a]).is_none());
         let text = signals_summary(&[&a, &b]).unwrap();
-        assert!(text.starts_with("AÇÕES DOS EUA: 2 possíveis compras"), "{text}");
-        assert!(text.find("Texas").unwrap() < text.find("Oracle").unwrap(), "{text}");
+        assert!(
+            text.starts_with("AÇÕES DOS EUA: 2 possíveis compras"),
+            "{text}"
+        );
+        assert!(
+            text.find("Texas").unwrap() < text.find("Oracle").unwrap(),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn months_and_the_long_view_come_from_weeks() {
+        let week = |day: i64, close: f64| Bar {
+            open_time_ms: day * DAY_MS,
+            open: close,
+            high: close + 1.0,
+            low: close - 1.0,
+            close,
+            volume: 1.0,
+        };
+        // 2025-01-06, -13, -20, -27 and 2025-02-03 (days since 1970).
+        let weeks: Vec<Bar> = [20094, 20101, 20108, 20115, 20122]
+            .iter()
+            .zip([10.0, 12.0, 11.0, 13.0, 9.0])
+            .map(|(d, c)| week(*d, c))
+            .collect();
+        let m = monthly(&weeks);
+        assert_eq!(m.len(), 2);
+        assert_eq!((m[0].high, m[0].low, m[0].close), (14.0, 9.0, 13.0));
+        let v = long_view(&weeks);
+        assert_eq!(v["ath"], 14.0);
+        assert!((v["from_ath"].as_f64().unwrap() - (9.0 / 14.0 - 1.0) * 100.0).abs() < 1e-9);
+        assert!(v["trend_10m"].is_null());
     }
 }

@@ -28,7 +28,7 @@ type Zone = { low: number; high: number; usd: number } | null;
 type Level = { price: number; color: "entry" | "down" | "up"; title: string };
 type Props = {
   symbol: string;
-  tf: "1h" | "4h" | "1d" | "1w";
+  tf: "1h" | "4h" | "1d" | "1w" | "1M";
   /** Candles given by the page ([open ms, open, high, low, close]); no live feed then. */
   candles?: [number, number, number, number, number][];
   frame: Frame | null;
@@ -44,7 +44,7 @@ type Point = { logical: number; price: number };
 type Measure = { a: Point | null; b: Point | null; fixed: boolean };
 
 const BRT_OFFSET = -3 * 3600;
-const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
+const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2_592_000 };
 
 const COLORS = {
   up: "#0b8f5a",

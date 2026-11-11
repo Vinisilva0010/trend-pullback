@@ -7,18 +7,29 @@ export const runtime = "nodejs";
 const MAX_SYMBOLS = 60;
 const PARALLEL = 6;
 // Yahoo answers 429 to clients without a browser-like user agent.
-const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) trend-pullback/0.1";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+// Two hosts of the same data: when one refuses a cloud server, the other often answers.
+const HOSTS = ["https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com"];
 
-async function one(symbol: string): Promise<Quote | null> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
-  try {
-    // Each symbol is cached for a minute, so many open pages cost one request.
-    const r = await fetch(url, { headers: { "user-agent": USER_AGENT }, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return null;
-    return parseQuote(symbol, await r.json(), Date.now());
-  } catch {
-    return null;
+async function one(symbol: string): Promise<Quote | string> {
+  let reason = "sem resposta";
+  for (const host of HOSTS) {
+    const url = `${host}/v8/finance/chart/${encodeURIComponent(symbol)}?range=1mo&interval=1d`;
+    try {
+      // Each symbol is cached for a minute, so many open pages cost one request.
+      const r = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json" }, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) });
+      if (!r.ok) {
+        reason = `a fonte respondeu ${r.status}`;
+        continue;
+      }
+      const q = parseQuote(symbol, await r.json(), Date.now());
+      if (q) return q;
+      reason = "resposta sem preço";
+    } catch {
+      reason = "a fonte não respondeu a tempo";
+    }
   }
+  return reason;
 }
 
 // Last prices for the Mercados tab, for logged-in users only.
@@ -29,10 +40,12 @@ export async function GET(request: Request) {
   if (symbols.length === 0 || symbols.length > MAX_SYMBOLS || !symbols.every((s) => SYMBOL.test(s))) {
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   }
-  const out: Quote[] = [];
+  const quotes: Quote[] = [];
+  const failed: { symbol: string; reason: string }[] = [];
   for (let i = 0; i < symbols.length; i += PARALLEL) {
-    const got = await Promise.all(symbols.slice(i, i + PARALLEL).map(one));
-    out.push(...got.filter((q): q is Quote => q != null));
+    const batch = symbols.slice(i, i + PARALLEL);
+    const got = await Promise.all(batch.map(one));
+    got.forEach((g, j) => (typeof g === "string" ? failed.push({ symbol: batch[j]!, reason: g }) : quotes.push(g)));
   }
-  return NextResponse.json({ quotes: out }, { headers: { "cache-control": "private, max-age=30" } });
+  return NextResponse.json({ quotes, failed }, { headers: { "cache-control": "private, max-age=30" } });
 }

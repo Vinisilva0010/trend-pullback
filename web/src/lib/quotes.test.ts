@@ -26,6 +26,9 @@ describe("parseQuote", () => {
     expect(q.price).toBe(105);
     expect(q.prev_close).toBe(102);
     expect(q.day).toEqual([mon * 1000, 102, 105, 101, 105]);
+    // Monday's candle alone is the week so far.
+    expect(q.week).toEqual([mon * 1000, 102, 105, 101, 105]);
+    expect(q.month?.[0]).toBe(fri * 1000);
     expect(q.open).toBe(true);
   });
 

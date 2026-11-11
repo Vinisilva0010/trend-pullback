@@ -66,6 +66,7 @@ mod dashboard;
 mod day_study;
 mod markets;
 mod mood;
+mod runner_study;
 mod smc_live;
 mod stock_trades;
 mod stock_watch;
@@ -172,6 +173,9 @@ enum Command {
     },
     /// One trade a day on 15-minute and 1-hour charts (needs `scripts/futures_klines.py 15m`).
     DayStudy,
+    /// Long trades with a trailing stop and no fixed target, looking for 5R, 10R
+    /// and bigger wins, on the trade universe and on BTC, ETH and SOL.
+    RunnerStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -332,6 +336,7 @@ async fn main() -> ExitCode {
             markets::cmd_market_study(list).await
         }
         Command::DayStudy => day_study::cmd_day_study(&cli.data_dir),
+        Command::RunnerStudy => runner_study::cmd_runner_study(&cli.data_dir).await,
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),

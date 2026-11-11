@@ -16,7 +16,14 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
   const pos = daily?.assets.find((x) => x.name === asset)?.positioning ?? null;
   const active = frame?.setups.filter((s) => s.status === "armado" || s.status === "aberto") ?? [];
   const recent = (frame?.setups ?? []).filter((s) => !active.includes(s)).slice(-6).reverse();
-  const stormer = tf === "1d" ? (a?.stormer ?? []).filter((s) => s.tf === "1d" && (s.status === "sinal" || s.status === "aberto")) : [];
+  // Stormer in crypto: the daily and weekly charts, whatever chart is open.
+  const stormerAll = a?.stormer ?? [];
+  const stormerNow = stormerAll.filter((s) => s.status === "sinal" || s.status === "aberto");
+  const stormerPast = stormerAll
+    .filter((s) => s.exit_ms != null)
+    .sort((x, y) => (y.exit_ms ?? 0) - (x.exit_ms ?? 0))
+    .slice(0, 4);
+  const stormer = stormerNow.filter((s) => s.tf === tf);
   const extra = stormer.flatMap((s) => [
     { price: s.trigger, color: "entry" as const, title: s.status === "sinal" ? "Stormer: gatilho" : "Stormer: entrada" },
     { price: s.stop, color: "down" as const, title: "Stormer: stop" },
@@ -61,17 +68,35 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
       </ul>
 
       {!live ? <NoData /> : null}
+      <SectionTitle>Stormer em {asset} (diário e semanal)</SectionTitle>
+      <p className="mb-2 leading-relaxed">
+        Em cripto o Stormer acompanha o trap (o preço passa do fundo ou do topo anterior e volta) no diário e no semanal, compras e vendas. Está em observação: no teste ficou acima da base, mas ainda com poucos trades para ter certeza. Os sinais também vão para o Telegram.
+      </p>
+      {stormerNow.length ? (
+        <div className="mb-3 grid gap-3 md:grid-cols-2">
+          {stormerNow.map((s) => (
+            <StormerCard key={s.key} asset={asset} item={s} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded bg-panel p-3">
+          Nenhum sinal do Stormer agora em {asset}. Os sinais aparecem quando fecha um candle diário (21h) ou semanal (domingo à noite).
+        </p>
+      )}
+      {stormerPast.length ? (
+        <>
+          <p className="mb-2 mt-4 text-lg font-black">Últimos trades do Stormer em {asset}</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {stormerPast.map((s) => (
+              <StormerCard key={s.key} asset={asset} item={s} />
+            ))}
+          </div>
+        </>
+      ) : null}
       {frame ? (
         <>
-          <SectionTitle>Agora em {asset} · {TF_LABEL[tf]}</SectionTitle>
-          {stormer.length ? (
-            <div className="mb-3 grid gap-3 md:grid-cols-2">
-              {stormer.map((s) => (
-                <StormerCard key={s.key} asset={asset} item={s} />
-              ))}
-            </div>
-          ) : null}
-          {active.length === 0 && frame.pending.length === 0 && stormer.length === 0 ? <p className="rounded bg-panel p-3">Nada armado, aberto ou formando neste gráfico.</p> : null}
+          <SectionTitle>Smart Money em {asset} · {TF_LABEL[tf]}</SectionTitle>
+          {active.length === 0 && frame.pending.length === 0 ? <p className="rounded bg-panel p-3">Nenhum setup de Smart Money armado, aberto ou formando neste gráfico.</p> : null}
           <div className="grid gap-3 md:grid-cols-2">
             {active.map((s) => (
               <SetupCard key={s.key} asset={asset} frameLabel={frame.label} setup={s} />

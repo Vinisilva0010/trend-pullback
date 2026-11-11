@@ -5,13 +5,15 @@ import { change, pct, price, when } from "./format";
 
 export const ASSETS = ["BTC", "ETH", "SOL"] as const;
 export type AssetName = (typeof ASSETS)[number];
-export const TIMEFRAMES = ["1h", "4h", "1d"] as const;
+export const TIMEFRAMES = ["1h", "4h", "1d", "1w", "1M"] as const;
 export type Timeframe = (typeof TIMEFRAMES)[number];
 
 export const TF_LABEL: Record<Timeframe, string> = {
-  "1h": "Curto (1h)",
-  "4h": "Swing (4h)",
-  "1d": "Mês (diário)",
+  "1h": "1 hora",
+  "4h": "4 horas",
+  "1d": "Diário",
+  "1w": "Semanal",
+  "1M": "Mensal",
 };
 
 export function sideWord(side: "long" | "short"): string {

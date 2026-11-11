@@ -4,7 +4,7 @@ import { isLoggedIn } from "@/lib/auth";
 export const runtime = "nodejs";
 
 const SYMBOLS = new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
-const INTERVALS = new Set(["1h", "4h", "1d"]);
+const INTERVALS = new Set(["1h", "4h", "1d", "1w", "1M"]);
 
 // Fallback when the browser cannot reach Binance's public market data directly.
 export async function GET(request: Request) {

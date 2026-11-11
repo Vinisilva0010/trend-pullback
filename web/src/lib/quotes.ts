@@ -9,6 +9,9 @@ export type Quote = {
   prev_close: number | null;
   /** Today's candle so far ([open ms, open, high, low, close]), when the session has started. */
   day: [number, number, number, number, number] | null;
+  /** This week and this month so far, same layout; the time is the first session's. */
+  week: [number, number, number, number, number] | null;
+  month: [number, number, number, number, number] | null;
   /** Time of the last price. */
   time_ms: number;
   /** Minutes the exchange delays its data on this source (0 is real time). */
@@ -26,7 +29,17 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-/** Reads a `range=5d&interval=1d` chart response; null when it is not a chart. */
+type Row = [number, number, number, number, number];
+
+/** One candle from several daily ones (first open, highest high, lowest low, last close). */
+function merge(rows: Row[]): Row | null {
+  const first = rows[0];
+  const last = rows.at(-1);
+  if (!first || !last) return null;
+  return [first[0], first[1], Math.max(...rows.map((r) => r[2])), Math.min(...rows.map((r) => r[3])), last[4]];
+}
+
+/** Reads a `range=1mo&interval=1d` chart response; null when it is not a chart. */
 export function parseQuote(symbol: string, body: unknown, nowMs: number): Quote | null {
   const result = (body as { chart?: { result?: unknown[] } })?.chart?.result?.[0] as
     | {
@@ -40,7 +53,7 @@ export function parseQuote(symbol: string, body: unknown, nowMs: number): Quote 
   if (!result || !meta || price == null) return null;
   const times = Array.isArray(result.timestamp) ? result.timestamp : [];
   const q = result.indicators?.quote?.[0] ?? {};
-  const rows: [number, number, number, number, number][] = [];
+  const rows: Row[] = [];
   times.forEach((t, i) => {
     const o = num(q.open?.[i]);
     const h = num(q.high?.[i]);
@@ -58,11 +71,19 @@ export function parseQuote(symbol: string, body: unknown, nowMs: number): Quote 
   const today = last && sameDay(last[0], timeMs) ? last : null;
   const before = today ? rows.at(-2) : last;
   const day: Quote["day"] = today ? [today[0], today[1], Math.max(today[2], price), Math.min(today[3], price), price] : null;
+  // Rows of this week (from Monday) and this month, with today's live values.
+  const live = rows.map((r) => (today && r[0] === today[0] && day ? day : r));
+  const ref = new Date(last?.[0] ?? timeMs);
+  const monday = Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() - ((ref.getUTCDay() + 6) % 7));
+  const week = merge(live.filter((r) => r[0] >= monday));
+  const month = merge(live.filter((r) => new Date(r[0]).getUTCMonth() === ref.getUTCMonth() && new Date(r[0]).getUTCFullYear() === ref.getUTCFullYear()));
   return {
     symbol,
     price,
     prev_close: before ? before[4] : num(meta.chartPreviousClose),
     day,
+    week,
+    month,
     time_ms: timeMs,
     delay_min: num(meta.exchangeDataDelayedBy) ?? 0,
     open,

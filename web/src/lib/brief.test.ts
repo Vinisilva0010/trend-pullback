@@ -3,7 +3,7 @@ import { cryptoBrief, stocksBrief } from "./brief";
 import type { Daily, MarketAsset } from "./schema";
 
 const asset = (symbol: string, trend: MarketAsset["trend"], change: number): MarketAsset => ({
-  symbol, name: symbol, group: "EUA", price: 100, change_day: change, change_week: change, trend, weekly_trend: trend, daily: [], weekly: [], stormer: [],
+  symbol, name: symbol, group: "EUA", price: 100, change_day: change, change_week: change, trend, weekly_trend: trend, daily: [], weekly: [], monthly: [], long: null, stormer: [],
 });
 
 describe("day brief", () => {
