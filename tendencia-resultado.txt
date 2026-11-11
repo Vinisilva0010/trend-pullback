@@ -1,0 +1,167 @@
+Tendência longa: ficar comprado só enquanto o fechamento semanal está acima da média dos últimos 43 fechamentos semanais (cerca de 10 meses). Decide no fechamento da semana e vale para a semana seguinte. Custo de 0,2% em cada entrada e saída.
+Comparação: comprar e segurar o mesmo ativo no mesmo período. Os números são do ativo típico do grupo (a mediana). Queda máxima é a maior queda do topo até o fundo.
+Atenção: a lista é das empresas grandes de hoje; as que quebraram nesses anos não estão nela, o que deixa o segurar melhor do que foi de verdade.
+Itaú (ITUB4.SA): 2490 dias, 522 semanas
+Itaúsa (ITSA4.SA): 2490 dias, 522 semanas
+Bradesco (BBDC4.SA): 2490 dias, 522 semanas
+BTG Pactual (BPAC11.SA): 2417 dias, 507 semanas
+B3 (B3SA3.SA): 2490 dias, 522 semanas
+Banco do Brasil (BBAS3.SA): 2490 dias, 522 semanas
+Santander Brasil (SANB11.SA): 2490 dias, 522 semanas
+BB Seguridade (BBSE3.SA): 2490 dias, 522 semanas
+Porto Seguro (PSSA3.SA): 2490 dias, 522 semanas
+Caixa Seguridade (CXSE3.SA): 1380 dias, 289 semanas
+Vale (VALE3.SA): 2490 dias, 522 semanas
+Petrobras (PETR4.SA): 2490 dias, 522 semanas
+PRIO (PRIO3.SA): 2490 dias, 522 semanas
+Brava Energia (BRAV3.SA): 1491 dias, 313 semanas
+PetroReconcavo (RECV3.SA): 1377 dias, 288 semanas
+Cosan (CSAN3.SA): 2490 dias, 522 semanas
+Ultrapar (UGPA3.SA): 2490 dias, 522 semanas
+Vibra (VBBR3.SA): 2152 dias, 452 semanas
+Gerdau (GGBR4.SA): 2490 dias, 522 semanas
+Metalúrgica Gerdau (GOAU4.SA): 2490 dias, 522 semanas
+CSN (CSNA3.SA): 2490 dias, 522 semanas
+Usiminas (USIM5.SA): 2490 dias, 522 semanas
+CSN Mineração (CMIN3.SA): 1427 dias, 298 semanas
+Suzano (SUZB3.SA): 2490 dias, 522 semanas
+Klabin (KLBN11.SA): 2490 dias, 522 semanas
+Braskem (BRKM5.SA): 2490 dias, 522 semanas
+WEG (WEGE3.SA): 2490 dias, 522 semanas
+Embraer (EMBJ3.SA): 2490 dias, 522 semanas
+Rumo (RAIL3.SA): 2490 dias, 522 semanas
+Localiza (RENT3.SA): 2490 dias, 522 semanas
+Sabesp (SBSP3.SA): 2490 dias, 522 semanas
+Cemig (CMIG4.SA): 2490 dias, 522 semanas
+Copel (CPLE3.SA): 2490 dias, 522 semanas
+CPFL (CPFE3.SA): 2490 dias, 522 semanas
+Equatorial (EQTL3.SA): 2490 dias, 522 semanas
+Engie Brasil (EGIE3.SA): 2490 dias, 522 semanas
+Taesa (TAEE11.SA): 2490 dias, 522 semanas
+Eneva (ENEV3.SA): 2490 dias, 522 semanas
+Vivo (VIVT3.SA): 2490 dias, 522 semanas
+TIM (TIMS3.SA): 2490 dias, 522 semanas
+Totvs (TOTS3.SA): 2490 dias, 522 semanas
+Raia Drogasil (RADL3.SA): 2490 dias, 522 semanas
+Rede D'Or (RDOR3.SA): 1469 dias, 308 semanas
+Hapvida (HAPV3.SA): 2122 dias, 446 semanas
+Fleury (FLRY3.SA): 2490 dias, 522 semanas
+Hypera (HYPE3.SA): 2490 dias, 522 semanas
+Ambev (ABEV3.SA): 2490 dias, 522 semanas
+São Martinho (SMTO3.SA): 2490 dias, 522 semanas
+SLC Agrícola (SLCE3.SA): 2490 dias, 522 semanas
+Assaí (ASAI3.SA): 1422 dias, 297 semanas
+Lojas Renner (LREN3.SA): 2490 dias, 522 semanas
+Magazine Luiza (MGLU3.SA): 2490 dias, 522 semanas
+Azzas 2154 (AZZA3.SA): 2490 dias, 522 semanas
+Alpargatas (ALPA4.SA): 2490 dias, 522 semanas
+Cyrela (CYRE3.SA): 2490 dias, 522 semanas
+MRV (MRVE3.SA): 2490 dias, 522 semanas
+Direcional (DIRR3.SA): 2490 dias, 522 semanas
+Multiplan (MULT3.SA): 2490 dias, 522 semanas
+Yduqs (YDUQ3.SA): 2490 dias, 522 semanas
+Cogna (COGN3.SA): 2490 dias, 522 semanas
+BOVA11 (Ibovespa) (BOVA11.SA): 2489 dias, 522 semanas
+SMAL11 (small caps) (SMAL11.SA): 2489 dias, 522 semanas
+S&P 500 (SPY) (SPY): 2512 dias, 523 semanas
+Nasdaq 100 (QQQ) (QQQ): 2512 dias, 523 semanas
+Dow Jones (DIA) (DIA): 2512 dias, 523 semanas
+Russell 2000 (IWM) (IWM): 2512 dias, 523 semanas
+Tecnologia (XLK) (XLK): 2512 dias, 523 semanas
+Financeiro (XLF) (XLF): 2512 dias, 523 semanas
+Energia (XLE) (XLE): 2512 dias, 523 semanas
+Saúde (XLV) (XLV): 2512 dias, 523 semanas
+Consumo básico (XLP) (XLP): 2512 dias, 523 semanas
+Consumo discricionário (XLY) (XLY): 2512 dias, 523 semanas
+Indústria (XLI) (XLI): 2512 dias, 523 semanas
+Utilidades (XLU) (XLU): 2512 dias, 523 semanas
+Materiais (XLB) (XLB): 2512 dias, 523 semanas
+Semicondutores (SMH) (SMH): 2512 dias, 523 semanas
+Ouro (GLD) (GLD): 2512 dias, 523 semanas
+Prata (SLV) (SLV): 2512 dias, 523 semanas
+Brasil em dólar (EWZ) (EWZ): 2512 dias, 523 semanas
+Apple (AAPL): 2512 dias, 523 semanas
+Microsoft (MSFT): 2512 dias, 523 semanas
+Nvidia (NVDA): 2512 dias, 523 semanas
+Amazon (AMZN): 2512 dias, 523 semanas
+Google (GOOGL): 2512 dias, 523 semanas
+Meta (META): 2512 dias, 523 semanas
+Tesla (TSLA): 2512 dias, 523 semanas
+Broadcom (AVGO): 2512 dias, 523 semanas
+AMD (AMD): 2512 dias, 523 semanas
+Oracle (ORCL): 2512 dias, 523 semanas
+Salesforce (CRM): 2512 dias, 523 semanas
+Adobe (ADBE): 2512 dias, 523 semanas
+Netflix (NFLX): 2512 dias, 523 semanas
+Intel (INTC): 2512 dias, 523 semanas
+Cisco (CSCO): 2512 dias, 523 semanas
+Qualcomm (QCOM): 2512 dias, 523 semanas
+Texas Instruments (TXN): 2512 dias, 523 semanas
+IBM (IBM): 2512 dias, 523 semanas
+Palantir (PLTR): 1536 dias, 320 semanas
+Shopify (SHOP): 2512 dias, 523 semanas
+JPMorgan (JPM): 2512 dias, 523 semanas
+Bank of America (BAC): 2512 dias, 523 semanas
+Goldman Sachs (GS): 2512 dias, 523 semanas
+Morgan Stanley (MS): 2512 dias, 523 semanas
+Visa (V): 2512 dias, 523 semanas
+Mastercard (MA): 2512 dias, 523 semanas
+American Express (AXP): 2512 dias, 523 semanas
+BlackRock (BLK): 2512 dias, 523 semanas
+Berkshire Hathaway (BRK-B): 2512 dias, 523 semanas
+Interactive Brokers (IBKR): 2512 dias, 523 semanas
+ExxonMobil (XOM): 2512 dias, 523 semanas
+Chevron (CVX): 2512 dias, 523 semanas
+Eli Lilly (LLY): 2512 dias, 523 semanas
+UnitedHealth (UNH): 2512 dias, 523 semanas
+Johnson & Johnson (JNJ): 2512 dias, 523 semanas
+AbbVie (ABBV): 2512 dias, 523 semanas
+Merck (MRK): 2512 dias, 523 semanas
+Pfizer (PFE): 2512 dias, 523 semanas
+Thermo Fisher (TMO): 2512 dias, 523 semanas
+Abbott (ABT): 2512 dias, 523 semanas
+Amgen (AMGN): 2512 dias, 523 semanas
+Intuitive Surgical (ISRG): 2512 dias, 523 semanas
+Procter & Gamble (PG): 2512 dias, 523 semanas
+Coca-Cola (KO): 2512 dias, 523 semanas
+PepsiCo (PEP): 2512 dias, 523 semanas
+Walmart (WMT): 2512 dias, 523 semanas
+Costco (COST): 2512 dias, 523 semanas
+Home Depot (HD): 2512 dias, 523 semanas
+McDonald's (MCD): 2512 dias, 523 semanas
+Nike (NKE): 2512 dias, 523 semanas
+Starbucks (SBUX): 2512 dias, 523 semanas
+Disney (DIS): 2512 dias, 523 semanas
+AT&T (T): 2512 dias, 523 semanas
+Verizon (VZ): 2512 dias, 523 semanas
+Caterpillar (CAT): 2512 dias, 523 semanas
+Deere (DE): 2512 dias, 523 semanas
+GE Aerospace (GE): 2512 dias, 523 semanas
+Honeywell (HON): 2512 dias, 523 semanas
+Boeing (BA): 2512 dias, 523 semanas
+Lockheed Martin (LMT): 2512 dias, 523 semanas
+Union Pacific (UNP): 2512 dias, 523 semanas
+UPS (UPS): 2512 dias, 523 semanas
+NextEra Energy (NEE): 2512 dias, 523 semanas
+Linde (LIN): 2512 dias, 523 semanas
+AngloGold Ashanti (AU): 2512 dias, 523 semanas
+Gold Fields (GFI): 2512 dias, 523 semanas
+Newmont (NEM): 2512 dias, 523 semanas
+
+Brasil (62 ativos)
+   até out/2024: segurando, o ativo típico rendeu +4,3% ao ano, com queda máxima de -54,8%. Pela tendência longa: -1,4% ao ano, com queda máxima de -51,4%. A regra rendeu mais em 18 de 62 ativos. Trocas: cerca de 4,7 por ativo por ano.
+   de nov/2024 até hoje: segurando, o ativo típico rendeu +3,9% ao ano, com queda máxima de -34,1%. Pela tendência longa: -5,6% ao ano, com queda máxima de -31,8%. A regra rendeu mais em 16 de 62 ativos. Trocas: cerca de 4,7 por ativo por ano.
+   Não rendeu igual ou mais que segurar com quedas menores nos dois períodos.
+
+EUA (84 ativos)
+   até out/2024: segurando, o ativo típico rendeu +12,4% ao ano, com queda máxima de -40,7%. Pela tendência longa: +4,0% ao ano, com queda máxima de -38,2%. A regra rendeu mais em 9 de 84 ativos. Trocas: cerca de 4,2 por ativo por ano.
+   de nov/2024 até hoje: segurando, o ativo típico rendeu +13,3% ao ano, com queda máxima de -26,6%. Pela tendência longa: +3,0% ao ano, com queda máxima de -25,3%. A regra rendeu mais em 14 de 84 ativos. Trocas: cerca de 4,2 por ativo por ano.
+   Não rendeu igual ou mais que segurar com quedas menores nos dois períodos.
+
+Cripto (BTC, ETH e SOL) (3 ativos)
+   até out/2024: segurando, o ativo típico rendeu +44,7% ao ano, com queda máxima de -83,0%. Pela tendência longa: +45,9% ao ano, com queda máxima de -58,9%. A regra rendeu mais em 3 de 3 ativos. Trocas: cerca de 3,1 por ativo por ano.
+   de nov/2024 até hoje: segurando, o ativo típico rendeu -2,7% ao ano, com queda máxima de -67,1%. Pela tendência longa: -18,1% ao ano, com queda máxima de -53,3%. A regra rendeu mais em 1 de 3 ativos. Trocas: cerca de 3,1 por ativo por ano.
+   Não rendeu igual ou mais que segurar com quedas menores nos dois períodos.
+
+RESUMO: onde a tendência longa rendeu igual ou mais que segurar, com quedas menores, nos dois períodos
+ Nada.

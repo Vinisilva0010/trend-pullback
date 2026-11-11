@@ -1725,6 +1725,21 @@ struct BuyOption {
     active: bool,
     /// Chance of the price reaching a limit level within 30 days.
     reach: Option<f64>,
+    /// For a breakout still waiting: if the price stays where it is, in how
+    /// many days the 20-day high comes within 5% of it, and that level.
+    decay: Option<(usize, f64)>,
+}
+
+/// The 20-day high slides down as the high days leave the window: with the
+/// price flat at `close`, the first day it is within 5% of the price.
+fn breakout_decay(candles: &[Candle], last: usize, close: f64) -> Option<(usize, f64)> {
+    (1..=20).find_map(|d| {
+        let start = (last + d).checked_sub(20)?;
+        let level = candles
+            .get(start..=last)
+            .map_or(close, |w| w.iter().map(Candle::high).fold(close, f64::max));
+        (level <= close * 1.05).then_some((d, level))
+    })
 }
 
 /// Plan stats over the days in today's trend, or over every day when that
@@ -1770,6 +1785,7 @@ fn buy_options(
             stats,
             active: false,
             reach: Some(reach_chance(candles, atr, &trend_days, (close - price) / a)),
+            decay: None,
         });
     };
     let levels = horizontal_levels(
@@ -1837,6 +1853,9 @@ fn buy_options(
         stats,
         active,
         reach: None,
+        decay: (!active)
+            .then(|| breakout_decay(candles, last, close))
+            .flatten(),
     });
     out
 }
@@ -2647,12 +2666,25 @@ fn plan_explained(f: &Facts, o: &BuyOption) -> Option<String> {
             f.name,
             fmt_pt(entry)
         ),
-        Order::AtClose => format!(
-            "{}: só vale comprar se um dia fechar acima de {} ({} acima do preço, pode demorar)",
-            f.name,
-            fmt_pt(entry),
-            pct_plain((entry / f.close - 1.0) * 100.0)
-        ),
+        Order::AtClose => {
+            let mut text = format!(
+                "{}: só vale comprar se um dia fechar acima de {} ({} acima do preço). É a única entrada deste relatório que passou no teste agora: comprar nos suportes perto do preço perdeu dinheiro no histórico com o preço caindo",
+                f.name,
+                fmt_pt(entry),
+                pct_plain((entry / f.close - 1.0) * 100.0)
+            );
+            if let Some((days, level)) = o.decay {
+                let _ = write!(
+                    text,
+                    ". Esse gatilho é a maior alta dos últimos 20 dias e desce sozinho: se o preço ficar parado, em {days} {} ele cai para {} ({} acima do preço)",
+                    if days == 1 { "dia" } else { "dias" },
+                    fmt_pt(level),
+                    pct_plain((level / f.close - 1.0) * 100.0)
+                );
+            }
+            text.push_str(". Entrada perto do preço vem do Stormer (trap no diário e no semanal), que avisa no Telegram quando aparecer");
+            text
+        }
         Order::Limit(_) => format!("{}: vale deixar ordem de compra em {}", f.name, o.place),
     };
     let (wins, losses) = (s.wins(), s.losses());
@@ -5032,6 +5064,7 @@ mod tests {
             stats: Some(stats),
             active: false,
             reach: None,
+            decay: None,
         };
         let lines = winner_lines(&o, 80_504.0, 2_164.0);
         println!("{}", lines.join("\n"));
@@ -5120,6 +5153,7 @@ mod tests {
             verdict,
             active: false,
             reach: Some(0.5),
+            decay: None,
         }
     }
 
@@ -5239,9 +5273,33 @@ mod tests {
             )
         );
         assert!(msgs[1].contains("SOL: só vale comprar se um dia fechar acima de 109,20"));
+        assert!(msgs[1].contains("única entrada deste relatório que passou no teste"));
         assert!(msgs[1].contains("vale o dobro de cada perda"));
         assert!(msgs[1].contains("BTC: nenhum lugar de compra vale agora"));
         assert!(msgs[1].contains("Se quiser comprar uma queda mesmo assim"));
         assert!(msgs[0].len() < 4000 && msgs[1].len() < 4000);
+    }
+
+    #[test]
+    fn the_twenty_day_high_slides_down_while_the_price_stays() {
+        // Ten days at a high of 110, then ten days flat at 82 (high 83).
+        let candles: Vec<Candle> = (0..20)
+            .map(|i| {
+                let (high, close) = if i < 10 { (110.0, 105.0) } else { (83.0, 82.0) };
+                Candle::try_new(tp_core::market::CandleFields {
+                    date: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()
+                        + chrono::Days::new(i),
+                    open: close,
+                    high,
+                    low: close - 1.0,
+                    close,
+                    volume: 1.0,
+                    quote_volume: 1.0,
+                })
+                .unwrap()
+            })
+            .collect();
+        // The ten high days leave the window after ten more days.
+        assert_eq!(breakout_decay(&candles, 19, 82.0), Some((11, 83.0)));
     }
 }
