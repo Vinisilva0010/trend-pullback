@@ -1,0 +1,169 @@
+Trades longos: sem alvo fixo. O stop começa no stop do setup e sobe junto com o preço (máxima desde a entrada menos 3 vezes a variação média de 14 candles); nunca desce. Custos de 0,2% por trade.
+1R = o que se perde no primeiro stop. Chegar a 10R = ganhar 10 vezes o que arriscou. A base entra em qualquer candle com o mesmo stop e a mesma saída.
+Itaú (ITUB4.SA): 2490 dias, 522 semanas
+Itaúsa (ITSA4.SA): 2490 dias, 522 semanas
+Bradesco (BBDC4.SA): 2490 dias, 522 semanas
+BTG Pactual (BPAC11.SA): 2417 dias, 507 semanas
+B3 (B3SA3.SA): 2490 dias, 522 semanas
+Banco do Brasil (BBAS3.SA): 2490 dias, 522 semanas
+Santander Brasil (SANB11.SA): 2490 dias, 522 semanas
+BB Seguridade (BBSE3.SA): 2490 dias, 522 semanas
+Porto Seguro (PSSA3.SA): 2490 dias, 522 semanas
+Caixa Seguridade (CXSE3.SA): 1380 dias, 289 semanas
+Vale (VALE3.SA): 2490 dias, 522 semanas
+Petrobras (PETR4.SA): 2490 dias, 522 semanas
+PRIO (PRIO3.SA): 2490 dias, 522 semanas
+Brava Energia (BRAV3.SA): 1491 dias, 313 semanas
+PetroReconcavo (RECV3.SA): 1377 dias, 288 semanas
+Cosan (CSAN3.SA): 2490 dias, 522 semanas
+Ultrapar (UGPA3.SA): 2490 dias, 522 semanas
+Vibra (VBBR3.SA): 2152 dias, 452 semanas
+Gerdau (GGBR4.SA): 2490 dias, 522 semanas
+Metalúrgica Gerdau (GOAU4.SA): 2490 dias, 522 semanas
+CSN (CSNA3.SA): 2490 dias, 522 semanas
+Usiminas (USIM5.SA): 2490 dias, 522 semanas
+CSN Mineração (CMIN3.SA): 1427 dias, 298 semanas
+Suzano (SUZB3.SA): 2490 dias, 522 semanas
+Klabin (KLBN11.SA): 2490 dias, 522 semanas
+Braskem (BRKM5.SA): 2490 dias, 522 semanas
+WEG (WEGE3.SA): 2490 dias, 522 semanas
+Embraer (EMBJ3.SA): 2490 dias, 522 semanas
+Rumo (RAIL3.SA): 2490 dias, 522 semanas
+Localiza (RENT3.SA): 2490 dias, 522 semanas
+Sabesp (SBSP3.SA): 2490 dias, 522 semanas
+Cemig (CMIG4.SA): 2490 dias, 522 semanas
+Copel (CPLE3.SA): 2490 dias, 522 semanas
+CPFL (CPFE3.SA): 2490 dias, 522 semanas
+Equatorial (EQTL3.SA): 2490 dias, 522 semanas
+Engie Brasil (EGIE3.SA): 2490 dias, 522 semanas
+Taesa (TAEE11.SA): 2490 dias, 522 semanas
+Eneva (ENEV3.SA): 2490 dias, 522 semanas
+Vivo (VIVT3.SA): 2490 dias, 522 semanas
+TIM (TIMS3.SA): 2490 dias, 522 semanas
+Totvs (TOTS3.SA): 2490 dias, 522 semanas
+Raia Drogasil (RADL3.SA): 2490 dias, 522 semanas
+Rede D'Or (RDOR3.SA): 1469 dias, 308 semanas
+Hapvida (HAPV3.SA): 2122 dias, 446 semanas
+Fleury (FLRY3.SA): 2490 dias, 522 semanas
+Hypera (HYPE3.SA): 2490 dias, 522 semanas
+Ambev (ABEV3.SA): 2490 dias, 522 semanas
+São Martinho (SMTO3.SA): 2490 dias, 522 semanas
+SLC Agrícola (SLCE3.SA): 2490 dias, 522 semanas
+Assaí (ASAI3.SA): 1422 dias, 297 semanas
+Lojas Renner (LREN3.SA): 2490 dias, 522 semanas
+Magazine Luiza (MGLU3.SA): 2490 dias, 522 semanas
+Azzas 2154 (AZZA3.SA): 2490 dias, 522 semanas
+Alpargatas (ALPA4.SA): 2490 dias, 522 semanas
+Cyrela (CYRE3.SA): 2490 dias, 522 semanas
+MRV (MRVE3.SA): 2490 dias, 522 semanas
+Direcional (DIRR3.SA): 2490 dias, 522 semanas
+Multiplan (MULT3.SA): 2490 dias, 522 semanas
+Yduqs (YDUQ3.SA): 2490 dias, 522 semanas
+Cogna (COGN3.SA): 2490 dias, 522 semanas
+BOVA11 (Ibovespa) (BOVA11.SA): 2489 dias, 522 semanas
+SMAL11 (small caps) (SMAL11.SA): 2489 dias, 522 semanas
+S&P 500 (SPY) (SPY): 2512 dias, 523 semanas
+Nasdaq 100 (QQQ) (QQQ): 2512 dias, 523 semanas
+Dow Jones (DIA) (DIA): 2512 dias, 523 semanas
+Russell 2000 (IWM) (IWM): 2512 dias, 523 semanas
+Tecnologia (XLK) (XLK): 2512 dias, 523 semanas
+Financeiro (XLF) (XLF): 2512 dias, 523 semanas
+Energia (XLE) (XLE): 2512 dias, 523 semanas
+Saúde (XLV) (XLV): 2512 dias, 523 semanas
+Consumo básico (XLP) (XLP): 2512 dias, 523 semanas
+Consumo discricionário (XLY) (XLY): 2512 dias, 523 semanas
+Indústria (XLI) (XLI): 2512 dias, 523 semanas
+Utilidades (XLU) (XLU): 2512 dias, 523 semanas
+Materiais (XLB) (XLB): 2512 dias, 523 semanas
+Semicondutores (SMH) (SMH): 2512 dias, 523 semanas
+Ouro (GLD) (GLD): 2512 dias, 523 semanas
+Prata (SLV) (SLV): 2512 dias, 523 semanas
+Brasil em dólar (EWZ) (EWZ): 2512 dias, 523 semanas
+Apple (AAPL): 2512 dias, 523 semanas
+Microsoft (MSFT): 2512 dias, 523 semanas
+Nvidia (NVDA): 2512 dias, 523 semanas
+Amazon (AMZN): 2512 dias, 523 semanas
+Google (GOOGL): 2512 dias, 523 semanas
+Meta (META): 2511 dias, 523 semanas
+Tesla (TSLA): 2512 dias, 523 semanas
+Broadcom (AVGO): 2512 dias, 523 semanas
+AMD (AMD): 2512 dias, 523 semanas
+Oracle (ORCL): 2512 dias, 523 semanas
+Salesforce (CRM): 2512 dias, 523 semanas
+Adobe (ADBE): 2512 dias, 523 semanas
+Netflix (NFLX): 2512 dias, 523 semanas
+Intel (INTC): 2512 dias, 523 semanas
+Cisco (CSCO): 2512 dias, 523 semanas
+Qualcomm (QCOM): 2512 dias, 523 semanas
+Texas Instruments (TXN): 2512 dias, 523 semanas
+IBM (IBM): 2512 dias, 523 semanas
+Palantir (PLTR): 1535 dias, 320 semanas
+Shopify (SHOP): 2511 dias, 523 semanas
+JPMorgan (JPM): 2512 dias, 523 semanas
+Bank of America (BAC): 2512 dias, 523 semanas
+Goldman Sachs (GS): 2512 dias, 523 semanas
+Morgan Stanley (MS): 2512 dias, 523 semanas
+Visa (V): 2512 dias, 523 semanas
+Mastercard (MA): 2512 dias, 523 semanas
+American Express (AXP): 2512 dias, 523 semanas
+BlackRock (BLK): 2512 dias, 523 semanas
+Berkshire Hathaway (BRK-B): 2512 dias, 523 semanas
+Interactive Brokers (IBKR): 2512 dias, 523 semanas
+ExxonMobil (XOM): 2512 dias, 523 semanas
+Chevron (CVX): 2512 dias, 523 semanas
+Eli Lilly (LLY): 2512 dias, 523 semanas
+UnitedHealth (UNH): 2512 dias, 523 semanas
+Johnson & Johnson (JNJ): 2512 dias, 523 semanas
+AbbVie (ABBV): 2511 dias, 523 semanas
+Merck (MRK): 2512 dias, 523 semanas
+Pfizer (PFE): 2512 dias, 523 semanas
+Thermo Fisher (TMO): 2512 dias, 523 semanas
+Abbott (ABT): 2512 dias, 523 semanas
+Amgen (AMGN): 2512 dias, 523 semanas
+Intuitive Surgical (ISRG): 2512 dias, 523 semanas
+Procter & Gamble (PG): 2512 dias, 523 semanas
+Coca-Cola (KO): 2512 dias, 523 semanas
+PepsiCo (PEP): 2512 dias, 523 semanas
+Walmart (WMT): 2512 dias, 523 semanas
+Costco (COST): 2512 dias, 523 semanas
+Home Depot (HD): 2512 dias, 523 semanas
+McDonald's (MCD): 2512 dias, 523 semanas
+Nike (NKE): 2512 dias, 523 semanas
+Starbucks (SBUX): 2512 dias, 523 semanas
+Disney (DIS): 2512 dias, 523 semanas
+AT&T (T): 2512 dias, 523 semanas
+Verizon (VZ): 2512 dias, 523 semanas
+Caterpillar (CAT): 2512 dias, 523 semanas
+Deere (DE): 2512 dias, 523 semanas
+GE Aerospace (GE): 2512 dias, 523 semanas
+Honeywell (HON): 2512 dias, 523 semanas
+Boeing (BA): 2512 dias, 523 semanas
+Lockheed Martin (LMT): 2512 dias, 523 semanas
+Union Pacific (UNP): 2512 dias, 523 semanas
+UPS (UPS): 2512 dias, 523 semanas
+NextEra Energy (NEE): 2512 dias, 523 semanas
+Linde (LIN): 2512 dias, 523 semanas
+AngloGold Ashanti (AU): 2512 dias, 523 semanas
+Gold Fields (GFI): 2512 dias, 523 semanas
+Newmont (NEM): 2512 dias, 523 semanas
+
+Brasil (62 ativos juntos)
+   Brasil, trap de compra no semanal: 746 trades (cerca de 1,5 por semana). Média +0,19R por trade: +0,27R até out/2024 (575 trades) e -0,07R depois (171). Base: +0,48R e +0,04R. Fecharam no lucro: 27,5%. Chegaram a 3R: 9,0%; 5R: 5,5%; 10R: 1,7%; 20R: 0,3%. O maior: +42,77R. positivo, mas sem prova (pode ser sorte).
+   Brasil, trap de compra no diário, a favor da tendência: 452 trades (cerca de 0,9 por semana). Média -0,09R por trade: -0,20R até out/2024 (384 trades) e +0,53R depois (68). Base: +0,02R e +0,12R. Fecharam no lucro: 25,9%. Chegaram a 3R: 6,6%; 5R: 3,3%; 10R: 0,7%; 20R: 0,2%. O maior: +21,99R. PERDEU.
+   Brasil, fechamento semanal na maior alta de 52 semanas: 349 trades (cerca de 0,7 por semana). Média +0,35R por trade: +0,46R até out/2024 (262 trades) e +0,02R depois (87). Base: +0,46R e +0,09R. Fecharam no lucro: 39,3%. Chegaram a 3R: 9,2%; 5R: 3,4%; 10R: 0,6%; 20R: 0,3%. O maior: +20,17R. ganhou nos dois períodos, mas NÃO ganhou de entrar em qualquer dia.
+   Brasil, fechamento semanal na máxima histórica: 157 trades (cerca de 0,4 por semana). Média +0,03R por trade: +0,17R até out/2024 (108 trades) e -0,26R depois (49). Base: +0,46R e +0,08R. Fecharam no lucro: 36,9%. Chegaram a 3R: 3,2%; 5R: 1,3%; 10R: 0,6%; 20R: 0,0%. O maior: +11,31R. positivo, mas sem prova (pode ser sorte).
+
+EUA (84 ativos juntos)
+   EUA, trap de compra no semanal: 1090 trades (cerca de 2,2 por semana). Média +0,55R por trade: +0,61R até out/2024 (879 trades) e +0,33R depois (211). Base: +0,79R e +0,41R. Fecharam no lucro: 35,4%. Chegaram a 3R: 14,1%; 5R: 7,2%; 10R: 2,1%; 20R: 0,2%. O maior: +28,98R. ganhou nos dois períodos, mas NÃO ganhou de entrar em qualquer dia.
+   EUA, trap de compra no diário, a favor da tendência: 654 trades (cerca de 1,3 por semana). Média +0,23R por trade: +0,27R até out/2024 (502 trades) e +0,08R depois (152). Base: +0,40R e +0,12R. Fecharam no lucro: 33,6%. Chegaram a 3R: 10,1%; 5R: 5,0%; 10R: 2,0%; 20R: 0,2%. O maior: +20,07R. ganhou nos dois períodos, mas NÃO ganhou de entrar em qualquer dia.
+   EUA, fechamento semanal na maior alta de 52 semanas: 748 trades (cerca de 1,6 por semana). Média +0,20R por trade: +0,23R até out/2024 (597 trades) e +0,08R depois (151). Base: +0,69R e +0,39R. Fecharam no lucro: 41,8%. Chegaram a 3R: 5,6%; 5R: 1,7%; 10R: 0,3%; 20R: 0,0%. O maior: +10,58R. ganhou nos dois períodos, mas NÃO ganhou de entrar em qualquer dia.
+   EUA, fechamento semanal na máxima histórica: 450 trades (cerca de 1,2 por semana). Média +0,18R por trade: +0,22R até out/2024 (330 trades) e +0,08R depois (120). Base: +0,67R e +0,39R. Fecharam no lucro: 42,0%. Chegaram a 3R: 5,8%; 5R: 1,3%; 10R: 0,2%; 20R: 0,0%. O maior: +10,26R. ganhou nos dois períodos, mas NÃO ganhou de entrar em qualquer dia.
+
+Cripto (BTC, ETH e SOL) (3 ativos juntos)
+   Cripto (BTC, ETH e SOL), trap de compra no semanal: 21 trades (cerca de 0,0 por semana). Média +4,27R por trade: +5,37R até out/2024 (17 trades) e -0,43R depois (4). Base: +1,76R e -0,47R. Fecharam no lucro: 42,9%. Chegaram a 3R: 19,0%; 5R: 19,0%; 10R: 14,3%; 20R: 4,8%. O maior: +54,79R. positivo, mas sem prova (pode ser sorte).
+   Cripto (BTC, ETH e SOL), trap de compra no diário, a favor da tendência: 24 trades (cerca de 0,1 por semana). Média +0,60R por trade: +0,47R até out/2024 (21 trades) e +1,50R depois (3). Base: +0,53R e +0,06R. Fecharam no lucro: 58,3%. Chegaram a 3R: 12,5%; 5R: 0,0%; 10R: 0,0%; 20R: 0,0%. O maior: +4,24R. positivo nos dois períodos, mas não ganhou da base.
+   Cripto (BTC, ETH e SOL), fechamento semanal na maior alta de 52 semanas: 19 trades (cerca de 0,1 por semana). Média +1,20R por trade: +1,70R até out/2024 (15 trades) e -0,66R depois (4). Base: +1,32R e -0,57R. Fecharam no lucro: 68,4%. Chegaram a 3R: 21,1%; 5R: 5,3%; 10R: 0,0%; 20R: 0,0%. O maior: +8,49R. positivo, mas sem prova (pode ser sorte).
+   Cripto (BTC, ETH e SOL), fechamento semanal na máxima histórica: 7 trades (cerca de 0,0 por semana). Média +0,16R por trade: +0,40R até out/2024 (5 trades) e -0,42R depois (2). Base: +1,35R e -0,57R. Fecharam no lucro: 42,9%. Chegaram a 3R: 0,0%; 5R: 0,0%; 10R: 0,0%; 20R: 0,0%. O maior: +2,20R. positivo, mas sem prova (pode ser sorte).
+
+RESUMO: o que ficou positivo e acima da base nos dois períodos
+ Nada.

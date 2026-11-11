@@ -72,6 +72,7 @@ mod stock_trades;
 mod stock_watch;
 mod stormer_live;
 mod stormer_study;
+mod trend_study;
 
 type CliResult = Result<ExitCode, Box<dyn Error>>;
 
@@ -176,6 +177,9 @@ enum Command {
     /// Long trades with a trailing stop and no fixed target, looking for 5R, 10R
     /// and bigger wins, on the trade universe and on BTC, ETH and SOL.
     RunnerStudy,
+    /// The long trend: hold only while the weekly close is above its 10-month
+    /// average, against buying and holding.
+    TrendStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -337,6 +341,7 @@ async fn main() -> ExitCode {
         }
         Command::DayStudy => day_study::cmd_day_study(&cli.data_dir),
         Command::RunnerStudy => runner_study::cmd_runner_study(&cli.data_dir).await,
+        Command::TrendStudy => trend_study::cmd_trend_study(&cli.data_dir).await,
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
