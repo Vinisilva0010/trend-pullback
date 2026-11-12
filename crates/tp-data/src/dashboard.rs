@@ -74,6 +74,38 @@ pub async fn publish(url: &str, token: &str, body: String) -> Result<(), Publish
     }
 }
 
+/// Asks the dashboard whether its own stock watch is running (it checks
+/// triggers, stops and targets from the cloud every few minutes, with the
+/// computer on or off). Any failure counts as not running, so the computer
+/// keeps doing the watch itself.
+pub async fn cloud_watch_active(url: &str, token: &str) -> bool {
+    if !is_valid_url(url) || !is_valid_token(token) {
+        return false;
+    }
+    let Ok(client) = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build()
+    else {
+        return false;
+    };
+    let answer = client
+        .get(format!("{}/api/watch/status", url.trim_end_matches('/')))
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+        .send()
+        .await;
+    match answer {
+        Ok(r) if r.status().is_success() => r
+            .text()
+            .await
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v.get("active").and_then(serde_json::Value::as_bool))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

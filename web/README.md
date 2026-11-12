@@ -47,9 +47,28 @@ npm run build
 | `INGEST_TOKEN` | Same value as `DASHBOARD_TOKEN` in the tool's `.env` |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | From `npm run vapid` |
 | `VAPID_SUBJECT` | `mailto:` address |
+| `CRON_SECRET` | Optional. Random secret (32+ characters) for the cloud watch |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Optional. Same values as in the tool's `.env`, for the cloud watch |
+| `STOCK_ACCOUNT_USD` | Optional. Real US stock balance, for the share count in buy alerts |
 | `UPSTASH_REDIS_REST_URL`/`_TOKEN` or `KV_REST_API_URL`/`_TOKEN` | Added by the Upstash integration |
 
 Set the Vercel project's Root Directory to `web`.
+
+## Cloud watch
+
+Vercel's free plan schedules a function once a day at most, so an outside
+scheduler (cron-job.org, free) calls `GET /api/cron/watch` every 15 minutes
+with the header `Authorization: Bearer <CRON_SECRET>`. Each call:
+
+- warns on Telegram when the computer's robot has not published for two
+  hours (not between 23:00 and 07:00 Brasília), and again when it is back;
+- during the New York session, checks the US stock signals and open trades
+  (the list the tool sends with the Mercados data) against Yahoo's
+  15-minute candles and alerts when a trigger, stop or target is hit.
+
+While this runs (a call in the last 40 minutes), the tool on the computer
+skips its own hourly stock watch (`GET /api/watch/status`, ingest token).
+Crypto stays on the computer: Binance refuses most cloud servers.
 
 ## Notifications on iPhone
 

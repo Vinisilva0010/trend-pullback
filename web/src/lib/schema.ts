@@ -216,10 +216,27 @@ export const MarketAssetSchema = z.object({
   stormer: z.array(StormerSchema).max(100),
 });
 
+/** One US stock signal or open trade followed during the session. */
+export const WatchedSchema = z.object({
+  key: z.string().min(1).max(120),
+  symbol: z.string().regex(/^[A-Za-z0-9^.=-]{1,20}$/),
+  name: z.string().max(60),
+  tf: z.enum(["1d", "1w"]),
+  status: z.enum(["sinal", "aberto"]),
+  trigger: num,
+  stop: num,
+  target: num,
+  from_ms: ms,
+  until_ms: ms.nullable(),
+  in_book: z.boolean(),
+});
+
 export const MarketsSchema = z.object({
   version: z.literal(1),
   generated_ms: ms,
   assets: z.array(MarketAssetSchema).max(200),
+  /** US stock signals and open trades for the cloud watch. */
+  watch: z.array(WatchedSchema).max(400).default([]),
 });
 
 export const IngestSchema = z.discriminatedUnion("kind", [

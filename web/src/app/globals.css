@@ -36,3 +36,8 @@ body {
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* "Nada a fazer agora" shows only when no action row is on the list. */
+.action-list:has([data-action]) .action-empty {
+  display: none;
+}

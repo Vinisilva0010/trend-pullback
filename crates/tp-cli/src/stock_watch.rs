@@ -327,6 +327,15 @@ pub async fn check(
     if watch.is_empty() || !in_session(now_ms) {
         return Vec::new();
     }
+    // The dashboard runs the same watch from the cloud every few minutes
+    // when it is set up; then the computer does not repeat its alerts.
+    let env = super::parse_env(&std::fs::read_to_string(".env").unwrap_or_default());
+    if let (Some(url), Some(token)) = (env.get("DASHBOARD_URL"), env.get("DASHBOARD_TOKEN"))
+        && tp_data::dashboard::cloud_watch_active(url, token).await
+    {
+        println!("ações: o vigia da nuvem está ativo; o computador não repete os avisos do pregão");
+        return Vec::new();
+    }
     let symbols: BTreeSet<&str> = watch.iter().map(|w| w.symbol.as_str()).collect();
     let mut out = Vec::new();
     for symbol in symbols {

@@ -382,7 +382,15 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             ..Default::default()
         });
     }
-    let data = markets_json(now, &scanned);
+    let mut data = markets_json(now, &scanned);
+    // The cloud watch of the dashboard checks these during the session.
+    data["watch"] = Value::Array(
+        found
+            .watch
+            .iter()
+            .map(stock_watch::Watched::to_json)
+            .collect(),
+    );
     if dry_run {
         println!(
             "dry run: {} ativos carregados, {} avisos de ações, nada salvo nem enviado",

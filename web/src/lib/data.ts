@@ -1,5 +1,6 @@
 import "server-only";
-import { DailySchema, LiveSchema, MarketsSchema, type Daily, type Live, type Markets } from "./schema";
+import { z } from "zod";
+import { DailySchema, EventSchema, LiveSchema, MarketsSchema, type Daily, type Live, type Markets } from "./schema";
 import { KEYS, store } from "./store";
 
 async function read<T>(key: string, parse: (v: unknown) => T): Promise<T | null> {
@@ -12,8 +13,15 @@ async function read<T>(key: string, parse: (v: unknown) => T): Promise<T | null>
   }
 }
 
-export function getLive(): Promise<Live | null> {
-  return read(KEYS.live, (v) => LiveSchema.parse(v));
+export async function getLive(): Promise<Live | null> {
+  const live = await read(KEYS.live, (v) => LiveSchema.parse(v));
+  if (!live) return null;
+  // Alerts sent by the cloud watch join the feed.
+  const cloud = await read(KEYS.cloudEvents, (v) => z.array(EventSchema).parse(v));
+  if (!cloud?.length) return live;
+  const seen = new Set(live.events.map((e) => e.id));
+  const events = [...cloud.filter((e) => !seen.has(e.id)), ...live.events].sort((a, b) => b.ms - a.ms).slice(0, 1000);
+  return { ...live, events };
 }
 
 export function getMarkets(): Promise<Markets | null> {

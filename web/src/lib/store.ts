@@ -114,5 +114,13 @@ export const KEYS = {
   daily: "tp:daily",
   markets: "tp:markets",
   subscriptions: "tp:push:subs",
+  // Small copies for the cloud watch, so it never reads the big snapshots.
+  liveMs: "tp:live:ms",
+  watchList: "tp:watch:list",
+  watchAccount: "tp:watch:account",
+  watchSent: "tp:watch:sent",
+  watchLast: "tp:watch:last",
+  staleFor: "tp:watch:stale",
+  cloudEvents: "tp:cloud:events",
   loginFails: (ip: string) => `tp:login:fail:${ip}`,
 } as const;

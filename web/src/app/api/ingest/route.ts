@@ -33,7 +33,15 @@ export async function POST(request: Request) {
   }
   const { kind, data, new_events } = parsed.data;
   const key = kind === "live" ? KEYS.live : kind === "daily" ? KEYS.daily : KEYS.markets;
-  await store().set(key, JSON.stringify(data));
+  const s = store();
+  await s.set(key, JSON.stringify(data));
+  if (parsed.data.kind === "live") {
+    await s.set(KEYS.liveMs, String(parsed.data.data.generated_ms));
+    const stocks = parsed.data.data.books.find((b) => b.tf === "acoes");
+    if (stocks) await s.set(KEYS.watchAccount, String(stocks.equity));
+  } else if (parsed.data.kind === "markets") {
+    await s.set(KEYS.watchList, JSON.stringify(parsed.data.data.watch));
+  }
   const sent = await notifyAll(new_events);
   return NextResponse.json({ ok: true, notifications: sent });
 }

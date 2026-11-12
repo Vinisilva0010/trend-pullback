@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Freshness, NoData, SectionTitle } from "@/components/Common";
+import { ActionBox, type ActionItem } from "@/components/ActionBox";
 import { LivePrice } from "@/components/LivePrices";
 import { LiveQuotes } from "@/components/LiveQuotes";
 import { LongShortBar } from "@/components/LongShortBar";
@@ -47,6 +48,28 @@ export default async function Home() {
   const us = (markets?.assets ?? []).filter((a) => a.group === "EUA");
   const spy = us.find((a) => a.symbol === "SPY");
   const openStock = us.reduce((n, a) => n + a.stormer.filter((s) => s.role === "candidato" && (s.status === "sinal" || s.status === "aberto")).length, 0);
+  // Everything that can ask for an action: stock and crypto signals and open trades.
+  const actions: ActionItem[] = [
+    ...us.flatMap((a) =>
+      a.stormer
+        .filter((s) => s.role === "candidato" && (s.status === "sinal" || s.status === "aberto"))
+        .map((s): ActionItem => ({
+          id: s.key, market: "acoes", symbol: a.symbol, name: a.name, side: s.side, status: s.status as "sinal" | "aberto",
+          trigger: s.trigger, stop: s.stop, target: s.target, deadline_ms: s.status === "sinal" ? s.deadline_ms : null,
+          href: `/mercados/${encodeURIComponent(a.symbol)}?tf=${s.tf}`, lastPrice: null,
+        })),
+    ),
+    ...(live?.assets ?? []).flatMap((a) =>
+      a.stormer
+        .filter((s) => s.role !== "acompanhar" && (s.status === "sinal" || s.status === "aberto"))
+        .map((s): ActionItem => ({
+          id: s.key, market: "cripto", symbol: a.name, name: a.name, side: s.side, status: s.status as "sinal" | "aberto",
+          trigger: s.trigger, stop: s.stop, target: s.target, deadline_ms: s.status === "sinal" ? s.deadline_ms : null,
+          href: `/grafico?ativo=${a.name}&tf=${s.tf}`, lastPrice: a.price,
+        })),
+    ),
+  ];
+  const waiting = actions.filter((a) => a.status === "sinal").length;
   const topNews = (["cripto", "acoes"] as const)
     .flatMap((m) => (live?.mood?.[m].items ?? []).map((i) => ({ ...i, market: m })))
     .filter((i) => i.level >= 2 && now - i.ms <= 24 * 3_600_000)
@@ -56,6 +79,9 @@ export default async function Home() {
   return (
     <div>
       <Freshness ms={live?.generated_ms} label="Painel" />
+      <LiveQuotes symbols={[...new Set(actions.filter((a) => a.market === "acoes").map((a) => a.symbol))]}>
+        <ActionBox items={actions} waiting={waiting} />
+      </LiveQuotes>
 
       <SectionTitle>Leitura do dia</SectionTitle>
       <div className="grid gap-4 md:grid-cols-2">
