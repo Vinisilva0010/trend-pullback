@@ -48,14 +48,19 @@ const FRAMES: [Frame; 2] = [
 ];
 
 /// Months of the trade universe and who was in each.
-struct Universe {
+pub(crate) struct Universe {
     months: BTreeMap<YearMonth, BTreeSet<String>>,
 }
 
 impl Universe {
+    /// Every coin that was ever in the universe.
+    pub(crate) fn symbols(&self) -> impl Iterator<Item = &String> {
+        self.months.values().flatten()
+    }
+
     /// In the universe of the month of `ms` (the last known month when the
     /// universe file ends before it).
-    fn has(&self, symbol: &str, ms: i64) -> bool {
+    pub(crate) fn has(&self, symbol: &str, ms: i64) -> bool {
         let Some(t) = DateTime::from_timestamp_millis(ms) else {
             return false;
         };
@@ -368,6 +373,25 @@ fn report(
     }
 }
 
+/// The trade universe of `universe.csv`.
+///
+/// # Errors
+///
+/// Returns an error when the file is missing or unreadable.
+pub(crate) fn load(data_dir: &Path) -> Result<Universe, String> {
+    Ok(Universe {
+        months: load_universe(data_dir)
+            .map_err(|e| {
+                format!(
+                    "{e}\nThe universe file is built by `tp build-series` and `tp build-universe` after `tp download-binance`."
+                )
+            })?
+            .into_iter()
+            .map(|(m, members)| (m, members.into_iter().collect()))
+            .collect(),
+    })
+}
+
 /// Runs the study over the trade universe and prints it.
 ///
 /// # Errors
@@ -379,17 +403,7 @@ pub fn cmd_crypto_study(data_dir: &Path) -> CliResult {
         .ok_or("invalid date")?
         .and_utc()
         .timestamp_millis();
-    let universe = Universe {
-        months: load_universe(data_dir)
-            .map_err(|e| {
-                format!(
-                    "{e}\nThe universe file is built by `tp build-series` and `tp build-universe` after `tp download-binance`."
-                )
-            })?
-            .into_iter()
-            .map(|(m, members)| (m, members.into_iter().collect()))
-            .collect(),
-    };
+    let universe = load(data_dir)?;
     let symbols: BTreeSet<&String> = universe.months.values().flatten().collect();
     let (first, last) = (
         universe.months.keys().next().ok_or("empty universe")?,

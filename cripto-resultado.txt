@@ -1,0 +1,84 @@
+Setups do Stormer nas criptos do universo de trade: as moedas mais negociadas contra USDT em cada mês, de 2019-02 a 2026-11 (209 moedas diferentes). O sinal de uma moeda só conta nos meses em que ela estava nesse grupo; moedas que foram grandes e morreram entram, e as vencedoras de hoje não são escolhidas olhando para trás.
+Mesmas regras do teste anterior: entrada no rompimento da máxima do candle de sinal (mínima, nas vendas) no candle seguinte, stop na mínima do padrão, alvo de 2 vezes o risco, custo de 0,2% por trade. 1R = o que se perde no stop.
+Para passar: prova antes de nov/2024, positivo depois, acima da base nos dois períodos e, nas conferências, o mesmo sem BTC, ETH e SOL, positivo com o dobro de custo e com os trades espalhados entre as moedas (nenhuma com mais da metade).
+
+Criptos do universo, diário (até 30 dias)
+   123
+    compras: 3673 trades (alvo 1130, stop 2281); média -0,01R por trade. Até out/2024: +0,05R em 2681; de nov/2024 até hoje: -0,15R em 992. Cerca de 9,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,01R até out/2024 e -0,09R depois. PERDEU.
+    vendas: 3242 trades (alvo 890, stop 2013); média -0,03R por trade. Até out/2024: -0,06R em 2460; de nov/2024 até hoje: +0,09R em 782. Cerca de 8,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,04R até out/2024 e +0,04R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 873 trades (alvo 284, stop 534); média +0,04R por trade. Até out/2024: +0,06R em 688; de nov/2024 até hoje: -0,04R em 185. Cerca de 2,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,07R até out/2024 e -0,10R depois. positivo, mas sem prova (pode ser sorte).
+    vendas a favor da tendência: 830 trades (alvo 235, stop 514); média -0,01R por trade. Até out/2024: -0,04R em 607; de nov/2024 até hoje: +0,05R em 223. Cerca de 2,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,02R até out/2024 e +0,03R depois. PERDEU.
+   123 com o 3º candle dentro do 2º
+    compras: 2585 trades (alvo 809, stop 1670); média -0,04R por trade. Até out/2024: +0,01R em 1904; de nov/2024 até hoje: -0,17R em 681. Cerca de 6,4 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,02R até out/2024 e -0,09R depois. PERDEU.
+    vendas: 2172 trades (alvo 671, stop 1380); média -0,01R por trade. Até out/2024: -0,06R em 1648; de nov/2024 até hoje: +0,15R em 524. Cerca de 5,4 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,02R até out/2024 e +0,01R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 467 trades (alvo 144, stop 308); média -0,05R por trade. Até out/2024: +0,00R em 373; de nov/2024 até hoje: -0,28R em 94. Cerca de 1,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,01R até out/2024 e -0,13R depois. PERDEU.
+    vendas a favor da tendência: 452 trades (alvo 153, stop 275); média +0,07R por trade. Até out/2024: +0,01R em 333; de nov/2024 até hoje: +0,25R em 119. Cerca de 1,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,02R até out/2024 e -0,05R depois. positivo nos dois períodos, mas não ganhou da base.
+   Trap (falha ao perder fundo = varrida de liquidez)
+    compras: 1391 trades (alvo 445, stop 895); média -0,02R por trade. Até out/2024: +0,03R em 963; de nov/2024 até hoje: -0,13R em 428. Cerca de 3,5 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,02R até out/2024 e -0,11R depois. PERDEU.
+    vendas: 1173 trades (alvo 356, stop 723); média +0,00R por trade. Até out/2024: -0,02R em 866; de nov/2024 até hoje: +0,09R em 307. Cerca de 2,9 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,05R até out/2024 e +0,00R depois. positivo, mas sem prova (pode ser sorte).
+    compras a favor da tendência (médias 8 e 80): 136 trades (alvo 56, stop 70); média +0,30R por trade. Até out/2024: +0,25R em 101; de nov/2024 até hoje: +0,44R em 35. Cerca de 0,3 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,01R até out/2024 e -0,14R depois. positivo e acima da base nos dois períodos, mas sem prova.
+      Conferência 1, sem BTC, ETH e SOL: 115 trades (alvo 44, stop 62); média +0,21R por trade. Até out/2024: +0,14R em 83; de nov/2024 até hoje: +0,40R em 32. Cerca de 0,3 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,08R até out/2024 e -0,15R depois. positivo e acima da base nos dois períodos, mas sem prova.
+      Conferência 2, com o dobro de custo (0,4% por trade): +0,23R até out/2024 e +0,41R depois.
+      Conferência 3, por ano: 2019 +1,16R (11), 2020 +0,02R (19), 2021 +0,48R (29), 2022 -0,60R (7), 2023 -0,04R (24), 2024 +0,76R (20), 2025 +0,47R (18), 2026 -0,63R (8). Positivo em 5 de 8 anos.
+      Conferência 4: trades em 68 moedas; a que mais teve trades (BTC) responde por 7% deles.
+      Não passou em: prova nos dois períodos contra a base.
+    vendas a favor da tendência: 132 trades (alvo 36, stop 73); média +0,03R por trade. Até out/2024: +0,10R em 86; de nov/2024 até hoje: -0,11R em 46. Cerca de 0,3 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,07R até out/2024 e +0,04R depois. positivo, mas sem prova (pode ser sorte).
+   Inside bar
+    compras: 4844 trades (alvo 1395, stop 3438); média -0,15R por trade. Até out/2024: -0,13R em 3624; de nov/2024 até hoje: -0,21R em 1220. Cerca de 12,0 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,07R até out/2024 e -0,09R depois. PERDEU.
+    vendas: 4548 trades (alvo 1260, stop 3233); média -0,18R por trade. Até out/2024: -0,19R em 3491; de nov/2024 até hoje: -0,17R em 1057. Cerca de 11,3 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,03R até out/2024 e +0,00R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 1223 trades (alvo 365, stop 856); média -0,10R por trade. Até out/2024: -0,09R em 965; de nov/2024 até hoje: -0,14R em 258. Cerca de 3,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,05R até out/2024 e -0,13R depois. PERDEU.
+    vendas a favor da tendência: 1387 trades (alvo 399, stop 976); média -0,15R por trade. Até out/2024: -0,15R em 1014; de nov/2024 até hoje: -0,16R em 373. Cerca de 3,5 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,04R até out/2024 e -0,05R depois. PERDEU.
+   Candle fechado (alvo na abertura do candle grande)
+    compras: 383 trades (alvo 151, stop 232); média -0,20R por trade. Até out/2024: -0,16R em 306; de nov/2024 até hoje: -0,38R em 77. Cerca de 1,0 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,01R até out/2024 e -0,14R depois. PERDEU.
+    vendas: 287 trades (alvo 125, stop 162); média -0,20R por trade. Até out/2024: -0,27R em 201; de nov/2024 até hoje: -0,04R em 86. Cerca de 0,7 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,06R até out/2024 e +0,05R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 70 trades (alvo 36, stop 34); média -0,15R por trade. Até out/2024: -0,08R em 61; de nov/2024 até hoje: -0,65R em 9. Cerca de 0,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,05R até out/2024 e -0,15R depois. PERDEU.
+    vendas a favor da tendência: 22 trades (alvo 12, stop 10); média -0,13R por trade. Até out/2024: -0,18R em 16; de nov/2024 até hoje: +0,00R em 6. Cerca de 0,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,08R até out/2024 e +0,12R depois. PERDEU.
+   Gap de compra/venda
+    compras: nenhum trade.
+    vendas: 7 trades (alvo 3, stop 4); média +0,25R por trade. Até out/2024: -0,03R em 6; de nov/2024 até hoje: +1,92R em 1. Cerca de 0,0 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,29R até out/2024 e +0,06R depois. positivo, mas sem prova (pode ser sorte).
+    compras a favor da tendência (médias 8 e 80): nenhum trade.
+    vendas a favor da tendência: 1 trades (alvo 0, stop 1); média -1,04R por trade. Até out/2024: -1,04R em 1; de nov/2024 até hoje: +0,00R em 0. PERDEU.
+
+Criptos do universo, semanal (até 12 semanas)
+   123
+    compras: 670 trades (alvo 222, stop 368); média +0,14R por trade. Até out/2024: +0,25R em 495; de nov/2024 até hoje: -0,19R em 175. Cerca de 1,7 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,23R até out/2024 e -0,11R depois. positivo, mas sem prova (pode ser sorte).
+    vendas: 610 trades (alvo 74, stop 335); média -0,10R por trade. Até out/2024: -0,16R em 465; de nov/2024 até hoje: +0,09R em 145. Cerca de 1,5 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,20R até out/2024 e +0,16R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 105 trades (alvo 39, stop 55); média +0,24R por trade. Até out/2024: +0,55R em 74; de nov/2024 até hoje: -0,50R em 31. Cerca de 0,3 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,30R até out/2024 e -0,36R depois. positivo, mas sem prova (pode ser sorte).
+    vendas a favor da tendência: 78 trades (alvo 11, stop 38); média -0,01R por trade. Até out/2024: +0,12R em 47; de nov/2024 até hoje: -0,20R em 31. Cerca de 0,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,28R até out/2024 e -0,11R depois. PERDEU.
+   123 com o 3º candle dentro do 2º
+    compras: 428 trades (alvo 137, stop 263); média +0,05R por trade. Até out/2024: +0,14R em 302; de nov/2024 até hoje: -0,15R em 126. Cerca de 1,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,19R até out/2024 e -0,14R depois. positivo, mas sem prova (pode ser sorte).
+    vendas: 332 trades (alvo 51, stop 199); média -0,14R por trade. Até out/2024: -0,19R em 249; de nov/2024 até hoje: -0,01R em 83. Cerca de 0,8 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,20R até out/2024 e +0,17R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 53 trades (alvo 22, stop 30); média +0,26R por trade. Até out/2024: +0,27R em 42; de nov/2024 até hoje: +0,19R em 11. Cerca de 0,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,23R até out/2024 e -0,22R depois. positivo e acima da base nos dois períodos, mas sem prova.
+      Conferência 1, sem BTC, ETH e SOL: 45 trades (alvo 17, stop 28); média +0,12R por trade. Até out/2024: +0,16R em 36; de nov/2024 até hoje: -0,02R em 9. Cerca de 0,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,18R até out/2024 e -0,22R depois. positivo, mas sem prova (pode ser sorte).
+      Conferência 2, com o dobro de custo (0,4% por trade): +0,26R até out/2024 e +0,17R depois.
+      Conferência 3, por ano: 2020 +0,11R (8), 2021 +0,58R (17), 2022 -1,01R (3), 2023 -0,02R (3), 2024 +0,35R (11), 2025 +0,02R (10), 2026 +1,91R (1). Positivo em 5 de 7 anos.
+      Conferência 4: trades em 25 moedas; a que mais teve trades (TRX) responde por 17% deles.
+      Não passou em: prova nos dois períodos contra a base; sem BTC, ETH e SOL.
+    vendas a favor da tendência: 41 trades (alvo 6, stop 26); média -0,22R por trade. Até out/2024: +0,07R em 22; de nov/2024 até hoje: -0,57R em 19. Cerca de 0,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,44R até out/2024 e -0,16R depois. PERDEU.
+   Trap (falha ao perder fundo = varrida de liquidez)
+    compras: 144 trades (alvo 63, stop 66); média +0,41R por trade. Até out/2024: +0,57R em 114; de nov/2024 até hoje: -0,19R em 30. Cerca de 0,4 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,19R até out/2024 e -0,24R depois. positivo, mas sem prova (pode ser sorte).
+    vendas: 144 trades (alvo 30, stop 72); média +0,09R por trade. Até out/2024: +0,07R em 111; de nov/2024 até hoje: +0,14R em 33. Cerca de 0,4 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,22R até out/2024 e +0,15R depois. positivo nos dois períodos, mas não ganhou da base.
+    compras a favor da tendência (médias 8 e 80): 3 trades (alvo 0, stop 2); média -0,58R por trade. Até out/2024: +0,00R em 0; de nov/2024 até hoje: -0,58R em 3. Cerca de 0,1 trades por semana. PERDEU.
+    vendas a favor da tendência: 10 trades (alvo 2, stop 4); média +0,15R por trade. Até out/2024: -0,56R em 6; de nov/2024 até hoje: +1,23R em 4. Cerca de 0,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,27R até out/2024 e -0,35R depois. positivo, mas sem prova (pode ser sorte).
+   Inside bar
+    compras: 742 trades (alvo 222, stop 513); média -0,03R por trade. Até out/2024: +0,04R em 527; de nov/2024 até hoje: -0,19R em 215. Cerca de 1,9 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,14R até out/2024 e -0,09R depois. PERDEU.
+    vendas: 626 trades (alvo 129, stop 443); média -0,23R por trade. Até out/2024: -0,21R em 452; de nov/2024 até hoje: -0,30R em 174. Cerca de 1,6 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,13R até out/2024 e +0,10R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 124 trades (alvo 42, stop 81); média +0,05R por trade. Até out/2024: +0,11R em 87; de nov/2024 até hoje: -0,09R em 37. Cerca de 0,4 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,13R até out/2024 e -0,06R depois. positivo, mas sem prova (pode ser sorte).
+    vendas a favor da tendência: 116 trades (alvo 19, stop 92); média -0,43R por trade. Até out/2024: -0,23R em 64; de nov/2024 até hoje: -0,68R em 52. Cerca de 0,3 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,40R até out/2024 e -0,25R depois. PERDEU.
+   Candle fechado (alvo na abertura do candle grande)
+    compras: 79 trades (alvo 17, stop 62); média -0,51R por trade. Até out/2024: -0,36R em 57; de nov/2024 até hoje: -0,90R em 22. Cerca de 0,2 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,31R até out/2024 e -0,17R depois. PERDEU.
+    vendas: 47 trades (alvo 24, stop 23); média -0,08R por trade. Até out/2024: +0,05R em 29; de nov/2024 até hoje: -0,29R em 18. Cerca de 0,1 trades por semana. Base (entrar em qualquer dia com o mesmo stop): -0,27R até out/2024 e -0,05R depois. PERDEU.
+    compras a favor da tendência (médias 8 e 80): 12 trades (alvo 5, stop 7); média -0,22R por trade. Até out/2024: -0,06R em 10; de nov/2024 até hoje: -1,02R em 2. Cerca de 0,0 trades por semana. Base (entrar em qualquer dia com o mesmo stop): +0,33R até out/2024 e +0,28R depois. PERDEU.
+    vendas a favor da tendência: 1 trades (alvo 0, stop 1); média -1,01R por trade. Até out/2024: +0,00R em 0; de nov/2024 até hoje: -1,01R em 1. PERDEU.
+   Gap de compra/venda
+    compras: nenhum trade.
+    vendas: nenhum trade.
+    compras a favor da tendência (médias 8 e 80): nenhum trade.
+    vendas a favor da tendência: nenhum trade.
+
+RESUMO: o que passou em tudo
+ Nada. Os setups do Stormer continuam só em observação em cripto.
+
+Positivos e acima da base, mas que falharam em alguma conferência:
+ Criptos do universo, diário (até 30 dias) · Trap (falha ao perder fundo = varrida de liquidez) · compras a favor da tendência (médias 8 e 80) (faltou: prova nos dois períodos contra a base)
+ Criptos do universo, semanal (até 12 semanas) · 123 com o 3º candle dentro do 2º · compras a favor da tendência (médias 8 e 80) (faltou: prova nos dois períodos contra a base; sem BTC, ETH e SOL)

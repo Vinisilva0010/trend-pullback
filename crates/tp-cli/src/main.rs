@@ -75,6 +75,7 @@ mod stock_trades;
 mod stock_watch;
 mod stormer_live;
 mod stormer_study;
+mod support_study;
 mod trend_study;
 
 type CliResult = Result<ExitCode, Box<dyn Error>>;
@@ -192,6 +193,9 @@ enum Command {
     /// The Stormer setups on the daily and weekly charts of every coin of the
     /// crypto trade universe, counted only in the months each coin was in it.
     CryptoStudy,
+    /// Buying at support on the way down (quick bounce, pullback in an uptrend
+    /// and two entries in a fall), against buying on any day in the same situation.
+    SupportStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -357,6 +361,7 @@ async fn main() -> ExitCode {
         Command::IpoStudy => ipo::cmd_ipo_study(&cli.data_dir).await,
         Command::RefineStudy => refine_study::cmd_refine_study(&cli.data_dir).await,
         Command::CryptoStudy => crypto_study::cmd_crypto_study(&cli.data_dir),
+        Command::SupportStudy => support_study::cmd_support_study(&cli.data_dir),
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
