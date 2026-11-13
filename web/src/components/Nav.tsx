@@ -14,12 +14,13 @@ const MAIN: Item[] = [
   { href: "/avisos", label: "Avisos" },
 ];
 const MORE: Item[] = [
+  { href: "/ipos", label: "IPOs" },
   { href: "/setups", label: "Sinais cripto" },
   { href: "/grafico", label: "Gráfico cripto" },
   { href: "/contas", label: "Contas fictícias" },
   { href: "/relatorio", label: "Relatório do dia" },
 ];
-const DESKTOP: Item[] = [MAIN[0]!, MAIN[1]!, MAIN[2]!, MORE[0]!, MORE[1]!, MORE[2]!, MORE[3]!, MAIN[3]!];
+const DESKTOP: Item[] = [MAIN[0]!, MAIN[1]!, MAIN[2]!, ...MORE, MAIN[3]!];
 
 const SEEN_KEY = "tp-avisos-visto";
 

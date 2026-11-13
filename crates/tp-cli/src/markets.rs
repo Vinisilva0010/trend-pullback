@@ -15,6 +15,7 @@ use tp_core::stormer::{Params, Pattern, Side, ema, scan};
 use tp_data::yahoo::{Interval, fetch_chart};
 
 use super::{CliResult, held_out_start, parse_env, send_telegram};
+use crate::ipo;
 use crate::stock_trades::{self, Stock};
 use crate::stock_watch;
 use crate::stormer_live::{Chart, Role, items_json};
@@ -63,6 +64,31 @@ pub(crate) struct Loaded {
     pub(crate) item: Item,
     pub(crate) daily: Vec<Bar>,
     pub(crate) weekly: Vec<Bar>,
+}
+
+/// Candles of new listings: a single day is enough (the usual loader wants
+/// history), and the weekly ones may be missing.
+pub(crate) async fn load_new(items: &[Item], now_ms: i64) -> Vec<Loaded> {
+    let mut out = Vec::new();
+    for item in items {
+        let daily = fetch_chart(&item.symbol, Interval::Day, now_ms).await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let weekly = fetch_chart(&item.symbol, Interval::Week, now_ms).await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        match daily {
+            Ok(daily) if !daily.is_empty() => {
+                println!("IPO {} ({}): {} dias", item.name, item.symbol, daily.len());
+                out.push(Loaded {
+                    item: item.clone(),
+                    daily,
+                    weekly: weekly.unwrap_or_default(),
+                });
+            }
+            // Before the first trade the source does not know the code yet.
+            _ => println!("IPO {} ({}): ainda sem preços", item.name, item.symbol),
+        }
+    }
+    out
 }
 
 pub(crate) async fn load_all(items: &[Item], now_ms: i64) -> Vec<Loaded> {
@@ -329,17 +355,30 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
         }
     };
     let all: Vec<Item> = listed.iter().cloned().chain(extra).collect();
-    let loaded = load_all(&all, now).await;
+    let mut loaded = load_all(&all, now).await;
     if loaded.is_empty() {
         return Err("no market data: Yahoo Finance did not answer for any symbol".into());
     }
+    // IPOs: the calendar, and the large recent listings as assets of their own.
+    let today = chrono::DateTime::from_timestamp_millis(now)
+        .ok_or("invalid clock")?
+        .date_naive();
+    let calendar = ipo::fetch_around(today).await;
+    let new_listings: Vec<Item> = ipo::tracked(&calendar, today)
+        .into_iter()
+        .map(|(item, _)| item)
+        .filter(|i| !all.iter().any(|a| a.symbol == i.symbol))
+        .collect();
+    let ipo_symbols: BTreeSet<String> = new_listings.iter().map(|i| i.symbol.clone()).collect();
+    loaded.extend(load_new(&new_listings, now).await);
     let scanned: Vec<(&Loaded, Vec<Chart>, bool)> = loaded
         .iter()
         .map(|l| {
             (
                 l,
                 charts(l),
-                listed_symbols.contains(l.item.symbol.as_str()),
+                listed_symbols.contains(l.item.symbol.as_str())
+                    || ipo_symbols.contains(&l.item.symbol),
             )
         })
         .collect();
@@ -382,7 +421,34 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             ..Default::default()
         });
     }
+    let ipo_sent_path = live_dir.join(ipo::SENT_FILE);
+    let ipo_sent: BTreeSet<String> = std::fs::read_to_string(&ipo_sent_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let mut ipo_keys = Vec::new();
+    for (name, stage) in ipo::alerts(&calendar, &loaded, today, &ipo_sent) {
+        ipo_keys.push(stage.key.clone());
+        // An empty message only marks a key as seen.
+        if stage.message.is_empty() {
+            continue;
+        }
+        println!("{}", stage.message);
+        events.push(dashboard::Event {
+            id: format!("ipo|{}", stage.key),
+            ms: now,
+            asset: name,
+            kind: "ipo",
+            text: stage.message,
+            notify: stage.notify,
+            level: 3,
+            market: "acoes",
+            ..Default::default()
+        });
+    }
     let mut data = markets_json(now, &scanned);
+    data["ipos"] = ipo::ipos_json(&calendar, &loaded, today);
     // The cloud watch of the dashboard checks these during the session.
     data["watch"] = Value::Array(
         found
@@ -392,6 +458,7 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             .collect(),
     );
     if dry_run {
+        print!("{}", ipo::upcoming_text(&calendar, today));
         println!(
             "dry run: {} ativos carregados, {} avisos de ações, nada salvo nem enviado",
             loaded.len(),
@@ -443,6 +510,13 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             .append(true)
             .open(&sent_path)?;
         std::io::Write::write_all(&mut f, (found.keys.join("\n") + "\n").as_bytes())?;
+    }
+    if !ipo_keys.is_empty() {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&ipo_sent_path)?;
+        std::io::Write::write_all(&mut f, (ipo_keys.join("\n") + "\n").as_bytes())?;
     }
     let watch: Vec<Value> = found
         .watch

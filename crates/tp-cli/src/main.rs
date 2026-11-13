@@ -64,6 +64,7 @@ use tp_data::universe::{
 
 mod dashboard;
 mod day_study;
+mod ipo;
 mod markets;
 mod mood;
 mod runner_study;
@@ -180,6 +181,9 @@ enum Command {
     /// The long trend: hold only while the weekly close is above its 10-month
     /// average, against buying and holding.
     TrendStudy,
+    /// Ways of buying a new listing, tested on the large US IPOs since 2019
+    /// (list from the Nasdaq calendar, prices from Yahoo Finance).
+    IpoStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -342,6 +346,7 @@ async fn main() -> ExitCode {
         Command::DayStudy => day_study::cmd_day_study(&cli.data_dir),
         Command::RunnerStudy => runner_study::cmd_runner_study(&cli.data_dir).await,
         Command::TrendStudy => trend_study::cmd_trend_study(&cli.data_dir).await,
+        Command::IpoStudy => ipo::cmd_ipo_study(&cli.data_dir).await,
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),

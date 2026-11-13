@@ -231,12 +231,47 @@ export const WatchedSchema = z.object({
   in_book: z.boolean(),
 });
 
+const IpoUpcomingSchema = z.object({
+  symbol: z.string().max(20),
+  company: z.string().max(200),
+  exchange: z.string().max(60),
+  price_low: num,
+  price_high: num,
+  shares: num,
+  amount: num,
+  date_ms: ms,
+  /** Large enough to get alerts. */
+  big: z.boolean(),
+});
+
+const IpoRecentSchema = z.object({
+  symbol: z.string().max(20),
+  company: z.string().max(200),
+  exchange: z.string().max(60),
+  price: num,
+  amount: num,
+  date_ms: ms,
+  /** First trading day: open, high, low, close. */
+  first: z.tuple([num, num, num, num]).nullable(),
+  days: z.number().int().nonnegative().nullable(),
+  last: num.nullable(),
+  from_ipo: num.nullable(),
+});
+
+export const IposSchema = z.object({
+  upcoming: z.array(IpoUpcomingSchema).max(100),
+  recent: z.array(IpoRecentSchema).max(50),
+  history: z.string().max(2000),
+});
+
 export const MarketsSchema = z.object({
   version: z.literal(1),
   generated_ms: ms,
   assets: z.array(MarketAssetSchema).max(200),
   /** US stock signals and open trades for the cloud watch. */
   watch: z.array(WatchedSchema).max(400).default([]),
+  /** IPO calendar and the large recent listings. */
+  ipos: IposSchema.nullable().default(null),
 });
 
 export const IngestSchema = z.discriminatedUnion("kind", [
@@ -256,6 +291,7 @@ export type Asset = z.infer<typeof AssetSchema>;
 export type StormerItem = z.infer<typeof StormerSchema>;
 export type MarketAsset = z.infer<typeof MarketAssetSchema>;
 export type Markets = z.infer<typeof MarketsSchema>;
+export type Ipos = z.infer<typeof IposSchema>;
 export type Book = z.infer<typeof BookSchema>;
 export type Live = z.infer<typeof LiveSchema>;
 export type Daily = z.infer<typeof DailySchema>;

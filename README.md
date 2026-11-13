@@ -158,6 +158,7 @@ and `smc_books_v2.csv`.
 | `tp smc-study` | the Smart Money / Wyckoff setup per chart |
 | `tp runner-study` | long trades with no fixed target: a trailing stop (highest high minus 3 ATRs) on the weekly and daily traps and on 52-week and all-time high breakouts, counting how many trades reach 3R, 5R, 10R and 20R, against the base |
 | `tp trend-study` | the long trend: hold only while the weekly close is above its 10-month average, against buying and holding, with the worst fall of each |
+| `tp ipo-study` | ways of buying a new listing (first day, first-day and first-week breakouts, return to the IPO price) on the US IPOs of $300 million or more since 2019, against the S&P 500; list from the Nasdaq IPO calendar. `tp markets` also follows the calendar: upcoming IPOs on the IPOs page, alerts for the ones of $1 billion or more, and the large recent listings as a group on Mercados |
 | `tp day-study` | one trade a day on 15m and 1h charts (needs `python3 scripts/futures_klines.py 15m` and `1h` first) |
 
 Every result line shows trades per week and its verdict: "GANHOU NOS DOIS

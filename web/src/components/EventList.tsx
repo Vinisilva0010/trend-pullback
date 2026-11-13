@@ -7,8 +7,9 @@ import { LEAN_BADGE } from "@/components/TopNews";
 const TYPES = [
   { key: "importantes", label: "Importantes", test: (e: AppEvent) => e.level >= 3 },
   { key: "trades", label: "Trades", test: (e: AppEvent) => e.kind === "smc" || e.kind === "stormer" },
+  { key: "ipo", label: "IPOs", test: (e: AppEvent) => e.kind === "ipo" },
   { key: "noticia", label: "Notícias", test: (e: AppEvent) => e.kind === "noticia" },
-  { key: "mercado", label: "Níveis e mercado", test: (e: AppEvent) => !["smc", "stormer", "noticia"].includes(e.kind) },
+  { key: "mercado", label: "Níveis e mercado", test: (e: AppEvent) => !["smc", "stormer", "noticia", "ipo"].includes(e.kind) },
   { key: "tudo", label: "Tudo", test: () => true },
 ] as const;
 
@@ -24,6 +25,7 @@ const PLACES = [
 const KIND_LABEL: Record<string, string> = {
   smc: "Smart Money",
   stormer: "Stormer",
+  ipo: "IPO",
   noticia: "Notícia",
   mercado: "Mercado",
   nivel: "Nível",
@@ -33,6 +35,7 @@ const KIND_LABEL: Record<string, string> = {
 
 const KIND_STYLE: Record<string, string> = {
   stormer: "bg-accent text-ink",
+  ipo: "bg-accent text-ink",
   smc: "bg-panel text-ink border-2 border-ink",
   noticia: "bg-ink text-paper",
 };
@@ -154,7 +157,7 @@ export function EventList({ events }: { events: AppEvent[] }) {
       <p className="mb-1 mt-3 text-sm font-extrabold">Ativo</p>
       <Chips options={PLACES} value={place} onChange={(k) => { setPlace(k); setLimit(PAGE); }} />
       {type === "importantes" ? (
-        <p className="mt-3 text-sm">Importantes: avisos de trade (sinal, entrada, saída, gatilho, stop e alvo) e notícias que saíram em duas fontes ou mais.</p>
+        <p className="mt-3 text-sm">Importantes: avisos de trade (sinal, entrada, saída, gatilho, stop e alvo), IPOs grandes e notícias que saíram em duas fontes ou mais.</p>
       ) : null}
       {shown.length === 0 ? <p className="mt-4 rounded bg-panel p-3">Nada aqui ainda.</p> : null}
       {days.map((d) => (
