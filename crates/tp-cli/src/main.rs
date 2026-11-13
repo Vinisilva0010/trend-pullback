@@ -63,6 +63,7 @@ use tp_data::universe::{
 };
 
 mod crypto_study;
+mod cycle_view;
 mod dashboard;
 mod day_study;
 mod ipo;
@@ -4236,6 +4237,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         .collect();
     let mut stormer_keys = String::new();
     let mut stormer_view = BTreeMap::new();
+    let mut cycles: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         step(&format!("{asset}: buscando dados"));
         // One asset failing (network, bad data) must not silence the others.
@@ -4247,6 +4249,9 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
             }
         };
         let daily_chart = daily_bars(&daily);
+        if let Some(c) = cycle_view::cycle_json(asset_name(asset), &daily_chart) {
+            cycles.insert(asset.to_owned(), c);
+        }
         let charts = stormer_live::scan_charts(&daily_chart);
         let (stages, trades) =
             stormer_live::stage_alerts(asset, &charts, now_ms, &stormer_sent, &mut books);
@@ -4475,6 +4480,14 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut snapshot =
         dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &stormer_view, &books);
     snapshot["mood"] = mood;
+    if let Some(list) = snapshot["assets"].as_array_mut() {
+        for a in list {
+            let symbol = a["symbol"].as_str().unwrap_or_default().to_owned();
+            if let Some(c) = cycles.remove(&symbol) {
+                a["cycle"] = c;
+            }
+        }
+    }
     let fresh: Vec<dashboard::Event> = events.into_iter().filter(|e| e.notify).collect();
     dashboard::save_and_publish(&live_dir, dashboard::LIVE_FILE, "live", &snapshot, &fresh).await?;
     Ok(ExitCode::SUCCESS)

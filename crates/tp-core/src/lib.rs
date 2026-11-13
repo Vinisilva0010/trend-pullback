@@ -2,6 +2,7 @@
 
 pub mod anomaly;
 pub mod crowding;
+pub mod cycle;
 pub mod indicators;
 pub mod intraday;
 pub mod liquidity;

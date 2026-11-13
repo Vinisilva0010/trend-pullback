@@ -46,7 +46,28 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
           </Pill>
         ))}
       </div>
-      <CandleChart symbol={`${asset}USDT`} tf={tf} frame={frame} longsZone={pos?.longs_zone ?? null} shortsZone={pos?.shorts_zone ?? null} extra={extra} />
+      <CandleChart
+        symbol={`${asset}USDT`}
+        tf={tf}
+        frame={frame}
+        longsZone={pos?.longs_zone ?? null}
+        shortsZone={pos?.shorts_zone ?? null}
+        extra={extra}
+        cycle={a?.cycle?.lines ?? []}
+      />
+
+      {a?.cycle ? (
+        <>
+          <SectionTitle>Ciclo do {asset}: quedas e repiques</SectionTitle>
+          <div className="space-y-2 rounded border-2 border-ink p-4 leading-relaxed">
+            {a.cycle.text.map((t, i) => (
+              <p key={i} className={i === 0 ? "text-lg font-black" : ""}>
+                {t}
+              </p>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <SectionTitle>O que as linhas querem dizer</SectionTitle>
       <ul className="space-y-1 leading-relaxed">
@@ -64,13 +85,18 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
         <li>
           <b className="font-black">Tracejado longo</b>: zona estimada onde os comprados (vermelho) ou os vendidos (verde) seriam liquidados.
         </li>
+        <li>
+          <b className="font-black text-[#7a2fb5]">Roxa tracejada</b>: até onde as quedas costumam ir a partir do topo (metade, 3 em 4, 9 em 10).{" "}
+          <b className="font-black text-[#b5531f]">Laranja tracejada</b>: até onde os repiques no meio de uma queda costumam subir antes de voltar a cair.{" "}
+          <b className="font-black text-up">Verde tracejada</b>: acima dela, o repique virou alta na maioria das vezes. <b className="font-black">Preta</b>: topo da queda.
+        </li>
         <li>Setas marcam as varridas; círculo é a entrada; quadrado é a saída (verde no alvo, vermelho no stop).</li>
       </ul>
 
       {!live ? <NoData /> : null}
       <SectionTitle>Stormer em {asset} (diário e semanal)</SectionTitle>
       <p className="mb-2 leading-relaxed">
-        Em cripto o Stormer acompanha o trap (o preço passa do fundo ou do topo anterior e volta) no diário e no semanal, compras e vendas. Está em observação: no teste ficou acima da base, mas ainda com poucos trades para ter certeza. Os sinais também vão para o Telegram.
+        Em cripto o Stormer acompanha o trap (o preço passa do fundo ou do topo anterior e volta) no diário e no semanal, compras e vendas. Está em observação: no teste com 209 moedas nenhum setup do Stormer passou. O que chegou mais perto foi o trap de compra no diário a favor da tendência, que perdeu nos anos de queda. Os sinais também vão para o Telegram.
       </p>
       {stormerNow.length ? (
         <div className="mb-3 grid gap-3 md:grid-cols-2">

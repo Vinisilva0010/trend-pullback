@@ -17,7 +17,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Frame } from "@/lib/schema";
+import type { CycleLine, Frame } from "@/lib/schema";
 import { change, pct, price } from "@/lib/format";
 
 // Candles from Binance's public API (live through its websocket) with the
@@ -36,6 +36,8 @@ type Props = {
   extra?: Level[];
   longsZone: Zone;
   shortsZone: Zone;
+  /** Cycle lines: usual depth of falls, usual height of bounces, the top of the fall. */
+  cycle?: CycleLine[];
   /** Today's candle so far, drawn over the last given candle (stocks). */
   live?: [number, number, number, number, number] | null;
 };
@@ -52,6 +54,10 @@ const COLORS = {
   entry: "#c99700",
   liquidity: "#000000",
   confirm: "#1f5fd1",
+  fall: "#7a2fb5",
+  bounce: "#b5531f",
+  turn: "#0b8f5a",
+  top: "#000000",
 };
 
 /** Chart time in Brasília (the library draws UTC). */
@@ -74,7 +80,9 @@ async function loadCandles(symbol: string, tf: string): Promise<Kline[]> {
   return (await r.json()) as Kline[];
 }
 
-export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [], candles: given, live = null }: Props) {
+const NO_CYCLE: CycleLine[] = [];
+
+export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = [], cycle = NO_CYCLE, candles: given, live = null }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -98,7 +106,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       // A candle the chart cannot take is skipped; the next quote tries again.
     }
   };
-  const [layers, setLayers] = useState({ setup: true, liquidity: true, liquidations: true, history: true });
+  const [layers, setLayers] = useState({ setup: true, liquidity: true, liquidations: true, history: true, cycle: true });
 
   // Chart and candles: rebuilt when the asset or timeframe changes.
   useEffect(() => {
@@ -231,6 +239,9 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
         add(shortsZone.high, COLORS.up, "", LineStyle.LargeDashed, 1);
       }
     }
+    if (layers.cycle) {
+      for (const l of cycle) add(l.price, COLORS[l.kind], l.title, l.kind === "top" ? LineStyle.Solid : LineStyle.Dashed, l.kind === "top" ? 2 : 1);
+    }
     const step = STEP[tf];
     // Candles open on UTC boundaries; snap each mark to its candle's open.
     const snap = (ms: number) => chartTime(Math.floor(ms / (step * 1000)) * step * 1000);
@@ -256,7 +267,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       for (const l of lines) series.removePriceLine(l);
       markerApi.detach();
     };
-  }, [active, frame, longsZone, shortsZone, layers, tf, symbol, extra]);
+  }, [active, frame, longsZone, shortsZone, layers, tf, symbol, extra, cycle]);
 
   const toggle = (k: keyof typeof layers) => setLayers((v) => ({ ...v, [k]: !v[k] }));
   const LAYER_LABEL: Record<keyof typeof layers, string> = {
@@ -264,6 +275,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
     liquidity: "Liquidez",
     liquidations: "Zonas de liquidação",
     history: "Marcas no gráfico",
+    cycle: "Ciclo (quedas e repiques)",
   };
 
   let overlay: React.ReactNode = null;

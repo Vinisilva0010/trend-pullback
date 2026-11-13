@@ -1,0 +1,104 @@
+Compra no suporte, do jeito descrito pelo Vi, em regras fixas. Suporte = preço onde os candles diários mais bateram no último ano (pontos de virada agrupados, pelo menos 2 toques), visto só com os dados até o dia anterior. A ordem fica 0,5% acima do suporte. Sem alavancagem. Custo de 0,2% por compra e venda.
+Resultado em % do dinheiro separado para a operação (nas duas entradas, metade em cada ordem). Para passar: prova antes de nov/2024, positivo depois e acima da base nos dois períodos.
+
+Como foram as quedas (candles diários, do topo ao fundo):
+  BTC: 114 quedas de 15% ou mais desde 2017: 45 de 15% a 20%, 46 de 20% a 30%, 18 de 30% a 40%, 3 de 40% a 50%, 2 de 50% ou mais. Depois do fundo de cada queda, a alta típica foi de 29%.
+  ETH: 190 quedas de 15% ou mais desde 2017: 64 de 15% a 20%, 87 de 20% a 30%, 29 de 30% a 40%, 6 de 40% a 50%, 4 de 50% ou mais. Depois do fundo de cada queda, a alta típica foi de 29%.
+  SOL: 231 quedas de 15% ou mais desde 2020: 77 de 15% a 20%, 114 de 20% a 30%, 25 de 30% a 40%, 11 de 40% a 50%, 4 de 50% ou mais. Depois do fundo de cada queda, a alta típica foi de 31%.
+
+BTC, ETH e SOL, seguindo hora a hora (dados de hora em hora desde 2020-09-14):
+
+ Toque no suporte com o mercado em alta (médias 8 acima da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 3%, sai no fim do dia seguinte
+   592 operações. Resultado médio -0,07% do dinheiro separado por operação, caso típico +0,30%, deram lucro 52%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,03% em 387 operações; de nov/2024 até hoje: -0,13% em 205. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,18% e -0,34%.
+   PERDEU.
+
+ Toque no suporte com o mercado em alta (médias 8 acima da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 5%, sai no fim do dia seguinte
+   569 operações. Resultado médio -0,01% do dinheiro separado por operação, caso típico -0,43%, deram lucro 47%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: +0,04% em 373 operações; de nov/2024 até hoje: -0,11% em 196. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,28% e -0,15%.
+   PERDEU.
+
+ Toque no suporte com o mercado em queda (média 8 abaixo da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 3%, sai no fim do dia seguinte
+   521 operações. Resultado médio -0,31% do dinheiro separado por operação, caso típico -0,27%, deram lucro 48%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,21% em 346 operações; de nov/2024 até hoje: -0,49% em 175. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,12% e -0,11%.
+   PERDEU.
+
+ Toque no suporte com o mercado em queda (média 8 abaixo da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 5%, sai no fim do dia seguinte
+   512 operações. Resultado médio -0,35% do dinheiro separado por operação, caso típico -1,42%, deram lucro 42%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,16% em 340 operações; de nov/2024 até hoje: -0,71% em 172. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,01% e -0,18%.
+   PERDEU.
+
+ Recuo na alta: compra no primeiro suporte com o mercado em alta, stop 1 ATR abaixo do suporte, stop no zero a zero depois de subir 3%, metade vendida a 2 vezes o risco e o resto com stop seguindo o preço (até 60 dias)
+   308 operações. Resultado médio +0,41% do dinheiro separado por operação, caso típico +0,00%, deram lucro 63%. Pior operação -12,68%; 1 em cada 10 foi pior que -6,09%.
+   Até out/2024: +0,18% em 210 operações; de nov/2024 até hoje: +0,90% em 98. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): +0,96% e -0,91%.
+   positivo nos dois períodos, mas não ganhou da base.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade no suporte seguinte abaixo, stop 3% abaixo da segunda entrada; zero a zero rápido: stop no preço médio depois de subir 3%
+   195 operações. Resultado médio -0,07% do dinheiro separado por operação, caso típico +0,00%, deram lucro 79%. Pior operação -22,93%; 1 em cada 10 foi pior que -8,04%. Pegou só a primeira ordem em 159 e as duas em 36; em 311 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: +0,18% em 137 operações; de nov/2024 até hoje: -0,65% em 58. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): +2,08% e -0,58%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade no suporte seguinte abaixo, stop 3% abaixo da segunda entrada; segura: stop no zero a zero só depois de subir 10%
+   111 operações. Resultado médio +0,30% do dinheiro separado por operação, caso típico +0,00%, deram lucro 64%. Pior operação -18,27%; 1 em cada 10 foi pior que -9,77%. Pegou só a primeira ordem em 76 e as duas em 35; em 222 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: +0,88% em 73 operações; de nov/2024 até hoje: -0,81% em 38. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): +4,76% e -0,84%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade 8% abaixo dele, stop 3% abaixo da segunda entrada; zero a zero rápido: stop no preço médio depois de subir 3%
+   253 operações. Resultado médio +0,26% do dinheiro separado por operação, caso típico +0,00%, deram lucro 77%. Pior operação -7,54%; 1 em cada 10 foi pior que -7,54%. Pegou só a primeira ordem em 194 e as duas em 59; em 483 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: +0,40% em 173 operações; de nov/2024 até hoje: -0,04% em 80. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): +1,39% e -0,01%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade 8% abaixo dele, stop 3% abaixo da segunda entrada; segura: stop no zero a zero só depois de subir 10%
+   145 operações. Resultado médio +0,37% do dinheiro separado por operação, caso típico +0,00%, deram lucro 57%. Pior operação -7,54%; 1 em cada 10 foi pior que -7,54%. Pegou só a primeira ordem em 82 e as duas em 63; em 376 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: +0,62% em 99 operações; de nov/2024 até hoje: -0,18% em 46. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): +3,28% e -1,89%.
+   PERDEU.
+
+As outras 198 moedas do universo, só nos meses em que estavam nele, com candles diários (dentro do dia, supõe a pior ordem: stop antes do alvo). Teste independente:
+
+ Toque no suporte com o mercado em alta (médias 8 acima da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 3%, sai no fim do dia seguinte
+   2813 operações. Resultado médio -0,61% do dinheiro separado por operação, caso típico -3,20%, deram lucro 34%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,55% em 1956 operações; de nov/2024 até hoje: -0,74% em 857. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,57% e -0,42%.
+   PERDEU.
+
+ Toque no suporte com o mercado em alta (médias 8 acima da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 5%, sai no fim do dia seguinte
+   2813 operações. Resultado médio -0,49% do dinheiro separado por operação, caso típico -3,20%, deram lucro 33%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,40% em 1956 operações; de nov/2024 até hoje: -0,69% em 857. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,47% e -0,36%.
+   PERDEU.
+
+ Toque no suporte com o mercado em queda (média 8 abaixo da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 3%, sai no fim do dia seguinte
+   3084 operações. Resultado médio -0,49% do dinheiro separado por operação, caso típico -3,20%, deram lucro 37%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,48% em 2245 operações; de nov/2024 até hoje: -0,53% em 839. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,52% e -0,40%.
+   PERDEU.
+
+ Toque no suporte com o mercado em queda (média 8 abaixo da 80): compra 0,5% acima do suporte, stop 3% abaixo da compra, alvo de 5%, sai no fim do dia seguinte
+   3084 operações. Resultado médio -0,36% do dinheiro separado por operação, caso típico -3,20%, deram lucro 36%. Pior operação -3,20%; 1 em cada 10 foi pior que -3,20%.
+   Até out/2024: -0,34% em 2245 operações; de nov/2024 até hoje: -0,43% em 839. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,45% e -0,33%.
+   PERDEU.
+
+ Recuo na alta: compra no primeiro suporte com o mercado em alta, stop 1 ATR abaixo do suporte, stop no zero a zero depois de subir 3%, metade vendida a 2 vezes o risco e o resto com stop seguindo o preço (até 60 dias)
+   1530 operações. Resultado médio -0,23% do dinheiro separado por operação, caso típico +0,00%, deram lucro 54%. Pior operação -29,33%; 1 em cada 10 foi pior que -9,93%.
+   Até out/2024: -0,14% em 1073 operações; de nov/2024 até hoje: -0,46% em 457. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,18% e -0,49%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade no suporte seguinte abaixo, stop 3% abaixo da segunda entrada; zero a zero rápido: stop no preço médio depois de subir 3%
+   1730 operações. Resultado médio -0,46% do dinheiro separado por operação, caso típico +0,00%, deram lucro 66%. Pior operação -32,21%; 1 em cada 10 foi pior que -9,33%. Pegou só a primeira ordem em 1417 e as duas em 313; em 2715 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: -0,47% em 1252 operações; de nov/2024 até hoje: -0,45% em 478. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,77% e -0,70%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade no suporte seguinte abaixo, stop 3% abaixo da segunda entrada; segura: stop no zero a zero só depois de subir 10%
+   1166 operações. Resultado médio -0,31% do dinheiro separado por operação, caso típico +0,00%, deram lucro 64%. Pior operação -35,45%; 1 em cada 10 foi pior que -11,83%. Pegou só a primeira ordem em 882 e as duas em 284; em 2144 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: -0,41% em 849 operações; de nov/2024 até hoje: -0,04% em 317. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -1,56% e -1,12%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade 8% abaixo dele, stop 3% abaixo da segunda entrada; zero a zero rápido: stop no preço médio depois de subir 3%
+   2143 operações. Resultado médio -0,24% do dinheiro separado por operação, caso típico +0,00%, deram lucro 61%. Pior operação -7,54%; 1 em cada 10 foi pior que -7,54%. Pegou só a primeira ordem em 1349 e as duas em 794; em 3903 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: -0,20% em 1555 operações; de nov/2024 até hoje: -0,35% em 588. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,46% e -0,58%.
+   PERDEU.
+
+ Duas entradas na queda (preço 20% ou mais abaixo da máxima de 90 dias): metade no suporte e metade 8% abaixo dele, stop 3% abaixo da segunda entrada; segura: stop no zero a zero só depois de subir 10%
+   1609 operações. Resultado médio -0,28% do dinheiro separado por operação, caso típico +0,00%, deram lucro 51%. Pior operação -7,54%; 1 em cada 10 foi pior que -7,54%. Pegou só a primeira ordem em 748 e as duas em 861; em 3450 vezes o preço não chegou na ordem e subiu (passou do lado).
+   Até out/2024: -0,29% em 1167 operações; de nov/2024 até hoje: -0,25% em 442. Base (comprar na abertura de qualquer dia na mesma situação, com o mesmo stop e a mesma saída): -0,50% e -1,18%.
+   PERDEU.
+
+RESUMO: o que passou
+ Nada.

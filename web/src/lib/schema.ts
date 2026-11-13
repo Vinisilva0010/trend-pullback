@@ -114,6 +114,19 @@ export const StormerSchema = z.object({
   r: num.nullable(),
 });
 
+export const CycleLineSchema = z.object({
+  price: num,
+  title: z.string().max(60),
+  kind: z.enum(["fall", "bounce", "turn", "top"]),
+});
+
+/** History of the asset's falls and bounces, for reading the chart. */
+export const CycleSchema = z.object({
+  state: z.enum(["queda", "repique", "alta"]),
+  lines: z.array(CycleLineSchema).max(12),
+  text: z.array(z.string().max(1000)).max(8),
+});
+
 export const AssetSchema = z.object({
   symbol: z.string().regex(/^[A-Z0-9]{2,15}USDT$/),
   name: z.string().max(15),
@@ -121,6 +134,7 @@ export const AssetSchema = z.object({
   change_24h: num.nullable(),
   frames: z.array(FrameSchema).max(5),
   stormer: z.array(StormerSchema).max(200).default([]),
+  cycle: CycleSchema.nullable().default(null),
 });
 
 export const BookTradeSchema = z.object({
@@ -288,6 +302,7 @@ export type Setup = z.infer<typeof SetupSchema>;
 export type Pending = z.infer<typeof PendingSchema>;
 export type Frame = z.infer<typeof FrameSchema>;
 export type Asset = z.infer<typeof AssetSchema>;
+export type CycleLine = z.infer<typeof CycleLineSchema>;
 export type StormerItem = z.infer<typeof StormerSchema>;
 export type MarketAsset = z.infer<typeof MarketAssetSchema>;
 export type Markets = z.infer<typeof MarketsSchema>;
