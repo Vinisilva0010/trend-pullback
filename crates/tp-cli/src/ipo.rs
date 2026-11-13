@@ -39,6 +39,10 @@ const COST: f64 = 0.002;
 /// rule replaces it.
 const HISTORY: &str = "O que o histórico mostra: em 45 anos de IPOs nos EUA, a alta média do preço do IPO até o fechamento do primeiro dia foi de 19% (10% nas empresas grandes), e ela fica com quem recebeu ações antes da abertura. Quem comprou no fechamento do primeiro dia e segurou 3 anos rendeu em média 21% menos que o mercado (4% menos nas grandes). Pela corretora só dá para comprar depois que abre.";
 
+/// What `tp ipo-study` found (run of 12 Nov 2026), shown with the alerts
+/// of the days around a large listing.
+const TESTED: &str = "O que o teste do painel mostrou (85 IPOs de $1 bilhão ou mais desde 2019): comprar no fechamento do primeiro dia e vender 5 pregões depois rendeu em média 3,6% acima do S&P 500 e deu certo em 59% dos casos, positivo nos dois períodos do teste. Foi a única forma que passou. Segurar 20 ou 60 pregões não teve prova, comprar no rompimento da máxima do primeiro dia perdeu no período recente e comprar na volta ao preço do IPO perdeu. Limites: quase metade dos IPOs da lista ficou de fora por falta de preço na fonte, foram testadas 9 formas (uma pode passar por sorte) e a forma que passou não tem stop. Por isso, se for operar, posição pequena.";
+
 fn date_pt(d: NaiveDate) -> String {
     format!("{:02}/{:02}/{}", d.day(), d.month(), d.year())
 }
@@ -251,7 +255,7 @@ pub fn alerts(
             push(
                 name,
                 format!("{}|d3|{}", u.symbol, u.date),
-                format!("IPO em {days} dias. {facts}\n{HISTORY}"),
+                format!("IPO em {days} dias. {facts}\n{HISTORY}\n{TESTED}"),
             );
         }
         if days <= 1 {
@@ -259,7 +263,7 @@ pub fn alerts(
                 name,
                 format!("{}|d1|{}", u.symbol, u.date),
                 format!(
-                    "IPO {}. {facts}\nO preço final sai na véspera, à noite; a negociação costuma abrir horas depois do pregão começar. No primeiro dia o painel mostra o preço ao vivo na aba Mercados, grupo IPO, assim que o código aparecer na fonte.\n{HISTORY}",
+                    "IPO {}. {facts}\nO preço final sai na véspera, à noite; a negociação costuma abrir horas depois do pregão começar. No primeiro dia o painel mostra o preço ao vivo na aba Mercados, grupo IPO, assim que o código aparecer na fonte.\n{HISTORY}\n{TESTED}",
                     if days == 1 { "amanhã" } else { "hoje" }
                 ),
             );
@@ -291,7 +295,7 @@ pub fn alerts(
                 name,
                 format!("{}|estreia", p.symbol),
                 format!(
-                    "IPO, primeiro dia de {name} ({}): preço do IPO ${}, abriu a {} ({} sobre o IPO), máxima {}, mínima {}, fechou a {} ({} sobre o IPO e {} sobre a abertura).\nNíveis para acompanhar: máxima e mínima do primeiro dia, e o preço do IPO.",
+                    "IPO, primeiro dia de {name} ({}): preço do IPO ${}, abriu a {} ({} sobre o IPO), máxima {}, mínima {}, fechou a {} ({} sobre o IPO e {} sobre a abertura).\nNíveis para acompanhar: máxima e mínima do primeiro dia, e o preço do IPO.\n{TESTED}\nPela forma que passou, a compra seria perto do fechamento do primeiro dia (por volta de {}) e a venda no fechamento do 5º pregão seguinte.",
                     p.symbol,
                     fmt_pt(p.price),
                     fmt_pt(b.open),
@@ -301,6 +305,7 @@ pub fn alerts(
                     fmt_pt(b.close),
                     pct_pt((b.close / p.price - 1.0) * 100.0),
                     pct_pt((b.close / b.open - 1.0) * 100.0),
+                    fmt_pt(b.close),
                 ),
             );
         }
@@ -312,6 +317,10 @@ pub fn alerts(
 
 /// One past IPO with its candles from the first trading day on.
 struct Past {
+    /// The first open is between half and 3.5 times the IPO price. Outside
+    /// that, the source's prices were adjusted by a later split and cannot
+    /// be compared with the IPO price.
+    comparable: bool,
     price: f64,
     amount: f64,
     bars: Vec<Bar>,
@@ -376,6 +385,8 @@ fn summary(label: &str, unit_r: bool, rows: &Rows, split_ms: i64, good: &mut Vec
     sorted.sort_by(f64::total_cmp);
     let median = sorted[sorted.len() / 2];
     let wins = all.iter().filter(|v| **v > 0.0).count();
+    let worst = sorted[0];
+    let tenth = sorted[sorted.len() / 10];
     let both = dev.len() >= 5 && fin.len() >= 5 && dev_mean > 0.0 && fin_mean > 0.0;
     let verdict = if both && all.len() >= 30 && t >= 2.0 {
         good.push(label.to_owned());
@@ -388,11 +399,13 @@ fn summary(label: &str, unit_r: bool, rows: &Rows, split_ms: i64, good: &mut Vec
         "PERDEU"
     };
     println!(
-        "   {label}: {} casos. Média {}, caso típico {}, deram certo {:.0}%. Até out/2024: {} ({} casos); depois: {} ({}). {verdict}.",
+        "   {label}: {} casos. Média {}, caso típico {}, deram certo {:.0}%. Pior caso {}; 1 em cada 10 foi pior que {}. Até out/2024: {} ({} casos); depois: {} ({}). {verdict}.",
         all.len(),
         show(mean),
         show(median),
         count_f64(wins) / count_f64(all.len()) * 100.0,
+        show(worst),
+        show(tenth),
         show(dev_mean),
         dev.len(),
         show(fin_mean),
@@ -420,14 +433,20 @@ fn study(
     summary(
         "do preço do IPO até a abertura do 1º dia",
         false,
-        &rows(&|p| Some((p.bars.first()?.open / p.price - 1.0) * 100.0)),
+        &rows(&|p| {
+            p.comparable
+                .then_some((p.bars.first()?.open / p.price - 1.0) * 100.0)
+        }),
         split_ms,
         &mut Vec::new(),
     );
     summary(
         "do preço do IPO até o fechamento do 1º dia",
         false,
-        &rows(&|p| Some((p.bars.first()?.close / p.price - 1.0) * 100.0)),
+        &rows(&|p| {
+            p.comparable
+                .then_some((p.bars.first()?.close / p.price - 1.0) * 100.0)
+        }),
         split_ms,
         &mut Vec::new(),
     );
@@ -460,7 +479,7 @@ fn study(
         false,
         &rows(&|p| {
             let b = p.bars.first()?;
-            (b.close / p.price >= 1.15)
+            (p.comparable && b.close / p.price >= 1.15)
                 .then(|| excess(&p.bars, 0, 20, spy))
                 .flatten()
         }),
@@ -515,8 +534,8 @@ fn study(
         ),
         true,
         &rows(&|p| {
-            let k =
-                (1..=60.min(p.bars.len().saturating_sub(1))).find(|i| p.bars[*i].low <= p.price)?;
+            let k = (1..=60.min(p.bars.len().saturating_sub(1)))
+                .find(|i| p.comparable && p.bars[*i].low <= p.price)?;
             // Only when it traded above the IPO price before coming back.
             p.bars[..k]
                 .iter()
@@ -536,6 +555,7 @@ fn study(
 ///
 /// Returns an error when the calendar gives nothing or the S&P 500 history
 /// cannot be fetched.
+#[allow(clippy::too_many_lines)] // the list, the prices and the two groups, in order
 pub async fn cmd_ipo_study(_data_dir: &Path) -> CliResult {
     let now = crate::markets::now_ms()?;
     let today = chrono::DateTime::from_timestamp_millis(now)
@@ -596,7 +616,8 @@ pub async fn cmd_ipo_study(_data_dir: &Path) -> CliResult {
         // The history has to start at the listing: an older first candle
         // is another company that used the same code.
         match first_day(p, &daily) {
-            Some((0, _)) => past.push(Past {
+            Some((0, first)) => past.push(Past {
+                comparable: (0.5..=3.5).contains(&(first.open / p.price)),
                 price: p.price,
                 amount: p.amount,
                 bars: daily,
@@ -607,6 +628,10 @@ pub async fn cmd_ipo_study(_data_dir: &Path) -> CliResult {
     println!(
         "{} IPOs com preços desde o primeiro dia; {missing} sem dados na fonte.",
         past.len()
+    );
+    println!(
+        "{} deles com preço ajustado por desdobramento depois do IPO: ficam fora das contas que usam o preço do IPO.",
+        past.iter().filter(|p| !p.comparable).count()
     );
     let mut good = Vec::new();
     let all: Vec<&Past> = past.iter().collect();

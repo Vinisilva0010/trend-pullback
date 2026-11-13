@@ -10,7 +10,7 @@ use std::path::Path;
 
 use tp_core::intraday::Bar;
 use tp_core::runner::atr;
-use tp_core::stormer::{Exit, Params, Pattern, Side, Trade, ema, scan, weekly};
+use tp_core::stormer::{Exit, Params, Pattern, Side, Trade, ema, scan};
 use tp_data::yahoo::{Interval, fetch_chart};
 
 use super::{CliResult, count_f64, held_out_start, r_mean_t, r_pt};
@@ -196,23 +196,23 @@ fn part(rows: &Rows, late: bool, split_ms: i64, want: Option<bool>) -> Vec<f64> 
         .collect()
 }
 
-/// Verdict of one condition: `(text, helps)`.
-fn verdict(rows: &Rows, split_ms: i64) -> (String, bool) {
+/// Verdict of one condition: the text and `Some(true)` when the condition
+/// helps, `Some(false)` when its opposite does. Trades without enough
+/// history to tell are left out of both sides.
+fn verdict(rows: &Rows, split_ms: i64) -> (String, Option<bool>) {
     let side = |late: bool| {
         (
-            stats(&part(rows, late, split_ms, None)),
             stats(&part(rows, late, split_ms, Some(true))),
             stats(&part(rows, late, split_ms, Some(false))),
         )
     };
-    let (dev_all, dev_with, dev_without) = side(false);
-    let (fin_all, fin_with, fin_without) = side(true);
-    let better = |all: &Stats, with: &Stats, without: &Stats| {
-        with.n > 0 && with.mean > all.mean && (without.n == 0 || with.mean > without.mean)
-    };
-    let dev_ok = better(&dev_all, &dev_with, &dev_without);
-    let fin_ok = better(&fin_all, &fin_with, &fin_without);
-    let enough = dev_with.n >= 30 && fin_with.n >= 10;
+    let (dev_with, dev_without) = side(false);
+    let (fin_with, fin_without) = side(true);
+    let both_sides = dev_with.n > 0 && dev_without.n > 0 && fin_with.n > 0 && fin_without.n > 0;
+    let with_better =
+        both_sides && dev_with.mean > dev_without.mean && fin_with.mean > fin_without.mean;
+    let without_better =
+        both_sides && dev_without.mean > dev_with.mean && fin_without.mean > fin_with.mean;
     let with: Vec<f64> = rows
         .iter()
         .filter(|r| r.2 == Some(true))
@@ -225,15 +225,35 @@ fn verdict(rows: &Rows, split_ms: i64) -> (String, bool) {
         .collect();
     let t = welch(&with, &without);
     let kept = count_f64(with.len()) / count_f64((with.len() + without.len()).max(1)) * 100.0;
-    let (word, helps) = match (dev_ok && fin_ok, enough, t >= 2.0) {
-        (true, true, true) => ("AJUDA NOS DOIS PERÍODOS, COM PROVA", true),
-        (true, true, false) => (
-            "melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte)",
-            false,
-        ),
-        (true, false, _) => ("melhor nos dois períodos, mas sobram poucos trades", false),
-        _ if dev_ok || fin_ok => ("melhor só em um dos períodos: NÃO USAR", false),
-        _ => ("NÃO AJUDA", false),
+    let enough = |dev: &Stats, fin: &Stats| dev.n >= 30 && fin.n >= 10;
+    let (word, helps) = if with_better {
+        match (enough(&dev_with, &fin_with), t >= 2.0) {
+            (true, true) => ("AJUDA NOS DOIS PERÍODOS, COM PROVA", Some(true)),
+            (true, false) => (
+                "melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte)",
+                None,
+            ),
+            _ => ("melhor nos dois períodos, mas sobram poucos trades", None),
+        }
+    } else if without_better {
+        match (enough(&dev_without, &fin_without), t <= -2.0) {
+            (true, true) => (
+                "O CONTRÁRIO É QUE AJUDA NOS DOIS PERÍODOS, COM PROVA (os trades sem a condição foram melhores)",
+                Some(false),
+            ),
+            (true, false) => (
+                "os trades sem a condição foram melhores nos dois períodos, mas a diferença é pequena (pode ser sorte)",
+                None,
+            ),
+            _ => (
+                "os trades sem a condição foram melhores nos dois períodos, mas são poucos",
+                None,
+            ),
+        }
+    } else if both_sides {
+        ("melhor em um período e pior no outro: NÃO USAR", None)
+    } else {
+        ("sem trades suficientes dos dois lados para comparar", None)
     };
     let show = |s: &Stats| {
         format!(
@@ -267,7 +287,7 @@ fn study(
     for l in loaded {
         let bars: &[Bar] = if weekly_setup { &l.weekly } else { &l.daily };
         let weeks = (!weekly_setup).then(|| {
-            let w = weekly(&l.daily);
+            let w = l.weekly.clone();
             let (fast, slow) = (ema(&w, 8), ema(&w, 80));
             (w, fast, slow)
         });
@@ -313,8 +333,10 @@ fn study(
         }
         let (text, helps) = verdict(rows, split_ms);
         println!("   Condição: {}. Com ela {text}", f.label());
-        if helps {
-            good.push(format!("{title}: {}", f.label()));
+        match helps {
+            Some(true) => good.push(format!("{title}: {}", f.label())),
+            Some(false) => good.push(format!("{title}: o contrário de \"{}\"", f.label())),
+            None => {}
         }
     }
 }
@@ -362,7 +384,7 @@ pub async fn cmd_refine_study(_data_dir: &Path) -> CliResult {
         &mut good,
     );
     println!();
-    println!("RESUMO: condições que ajudam nos dois períodos, com prova");
+    println!("RESUMO: o que ajuda nos dois períodos, com prova");
     if good.is_empty() {
         println!(" Nenhuma. Os setups ficam como estão.");
     }
@@ -414,7 +436,7 @@ mod tests {
             rows.push((if late { 2000 + i } else { i }, -0.2 + wobble, Some(false)));
         }
         let (text, helps) = verdict(&rows, split);
-        assert!(helps, "{text}");
+        assert_eq!(helps, Some(true), "{text}");
         assert!(text.contains("ficam 50% dos trades"), "{text}");
         // Better only before the split: not used.
         let flipped: Rows = rows
@@ -422,8 +444,11 @@ mod tests {
             .map(|r| if r.0 > split { (r.0, -r.1, r.2) } else { *r })
             .collect();
         let (text, helps) = verdict(&flipped, split);
-        assert!(!helps);
+        assert_eq!(helps, None);
         assert!(text.contains("NÃO USAR"), "{text}");
+        // The trades without the condition better in both periods: the opposite helps.
+        let opposite: Rows = rows.iter().map(|r| (r.0, r.1, r.2.map(|h| !h))).collect();
+        assert_eq!(verdict(&opposite, split).1, Some(false));
     }
 
     #[test]
