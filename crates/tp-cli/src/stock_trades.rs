@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use tp_core::stormer::{Exit, Pattern, Side};
+use tp_core::stormer::{Exit, Pattern, Side, Signal};
 
 use crate::smc_live::{Books, TradeRow};
 use crate::stock_watch::Watched;
@@ -37,6 +37,30 @@ pub fn role(tf: &str, pattern: Pattern, side: Side, with_trend: bool) -> Option<
         ("1w", Pattern::Trap, Side::Long) => Some(Role::Candidate),
         _ => None,
     }
+}
+
+/// From `tp refine-study` (12 Nov 2026, 659 trades of the daily trap with
+/// the trend): the signals whose stop is more than 1.5 times the 14-day
+/// ATR away did much better than the rest in both periods (+0.33R and
+/// +0.40R against +0.08R and +0.03R). It was the only condition of seven
+/// that passed, and nothing passed on the weekly trap.
+const WIDE_STOP_ATRS: f64 = 1.5;
+
+/// The line a daily trap signal gets about its strength.
+fn strength_note(c: &Chart, s: &Signal) -> Option<String> {
+    if c.tf != "1d" || s.pattern != Pattern::Trap || s.side != Side::Long {
+        return None;
+    }
+    let atr = tp_core::runner::atr(&c.bars, 14)
+        .get(s.signal_index)
+        .copied()
+        .flatten()
+        .filter(|a| *a > 0.0)?;
+    Some(if (s.trigger - s.stop) / atr > WIDE_STOP_ATRS {
+        "SINAL FORTE: o candle do sinal é grande (stop a mais de 1,5 vez a variação média de 14 dias). No teste, os sinais assim renderam +0,33R e +0,40R por trade nos dois períodos e fecharam no lucro em 54% e 62% dos casos.".to_owned()
+    } else {
+        "Sinal comum: o candle do sinal é pequeno (stop a até 1,5 vez a variação média de 14 dias). No teste, os sinais assim ficaram perto de zero (+0,08R e +0,03R por trade, 42% e 40% no lucro). O ganho do setup veio dos sinais fortes.".to_owned()
+    })
 }
 
 /// One stock with its daily and weekly charts.
@@ -216,6 +240,7 @@ pub fn run(stocks: &[Stock], now_ms: i64, sent: &BTreeSet<String>, books: &mut B
         position_cap: POSITION_CAP,
         book_charts: &["1d", "1w"],
         pick: &pick,
+        note: &strength_note,
     };
     let mut out = Run {
         stages: Vec::new(),
@@ -351,6 +376,11 @@ mod tests {
             "{}",
             signals[0].message
         );
+        // Daily trap signals say how strong they are; weekly ones do not.
+        for s in &signals {
+            let noted = s.message.contains("SINAL FORTE") || s.message.contains("Sinal comum");
+            assert_eq!(noted, s.message.contains("gráfico diário"), "{}", s.message);
+        }
         assert!(
             signals[0].message.contains("Ações EUA (trap)"),
             "{}",

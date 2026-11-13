@@ -293,6 +293,9 @@ pub struct Follow<'a> {
     pub book_charts: &'a [&'a str],
     /// Decides a triggered trade, given its key.
     pub pick: &'a dyn Fn(&Chart, &Trade, &str) -> Pick,
+    /// An extra line for a signal's message (what a test found about
+    /// signals like this one), when there is one.
+    pub note: &'a dyn Fn(&Chart, &Signal) -> Option<String>,
 }
 
 /// New stages for one coin, and the closed trades for the paper book
@@ -320,6 +323,7 @@ pub fn stage_alerts(
         position_cap: 1.0,
         book_charts: &["1d"],
         pick: &pick,
+        note: &|_, _| None,
     };
     stage_alerts_with(
         asset,
@@ -402,6 +406,9 @@ pub fn stage_alerts_with(
                 "\n{}",
                 history_line(name, c, s.pattern, s.side, trend_only)
             );
+            if let Some(note) = (follow.note)(c, s) {
+                let _ = write!(text, "\n{note}");
+            }
             if alerts && follow.book_charts.contains(&c.tf) {
                 let _ = write!(
                     text,

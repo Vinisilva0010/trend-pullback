@@ -41,7 +41,7 @@ const HISTORY: &str = "O que o histórico mostra: em 45 anos de IPOs nos EUA, a 
 
 /// What `tp ipo-study` found (run of 12 Nov 2026), shown with the alerts
 /// of the days around a large listing.
-const TESTED: &str = "O que o teste do painel mostrou (85 IPOs de $1 bilhão ou mais desde 2019): comprar no fechamento do primeiro dia e vender 5 pregões depois rendeu em média 3,6% acima do S&P 500 e deu certo em 59% dos casos, positivo nos dois períodos do teste. Foi a única forma que passou. Segurar 20 ou 60 pregões não teve prova, comprar no rompimento da máxima do primeiro dia perdeu no período recente e comprar na volta ao preço do IPO perdeu. Limites: quase metade dos IPOs da lista ficou de fora por falta de preço na fonte, foram testadas 9 formas (uma pode passar por sorte) e a forma que passou não tem stop. Por isso, se for operar, posição pequena.";
+const TESTED: &str = "O que o teste do painel mostrou (85 IPOs de $1 bilhão ou mais desde 2019): comprar no fechamento do primeiro dia e vender 5 pregões depois rendeu em média 3,6% acima do S&P 500 e deu certo em 59% dos casos, positivo nos dois períodos do teste. Foi a única forma que passou. Segurar 20 ou 60 pregões não teve prova, comprar no rompimento da máxima do primeiro dia perdeu no período recente e comprar na volta ao preço do IPO perdeu. Limites: quase metade dos IPOs da lista ficou de fora por falta de preço na fonte, foram testadas 9 formas (uma pode passar por sorte) e a forma que passou não tem stop: o pior caso perdeu 32,5% em 5 pregões e 1 em cada 10 perdeu mais de 10,6%. Por isso, se for operar, posição pequena.";
 
 fn date_pt(d: NaiveDate) -> String {
     format!("{:02}/{:02}/{}", d.day(), d.month(), d.year())

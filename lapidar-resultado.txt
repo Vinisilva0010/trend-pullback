@@ -1,106 +1,106 @@
 Lapidação dos dois setups de ações que passaram no teste. Cada condição é conhecida na hora do sinal. Resultado em R (1R = o que se perde no stop), já com custos.
 Uma condição só vale se os trades com ela forem melhores que todos e melhores que os sem ela nos dois períodos, com pelo menos 30 trades no primeiro e 10 no segundo. São 7 condições testadas: uma ou duas podem parecer boas por sorte, por isso a exigência dos dois períodos.
-S&P 500 (SPY) (SPY): 2512 dias, 522 semanas
-Nasdaq 100 (QQQ) (QQQ): 2512 dias, 522 semanas
-Dow Jones (DIA) (DIA): 2512 dias, 522 semanas
-Russell 2000 (IWM) (IWM): 2512 dias, 522 semanas
-Tecnologia (XLK) (XLK): 2512 dias, 522 semanas
-Financeiro (XLF) (XLF): 2512 dias, 522 semanas
-Energia (XLE) (XLE): 2512 dias, 522 semanas
-Saúde (XLV) (XLV): 2512 dias, 522 semanas
-Consumo básico (XLP) (XLP): 2512 dias, 522 semanas
-Consumo discricionário (XLY) (XLY): 2512 dias, 522 semanas
-Indústria (XLI) (XLI): 2512 dias, 522 semanas
-Utilidades (XLU) (XLU): 2512 dias, 522 semanas
-Materiais (XLB) (XLB): 2512 dias, 522 semanas
-Semicondutores (SMH) (SMH): 2512 dias, 522 semanas
-Ouro (GLD) (GLD): 2512 dias, 522 semanas
-Prata (SLV) (SLV): 2512 dias, 522 semanas
-Brasil em dólar (EWZ) (EWZ): 2512 dias, 522 semanas
-Apple (AAPL): 2512 dias, 522 semanas
-Microsoft (MSFT): 2512 dias, 522 semanas
-Nvidia (NVDA): 2512 dias, 522 semanas
-Amazon (AMZN): 2512 dias, 522 semanas
-Google (GOOGL): 2512 dias, 522 semanas
-Meta (META): 2512 dias, 522 semanas
-Tesla (TSLA): 2512 dias, 522 semanas
-Broadcom (AVGO): 2512 dias, 522 semanas
-AMD (AMD): 2512 dias, 522 semanas
-Oracle (ORCL): 2512 dias, 522 semanas
-Salesforce (CRM): 2512 dias, 522 semanas
-Adobe (ADBE): 2512 dias, 522 semanas
-Netflix (NFLX): 2512 dias, 522 semanas
-Intel (INTC): 2512 dias, 522 semanas
-Cisco (CSCO): 2512 dias, 522 semanas
-Qualcomm (QCOM): 2512 dias, 522 semanas
-Texas Instruments (TXN): 2512 dias, 522 semanas
-IBM (IBM): 2512 dias, 522 semanas
-Palantir (PLTR): 1537 dias, 320 semanas
-Shopify (SHOP): 2512 dias, 522 semanas
-JPMorgan (JPM): 2512 dias, 522 semanas
-Bank of America (BAC): 2512 dias, 522 semanas
-Goldman Sachs (GS): 2512 dias, 522 semanas
-Morgan Stanley (MS): 2512 dias, 522 semanas
-Visa (V): 2512 dias, 522 semanas
-Mastercard (MA): 2512 dias, 522 semanas
-American Express (AXP): 2512 dias, 522 semanas
-BlackRock (BLK): 2512 dias, 522 semanas
-Berkshire Hathaway (BRK-B): 2512 dias, 522 semanas
-Interactive Brokers (IBKR): 2512 dias, 522 semanas
-ExxonMobil (XOM): 2512 dias, 522 semanas
-Chevron (CVX): 2512 dias, 522 semanas
-Eli Lilly (LLY): 2512 dias, 522 semanas
-UnitedHealth (UNH): 2512 dias, 522 semanas
-Johnson & Johnson (JNJ): 2512 dias, 522 semanas
-AbbVie (ABBV): 2512 dias, 522 semanas
-Merck (MRK): 2512 dias, 522 semanas
-Pfizer (PFE): 2512 dias, 522 semanas
-Thermo Fisher (TMO): 2512 dias, 522 semanas
-Abbott (ABT): 2512 dias, 522 semanas
-Amgen (AMGN): 2512 dias, 522 semanas
-Intuitive Surgical (ISRG): 2512 dias, 522 semanas
-Procter & Gamble (PG): 2512 dias, 522 semanas
-Coca-Cola (KO): 2512 dias, 522 semanas
-PepsiCo (PEP): 2512 dias, 522 semanas
-Walmart (WMT): 2512 dias, 522 semanas
-Costco (COST): 2512 dias, 522 semanas
-Home Depot (HD): 2512 dias, 522 semanas
-McDonald's (MCD): 2512 dias, 522 semanas
-Nike (NKE): 2512 dias, 522 semanas
-Starbucks (SBUX): 2512 dias, 522 semanas
-Disney (DIS): 2512 dias, 522 semanas
-AT&T (T): 2512 dias, 522 semanas
-Verizon (VZ): 2512 dias, 522 semanas
-Caterpillar (CAT): 2512 dias, 522 semanas
-Deere (DE): 2512 dias, 522 semanas
-GE Aerospace (GE): 2512 dias, 522 semanas
-Honeywell (HON): 2512 dias, 522 semanas
-Boeing (BA): 2512 dias, 522 semanas
-Lockheed Martin (LMT): 2512 dias, 522 semanas
-Union Pacific (UNP): 2512 dias, 522 semanas
-UPS (UPS): 2512 dias, 522 semanas
-NextEra Energy (NEE): 2512 dias, 522 semanas
-Linde (LIN): 2512 dias, 522 semanas
-AngloGold Ashanti (AU): 2512 dias, 522 semanas
-Gold Fields (GFI): 2512 dias, 522 semanas
-Newmont (NEM): 2512 dias, 522 semanas
+S&P 500 (SPY) (SPY): 2513 dias, 522 semanas
+Nasdaq 100 (QQQ) (QQQ): 2513 dias, 522 semanas
+Dow Jones (DIA) (DIA): 2513 dias, 522 semanas
+Russell 2000 (IWM) (IWM): 2513 dias, 522 semanas
+Tecnologia (XLK) (XLK): 2513 dias, 522 semanas
+Financeiro (XLF) (XLF): 2513 dias, 522 semanas
+Energia (XLE) (XLE): 2513 dias, 522 semanas
+Saúde (XLV) (XLV): 2513 dias, 522 semanas
+Consumo básico (XLP) (XLP): 2513 dias, 522 semanas
+Consumo discricionário (XLY) (XLY): 2513 dias, 522 semanas
+Indústria (XLI) (XLI): 2513 dias, 522 semanas
+Utilidades (XLU) (XLU): 2513 dias, 522 semanas
+Materiais (XLB) (XLB): 2513 dias, 522 semanas
+Semicondutores (SMH) (SMH): 2513 dias, 522 semanas
+Ouro (GLD) (GLD): 2513 dias, 522 semanas
+Prata (SLV) (SLV): 2513 dias, 522 semanas
+Brasil em dólar (EWZ) (EWZ): 2513 dias, 522 semanas
+Apple (AAPL): 2513 dias, 522 semanas
+Microsoft (MSFT): 2513 dias, 522 semanas
+Nvidia (NVDA): 2513 dias, 522 semanas
+Amazon (AMZN): 2513 dias, 522 semanas
+Google (GOOGL): 2513 dias, 522 semanas
+Meta (META): 2513 dias, 522 semanas
+Tesla (TSLA): 2513 dias, 522 semanas
+Broadcom (AVGO): 2513 dias, 522 semanas
+AMD (AMD): 2513 dias, 522 semanas
+Oracle (ORCL): 2513 dias, 522 semanas
+Salesforce (CRM): 2513 dias, 522 semanas
+Adobe (ADBE): 2513 dias, 522 semanas
+Netflix (NFLX): 2513 dias, 522 semanas
+Intel (INTC): 2513 dias, 522 semanas
+Cisco (CSCO): 2513 dias, 522 semanas
+Qualcomm (QCOM): 2513 dias, 522 semanas
+Texas Instruments (TXN): 2513 dias, 522 semanas
+IBM (IBM): 2513 dias, 522 semanas
+Palantir (PLTR): 1538 dias, 320 semanas
+Shopify (SHOP): 2513 dias, 522 semanas
+JPMorgan (JPM): 2513 dias, 522 semanas
+Bank of America (BAC): 2513 dias, 522 semanas
+Goldman Sachs (GS): 2513 dias, 522 semanas
+Morgan Stanley (MS): 2513 dias, 522 semanas
+Visa (V): 2513 dias, 522 semanas
+Mastercard (MA): 2513 dias, 522 semanas
+American Express (AXP): 2513 dias, 522 semanas
+BlackRock (BLK): 2513 dias, 522 semanas
+Berkshire Hathaway (BRK-B): 2513 dias, 522 semanas
+Interactive Brokers (IBKR): 2513 dias, 522 semanas
+ExxonMobil (XOM): 2513 dias, 522 semanas
+Chevron (CVX): 2513 dias, 522 semanas
+Eli Lilly (LLY): 2513 dias, 522 semanas
+UnitedHealth (UNH): 2513 dias, 522 semanas
+Johnson & Johnson (JNJ): 2513 dias, 522 semanas
+AbbVie (ABBV): 2513 dias, 522 semanas
+Merck (MRK): 2513 dias, 522 semanas
+Pfizer (PFE): 2513 dias, 522 semanas
+Thermo Fisher (TMO): 2513 dias, 522 semanas
+Abbott (ABT): 2513 dias, 522 semanas
+Amgen (AMGN): 2513 dias, 522 semanas
+Intuitive Surgical (ISRG): 2513 dias, 522 semanas
+Procter & Gamble (PG): 2513 dias, 522 semanas
+Coca-Cola (KO): 2513 dias, 522 semanas
+PepsiCo (PEP): 2513 dias, 522 semanas
+Walmart (WMT): 2513 dias, 522 semanas
+Costco (COST): 2513 dias, 522 semanas
+Home Depot (HD): 2513 dias, 522 semanas
+McDonald's (MCD): 2513 dias, 522 semanas
+Nike (NKE): 2513 dias, 522 semanas
+Starbucks (SBUX): 2513 dias, 522 semanas
+Disney (DIS): 2513 dias, 522 semanas
+AT&T (T): 2513 dias, 522 semanas
+Verizon (VZ): 2513 dias, 522 semanas
+Caterpillar (CAT): 2513 dias, 522 semanas
+Deere (DE): 2513 dias, 522 semanas
+GE Aerospace (GE): 2513 dias, 522 semanas
+Honeywell (HON): 2513 dias, 522 semanas
+Boeing (BA): 2513 dias, 522 semanas
+Lockheed Martin (LMT): 2513 dias, 522 semanas
+Union Pacific (UNP): 2513 dias, 522 semanas
+UPS (UPS): 2513 dias, 522 semanas
+NextEra Energy (NEE): 2513 dias, 522 semanas
+Linde (LIN): 2513 dias, 522 semanas
+AngloGold Ashanti (AU): 2513 dias, 522 semanas
+Gold Fields (GFI): 2513 dias, 522 semanas
+Newmont (NEM): 2513 dias, 522 semanas
 
 Trap de compra no diário, a favor da tendência: 659 trades. Sem filtro nenhum: +0,15R até out/2024 (507 trades, 45% no lucro) e +0,15R depois (152 trades, 47% no lucro).
-   Condição: S&P 500 acima da média de 200 dias. Com ela ficam 89% dos trades. Até out/2024: com ela +0,13R em 400 trades, 45% no lucro; sem ela -0,23R em 55 trades, 31% no lucro. Depois: com ela +0,18R em 142 trades, 48% no lucro; sem ela -0,28R em 10 trades, 40% no lucro. melhor só em um dos períodos: NÃO USAR.
-   Condição: ação subiu mais que o S&P 500 nos 6 meses antes. Com ela ficam 67% dos trades. Até out/2024: com ela +0,10R em 331 trades, 43% no lucro; sem ela +0,11R em 153 trades, 46% no lucro. Depois: com ela +0,12R em 96 trades, 45% no lucro; sem ela +0,22R em 56 trades, 52% no lucro. NÃO AJUDA.
-   Condição: candle do sinal com volume acima da média dos 20 anteriores. Com ela ficam 50% dos trades. Até out/2024: com ela +0,14R em 248 trades, 44% no lucro; sem ela +0,15R em 259 trades, 46% no lucro. Depois: com ela +0,31R em 84 trades, 52% no lucro; sem ela -0,04R em 68 trades, 41% no lucro. melhor só em um dos períodos: NÃO USAR.
-   Condição: stop a até 1,5 vez a variação média (ATR de 14 candles). Com ela ficam 73% dos trades. Até out/2024: com ela +0,08R em 380 trades, 42% no lucro; sem ela +0,33R em 127 trades, 54% no lucro. Depois: com ela +0,03R em 102 trades, 40% no lucro; sem ela +0,40R em 50 trades, 62% no lucro. NÃO AJUDA.
-   Condição: preço a até 15% da máxima de 52 semanas. Com ela ficam 91% dos trades. Até out/2024: com ela +0,08R em 406 trades, 43% no lucro; sem ela +0,15R em 40 trades, 45% no lucro. Depois: com ela +0,19R em 137 trades, 48% no lucro; sem ela -0,19R em 15 trades, 40% no lucro. melhor só em um dos períodos: NÃO USAR.
-   Condição: candle do sinal fechou na metade de cima. Com ela ficam 99% dos trades. Até out/2024: com ela +0,14R em 502 trades, 45% no lucro; sem ela +0,75R em 5 trades, 60% no lucro. Depois: com ela +0,17R em 150 trades, 48% no lucro; sem ela -1,09R em 2 trades, 0% no lucro. melhor só em um dos períodos: NÃO USAR.
-   Condição: gráfico semanal da ação em alta (médias de 8 e 80 semanas). Com ela ficam 0% dos trades. Até out/2024: com ela +0,00R em 0 trades, 0% no lucro; sem ela +0,00R em 0 trades, 0% no lucro. Depois: com ela +0,00R em 0 trades, 0% no lucro; sem ela +0,00R em 0 trades, 0% no lucro. NÃO AJUDA.
+   Condição: S&P 500 acima da média de 200 dias. Com ela ficam 89% dos trades. Até out/2024: com ela +0,13R em 400 trades, 45% no lucro; sem ela -0,23R em 55 trades, 31% no lucro. Depois: com ela +0,18R em 142 trades, 48% no lucro; sem ela -0,28R em 10 trades, 40% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
+   Condição: ação subiu mais que o S&P 500 nos 6 meses antes. Com ela ficam 67% dos trades. Até out/2024: com ela +0,10R em 331 trades, 43% no lucro; sem ela +0,11R em 153 trades, 46% no lucro. Depois: com ela +0,12R em 96 trades, 45% no lucro; sem ela +0,22R em 56 trades, 52% no lucro. os trades sem a condição foram melhores nos dois períodos, mas a diferença é pequena (pode ser sorte).
+   Condição: candle do sinal com volume acima da média dos 20 anteriores. Com ela ficam 50% dos trades. Até out/2024: com ela +0,14R em 248 trades, 44% no lucro; sem ela +0,15R em 259 trades, 46% no lucro. Depois: com ela +0,31R em 84 trades, 52% no lucro; sem ela -0,04R em 68 trades, 41% no lucro. melhor em um período e pior no outro: NÃO USAR.
+   Condição: stop a até 1,5 vez a variação média (ATR de 14 candles). Com ela ficam 73% dos trades. Até out/2024: com ela +0,08R em 380 trades, 42% no lucro; sem ela +0,33R em 127 trades, 54% no lucro. Depois: com ela +0,03R em 102 trades, 40% no lucro; sem ela +0,40R em 50 trades, 62% no lucro. O CONTRÁRIO É QUE AJUDA NOS DOIS PERÍODOS, COM PROVA (os trades sem a condição foram melhores).
+   Condição: preço a até 15% da máxima de 52 semanas. Com ela ficam 91% dos trades. Até out/2024: com ela +0,08R em 406 trades, 43% no lucro; sem ela +0,15R em 40 trades, 45% no lucro. Depois: com ela +0,19R em 137 trades, 48% no lucro; sem ela -0,19R em 15 trades, 40% no lucro. melhor em um período e pior no outro: NÃO USAR.
+   Condição: candle do sinal fechou na metade de cima. Com ela ficam 99% dos trades. Até out/2024: com ela +0,14R em 502 trades, 45% no lucro; sem ela +0,75R em 5 trades, 60% no lucro. Depois: com ela +0,17R em 150 trades, 48% no lucro; sem ela -1,09R em 2 trades, 0% no lucro. melhor em um período e pior no outro: NÃO USAR.
+   Condição: gráfico semanal da ação em alta (médias de 8 e 80 semanas). Com ela ficam 50% dos trades. Até out/2024: com ela -0,05R em 199 trades, 37% no lucro; sem ela +0,19R em 197 trades, 48% no lucro. Depois: com ela +0,15R em 76 trades, 46% no lucro; sem ela +0,16R em 76 trades, 49% no lucro. os trades sem a condição foram melhores nos dois períodos, mas a diferença é pequena (pode ser sorte).
 
-Trap de compra no semanal: 1175 trades. Sem filtro nenhum: +0,21R até out/2024 (933 trades, 46% no lucro) e +0,19R depois (242 trades, 43% no lucro).
-   Condição: S&P 500 acima da média de 200 dias. Com ela ficam 66% dos trades. Até out/2024: com ela +0,26R em 570 trades, 48% no lucro; sem ela +0,12R em 328 trades, 42% no lucro. Depois: com ela +0,09R em 181 trades, 38% no lucro; sem ela +0,48R em 61 trades, 59% no lucro. melhor só em um dos períodos: NÃO USAR.
-   Condição: ação subiu mais que o S&P 500 nos 6 meses antes. Com ela ficam 35% dos trades. Até out/2024: com ela +0,31R em 324 trades, 49% no lucro; sem ela +0,16R em 595 trades, 44% no lucro. Depois: com ela +0,22R em 86 trades, 47% no lucro; sem ela +0,17R em 156 trades, 42% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
-   Condição: candle do sinal com volume acima da média dos 20 anteriores. Com ela ficam 56% dos trades. Até out/2024: com ela +0,21R em 506 trades, 47% no lucro; sem ela +0,21R em 421 trades, 44% no lucro. Depois: com ela +0,04R em 145 trades, 39% no lucro; sem ela +0,41R em 97 trades, 49% no lucro. NÃO AJUDA.
-   Condição: stop a até 1,5 vez a variação média (ATR de 14 candles). Com ela ficam 84% dos trades. Até out/2024: com ela +0,23R em 786 trades, 46% no lucro; sem ela +0,07R em 146 trades, 47% no lucro. Depois: com ela +0,21R em 200 trades, 42% no lucro; sem ela +0,10R em 42 trades, 48% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
-   Condição: preço a até 15% da máxima de 52 semanas. Com ela ficam 55% dos trades. Até out/2024: com ela +0,12R em 493 trades, 43% no lucro; sem ela +0,31R em 386 trades, 49% no lucro. Depois: com ela +0,22R em 126 trades, 45% no lucro; sem ela +0,15R em 116 trades, 41% no lucro. melhor só em um dos períodos: NÃO USAR.
-   Condição: candle do sinal fechou na metade de cima. Com ela ficam 87% dos trades. Até out/2024: com ela +0,23R em 808 trades, 47% no lucro; sem ela +0,08R em 125 trades, 41% no lucro. Depois: com ela +0,22R em 216 trades, 44% no lucro; sem ela -0,06R em 26 trades, 35% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
+Trap de compra no semanal: 1176 trades. Sem filtro nenhum: +0,21R até out/2024 (933 trades, 46% no lucro) e +0,18R depois (243 trades, 43% no lucro).
+   Condição: S&P 500 acima da média de 200 dias. Com ela ficam 66% dos trades. Até out/2024: com ela +0,26R em 570 trades, 48% no lucro; sem ela +0,12R em 328 trades, 42% no lucro. Depois: com ela +0,08R em 182 trades, 38% no lucro; sem ela +0,48R em 61 trades, 59% no lucro. melhor em um período e pior no outro: NÃO USAR.
+   Condição: ação subiu mais que o S&P 500 nos 6 meses antes. Com ela ficam 35% dos trades. Até out/2024: com ela +0,31R em 324 trades, 49% no lucro; sem ela +0,16R em 595 trades, 44% no lucro. Depois: com ela +0,22R em 86 trades, 47% no lucro; sem ela +0,17R em 157 trades, 41% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
+   Condição: candle do sinal com volume acima da média dos 20 anteriores. Com ela ficam 56% dos trades. Até out/2024: com ela +0,21R em 506 trades, 47% no lucro; sem ela +0,21R em 421 trades, 44% no lucro. Depois: com ela +0,04R em 146 trades, 39% no lucro; sem ela +0,41R em 97 trades, 49% no lucro. os trades sem a condição foram melhores nos dois períodos, mas a diferença é pequena (pode ser sorte).
+   Condição: stop a até 1,5 vez a variação média (ATR de 14 candles). Com ela ficam 84% dos trades. Até out/2024: com ela +0,23R em 786 trades, 46% no lucro; sem ela +0,07R em 146 trades, 47% no lucro. Depois: com ela +0,20R em 201 trades, 42% no lucro; sem ela +0,10R em 42 trades, 48% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
+   Condição: preço a até 15% da máxima de 52 semanas. Com ela ficam 55% dos trades. Até out/2024: com ela +0,12R em 493 trades, 43% no lucro; sem ela +0,31R em 386 trades, 49% no lucro. Depois: com ela +0,22R em 126 trades, 45% no lucro; sem ela +0,14R em 117 trades, 41% no lucro. melhor em um período e pior no outro: NÃO USAR.
+   Condição: candle do sinal fechou na metade de cima. Com ela ficam 87% dos trades. Até out/2024: com ela +0,23R em 808 trades, 47% no lucro; sem ela +0,08R em 125 trades, 41% no lucro. Depois: com ela +0,21R em 217 trades, 44% no lucro; sem ela -0,06R em 26 trades, 35% no lucro. melhor nos dois períodos, mas a diferença é pequena para o número de trades (pode ser sorte).
 
-RESUMO: condições que ajudam nos dois períodos, com prova
- Nenhuma. Os setups ficam como estão.
+RESUMO: o que ajuda nos dois períodos, com prova
+ Trap de compra no diário, a favor da tendência: o contrário de "stop a até 1,5 vez a variação média (ATR de 14 candles)"
