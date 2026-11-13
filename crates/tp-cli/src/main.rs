@@ -62,6 +62,7 @@ use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
 
+mod crypto_study;
 mod dashboard;
 mod day_study;
 mod ipo;
@@ -188,6 +189,9 @@ enum Command {
     /// The two stock setups that passed, split by conditions known at the
     /// signal (market trend, relative strength, volume, stop size and others).
     RefineStudy,
+    /// The Stormer setups on the daily and weekly charts of every coin of the
+    /// crypto trade universe, counted only in the months each coin was in it.
+    CryptoStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -352,6 +356,7 @@ async fn main() -> ExitCode {
         Command::TrendStudy => trend_study::cmd_trend_study(&cli.data_dir).await,
         Command::IpoStudy => ipo::cmd_ipo_study(&cli.data_dir).await,
         Command::RefineStudy => refine_study::cmd_refine_study(&cli.data_dir).await,
+        Command::CryptoStudy => crypto_study::cmd_crypto_study(&cli.data_dir),
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
@@ -468,7 +473,9 @@ fn cmd_build_universe(data_dir: &Path, size: usize, exclusions: &Path) -> CliRes
     Ok(ExitCode::SUCCESS)
 }
 
-fn load_universe(data_dir: &Path) -> Result<BTreeMap<YearMonth, Vec<String>>, Box<dyn Error>> {
+pub(crate) fn load_universe(
+    data_dir: &Path,
+) -> Result<BTreeMap<YearMonth, Vec<String>>, Box<dyn Error>> {
     let path = data_dir
         .join("processed")
         .join("binance")

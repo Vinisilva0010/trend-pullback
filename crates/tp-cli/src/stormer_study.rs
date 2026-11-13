@@ -31,7 +31,7 @@ const FRAMES: [Frame; 3] = [
     },
 ];
 
-fn pattern_name(p: Pattern) -> &'static str {
+pub(crate) fn pattern_name(p: Pattern) -> &'static str {
     match p {
         Pattern::OneTwoThree => "123",
         Pattern::OneTwoThreeInside => "123 com o 3º candle dentro do 2º",

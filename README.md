@@ -160,6 +160,7 @@ and `smc_books_v2.csv`.
 | `tp trend-study` | the long trend: hold only while the weekly close is above its 10-month average, against buying and holding, with the worst fall of each |
 | `tp ipo-study` | ways of buying a new listing (first day, first-day and first-week breakouts, return to the IPO price) on the US IPOs of $300 million or more since 2019, against the S&P 500; list from the Nasdaq IPO calendar. `tp markets` also follows the calendar: upcoming IPOs on the IPOs page, alerts for the ones of $1 billion or more, and the large recent listings as a group on Mercados |
 | `tp refine-study` | the two US stock setups that passed, split by seven conditions known at the signal (S&P 500 above its 200-day average, relative strength, volume, stop size, distance from the 52-week high, close of the signal candle, weekly trend); a condition counts only when it is better in both periods |
+| `tp crypto-study` | the Stormer setups on the daily and weekly charts of every coin of the crypto trade universe (`universe.csv`), a coin counting only in the months it was in it; a setup passes only with proof against the base, the same without BTC, ETH and SOL, twice the costs and trades spread across coins |
 | `tp day-study` | one trade a day on 15m and 1h charts (needs `python3 scripts/futures_klines.py 15m` and `1h` first) |
 
 Every result line shows trades per week and its verdict: "GANHOU NOS DOIS
