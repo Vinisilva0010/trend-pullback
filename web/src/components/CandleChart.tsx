@@ -48,7 +48,7 @@ type Measure = { a: Point | null; b: Point | null; fixed: boolean };
 const BRT_OFFSET = -3 * 3600;
 const STEP: Record<Props["tf"], number> = { "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2_592_000 };
 
-const COLORS = {
+const LIGHT = {
   up: "#0b8f5a",
   down: "#d9304a",
   entry: "#c99700",
@@ -59,6 +59,26 @@ const COLORS = {
   turn: "#0b8f5a",
   top: "#000000",
 };
+
+/** Black background: brighter colors so lines and labels stand out. */
+const DARK: typeof LIGHT = {
+  up: "#22d38b",
+  down: "#ff4d6a",
+  entry: "#ffd23f",
+  liquidity: "#ffffff",
+  confirm: "#5aa2ff",
+  fall: "#c58bff",
+  bounce: "#ff9a4d",
+  turn: "#22d38b",
+  top: "#ffffff",
+};
+
+const THEME = {
+  light: { bg: "#ffffff", text: "#000000", grid: "#efefef", border: "#000000" },
+  dark: { bg: "#000000", text: "#ffffff", grid: "#1f2329", border: "#8a8f98" },
+};
+
+const DARK_KEY = "tp:chart:dark";
 
 /** Chart time in Brasília (the library draws UTC). */
 function chartTime(ms: number): UTCTimestamp {
@@ -107,6 +127,53 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
     }
   };
   const [layers, setLayers] = useState({ setup: true, liquidity: true, liquidations: true, history: true, cycle: true });
+  // Black background (remembered on this device) and full screen.
+  const [dark, setDark] = useState(false);
+  const [full, setFull] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const COLORS = dark ? DARK : LIGHT;
+  useEffect(() => {
+    try {
+      setDark(window.localStorage.getItem(DARK_KEY) === "1");
+    } catch {
+      // No storage: the white background stays.
+    }
+  }, []);
+  const switchDark = () =>
+    setDark((d) => {
+      try {
+        window.localStorage.setItem(DARK_KEY, d ? "0" : "1");
+      } catch {
+        // Not remembered; the switch still works now.
+      }
+      return !d;
+    });
+  const switchFull = () => {
+    const el = wrap.current;
+    if (!full) {
+      setFull(true);
+      // Real full screen where the browser allows it (computers, Android);
+      // on the iPhone the chart just covers the whole page.
+      el?.requestFullscreen?.().catch(() => undefined);
+    } else {
+      setFull(false);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+    }
+  };
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setFull(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFull(false);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   // Chart and candles: rebuilt when the asset or timeframe changes.
   useEffect(() => {
@@ -115,19 +182,19 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
     setError(null);
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#000000", fontSize: 13, fontFamily: "system-ui, sans-serif" },
-      grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } },
+      layout: { background: { type: ColorType.Solid, color: THEME.light.bg }, textColor: THEME.light.text, fontSize: 13, fontFamily: "system-ui, sans-serif" },
+      grid: { vertLines: { color: THEME.light.grid }, horzLines: { color: THEME.light.grid } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#000000" },
-      timeScale: { borderColor: "#000000", timeVisible: tf === "1h" || tf === "4h", secondsVisible: false, rightOffset: 6 },
+      rightPriceScale: { borderColor: THEME.light.border },
+      timeScale: { borderColor: THEME.light.border, timeVisible: tf === "1h" || tf === "4h", secondsVisible: false, rightOffset: 6 },
       localization: { locale: "pt-BR", priceFormatter: (p: number) => price(p) },
     });
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: COLORS.up,
-      downColor: COLORS.down,
+      upColor: LIGHT.up,
+      downColor: LIGHT.down,
       borderVisible: false,
-      wickUpColor: COLORS.up,
-      wickDownColor: COLORS.down,
+      wickUpColor: LIGHT.up,
+      wickDownColor: LIGHT.down,
       priceLineColor: "#000000",
     });
     const volume = chart.addSeries(HistogramSeries, { priceScaleId: "", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
@@ -170,6 +237,22 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       seriesRef.current = null;
     };
   }, [symbol, tf, given]);
+
+  // Colors of the chart itself follow the background.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    if (!chart || !series) return;
+    const t = dark ? THEME.dark : THEME.light;
+    const c = dark ? DARK : LIGHT;
+    chart.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: t.bg }, textColor: t.text },
+      grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+      rightPriceScale: { borderColor: t.border },
+      timeScale: { borderColor: t.border },
+    });
+    series.applyOptions({ upColor: c.up, downColor: c.down, wickUpColor: c.up, wickDownColor: c.down, priceLineColor: t.text });
+  }, [dark, symbol, tf, given]);
 
   // Ruler mode: the chart stops scrolling so taps and drags measure instead.
   useEffect(() => {
@@ -226,21 +309,21 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       for (const l of extra) add(l.price, COLORS[l.color], l.title, LineStyle.Solid, l.color === "entry" ? 3 : 2);
     }
     if (layers.liquidity && frame) {
-      if (frame.liquidity.above != null) add(frame.liquidity.above, COLORS.liquidity, "Liquidez acima", LineStyle.Dotted, 1);
-      if (frame.liquidity.below != null) add(frame.liquidity.below, COLORS.liquidity, "Liquidez abaixo", LineStyle.Dotted, 1);
+      if (frame.liquidity.above != null) add(frame.liquidity.above, COLORS.liquidity, "Liquidez acima", LineStyle.Dotted, 2);
+      if (frame.liquidity.below != null) add(frame.liquidity.below, COLORS.liquidity, "Liquidez abaixo", LineStyle.Dotted, 2);
     }
     if (layers.liquidations) {
       if (longsZone) {
-        add(longsZone.high, COLORS.down, "Liquidação comprados", LineStyle.LargeDashed, 1);
-        add(longsZone.low, COLORS.down, "", LineStyle.LargeDashed, 1);
+        add(longsZone.high, COLORS.down, "Liquidação comprados", LineStyle.LargeDashed, 2);
+        add(longsZone.low, COLORS.down, "", LineStyle.LargeDashed, 2);
       }
       if (shortsZone) {
-        add(shortsZone.low, COLORS.up, "Liquidação vendidos", LineStyle.LargeDashed, 1);
-        add(shortsZone.high, COLORS.up, "", LineStyle.LargeDashed, 1);
+        add(shortsZone.low, COLORS.up, "Liquidação vendidos", LineStyle.LargeDashed, 2);
+        add(shortsZone.high, COLORS.up, "", LineStyle.LargeDashed, 2);
       }
     }
     if (layers.cycle) {
-      for (const l of cycle) add(l.price, COLORS[l.kind], l.title, l.kind === "top" ? LineStyle.Solid : LineStyle.Dashed, l.kind === "top" ? 2 : 1);
+      for (const l of cycle) add(l.price, COLORS[l.kind], l.title, l.kind === "top" ? LineStyle.Solid : LineStyle.Dashed, 2);
     }
     const step = STEP[tf];
     // Candles open on UTC boundaries; snap each mark to its candle's open.
@@ -267,7 +350,7 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
       for (const l of lines) series.removePriceLine(l);
       markerApi.detach();
     };
-  }, [active, frame, longsZone, shortsZone, layers, tf, symbol, extra, cycle]);
+  }, [active, frame, longsZone, shortsZone, layers, tf, symbol, extra, cycle, COLORS]);
 
   const toggle = (k: keyof typeof layers) => setLayers((v) => ({ ...v, [k]: !v[k] }));
   const LAYER_LABEL: Record<keyof typeof layers, string> = {
@@ -314,13 +397,24 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
     }
   }
 
+  const btn = "rounded border-2 border-ink px-2.5 py-1 text-[13px] font-extrabold";
   return (
-    <div>
-      <div className="relative">
-        <div ref={box} className="h-[58vh] min-h-[340px] w-full rounded border-2 border-ink" />
+    <div
+      ref={wrap}
+      className={full ? "fixed inset-0 z-50 flex flex-col p-2" : ""}
+      style={full ? { background: dark ? THEME.dark.bg : THEME.light.bg } : undefined}
+    >
+      <div className={`relative ${full ? "min-h-0 flex-1" : ""}`}>
+        <div ref={box} className={`w-full rounded border-2 ${dark ? "border-[#8a8f98]" : "border-ink"} ${full ? "h-full" : "h-[58vh] min-h-[340px]"}`} />
         {overlay}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" onClick={switchFull} aria-pressed={full} className={`${btn} ${full ? "bg-accent text-ink" : "bg-paper text-ink"}`}>
+          {full ? "Sair da tela cheia" : "Tela cheia"}
+        </button>
+        <button type="button" onClick={switchDark} aria-pressed={dark} className={`${btn} bg-paper text-ink`}>
+          {dark ? "Fundo branco" : "Fundo preto"}
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -338,7 +432,15 @@ export function CandleChart({ symbol, tf, frame, longsZone, shortsZone, extra = 
             type="button"
             onClick={() => toggle(k)}
             aria-pressed={layers[k]}
-            className={`rounded border-2 border-ink px-2.5 py-1 text-[13px] font-extrabold ${layers[k] ? "bg-ink text-paper" : "bg-paper text-ink"}`}
+            className={`${btn} ${
+              full && dark
+                ? layers[k]
+                  ? "border-white bg-white text-black"
+                  : "border-white bg-black text-white"
+                : layers[k]
+                  ? "bg-ink text-paper"
+                  : "bg-paper text-ink"
+            }`}
           >
             {LAYER_LABEL[k]}
           </button>
