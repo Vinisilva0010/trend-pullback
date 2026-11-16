@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use tp_core::stormer::{Exit, Pattern, Side, Signal};
 
+use crate::risk::{Risks, open_trades};
 use crate::smc_live::{Books, TradeRow};
 use crate::stock_watch::Watched;
 use crate::stormer_live::{Chart, Follow, Pick, Role, StageAlert, key, stage_alerts_with};
@@ -228,19 +229,16 @@ fn watch_list(stocks: &[Stock], chosen: &BTreeMap<String, Pick>, now_ms: i64) ->
 
 /// New stages for every stock and the book trades that closed.
 #[must_use]
-pub fn run(stocks: &[Stock], now_ms: i64, sent: &BTreeSet<String>, books: &mut Books) -> Run {
+pub fn run(
+    stocks: &[Stock],
+    now_ms: i64,
+    sent: &BTreeSet<String>,
+    books: &mut Books,
+    risks: &Risks,
+) -> Run {
     let chosen = picks(stocks, books, sent);
     let pick = |_: &Chart, _: &tp_core::stormer::Trade, key: &str| {
         chosen.get(key).copied().unwrap_or(Pick::None)
-    };
-    let follow = Follow {
-        role_of: &role,
-        book: BOOK,
-        book_label: BOOK_LABEL,
-        position_cap: POSITION_CAP,
-        book_charts: &["1d", "1w"],
-        pick: &pick,
-        note: &strength_note,
     };
     let mut out = Run {
         stages: Vec::new(),
@@ -248,7 +246,25 @@ pub fn run(stocks: &[Stock], now_ms: i64, sent: &BTreeSet<String>, books: &mut B
         keys: Vec::new(),
         watch: watch_list(stocks, &chosen, now_ms),
     };
+    let open = open_trades(&out.watch);
     for s in stocks {
+        // Strength of the signal, then the risks of this stock now.
+        let note = |c: &Chart, sig: &Signal| {
+            let lines: Vec<String> = [strength_note(c, sig), risks.note(s.symbol, &open, now_ms)]
+                .into_iter()
+                .flatten()
+                .collect();
+            (!lines.is_empty()).then(|| lines.join("\n"))
+        };
+        let follow = Follow {
+            role_of: &role,
+            book: BOOK,
+            book_label: BOOK_LABEL,
+            position_cap: POSITION_CAP,
+            book_charts: &["1d", "1w"],
+            pick: &pick,
+            note: &note,
+        };
         let (stages, rows) =
             stage_alerts_with(s.symbol, s.name, s.charts, now_ms, sent, books, &follow);
         out.keys.extend(stages.iter().map(|a| a.key.clone()));
@@ -363,6 +379,7 @@ mod tests {
             now,
             &BTreeSet::new(),
             &mut books,
+            &Risks::default(),
         );
         let signals: Vec<&StageAlert> = first
             .stages
@@ -399,6 +416,7 @@ mod tests {
             now,
             &sent,
             &mut books,
+            &Risks::default(),
         );
         let entries: Vec<&StageAlert> = second
             .stages
@@ -440,7 +458,13 @@ mod tests {
         a2.push(bar(131, 120.0, 121.5, 118.0, 121.0));
         let now = a2.last().unwrap().open_time_ms + DAY_MS + 60_000;
         let ca = chart(a2);
-        let r = run(&[stock("AAA", &ca)], now, &sent, &mut books);
+        let r = run(
+            &[stock("AAA", &ca)],
+            now,
+            &sent,
+            &mut books,
+            &Risks::default(),
+        );
         // ZZZ still counts as open, but one open trade leaves room.
         let entry = r
             .stages
@@ -463,7 +487,13 @@ mod tests {
             .map(|(n, c)| stock(n, c))
             .collect();
         let now = 136 * DAY_MS;
-        let r = run(&stocks, now, &BTreeSet::new(), &mut books());
+        let r = run(
+            &stocks,
+            now,
+            &BTreeSet::new(),
+            &mut books(),
+            &Risks::default(),
+        );
         let marks: Vec<&String> = r.keys.iter().filter(|k| k.ends_with("|conta")).collect();
         assert_eq!(marks.len(), 3, "{marks:?}");
         let last = r

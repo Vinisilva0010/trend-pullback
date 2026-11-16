@@ -72,6 +72,7 @@ mod ipo;
 mod markets;
 mod mood;
 mod refine_study;
+mod risk;
 mod runner_study;
 mod smc_live;
 mod stock_trades;
@@ -3694,7 +3695,7 @@ const EVENT_WARN_MINUTES: i64 = 90;
 const NEWS_MEMORY: usize = 3000;
 
 /// Non-empty, non-comment lines of a config file (empty when missing).
-fn config_lines(path: &str) -> Vec<String> {
+pub(crate) fn config_lines(path: &str) -> Vec<String> {
     std::fs::read_to_string(path)
         .unwrap_or_default()
         .lines()
@@ -3705,7 +3706,7 @@ fn config_lines(path: &str) -> Vec<String> {
 }
 
 /// Scheduled events from `config/events.csv` lines (date, UTC time, description).
-fn parse_events(lines: &[String]) -> Vec<(DateTime<chrono::Utc>, String)> {
+pub(crate) fn parse_events(lines: &[String]) -> Vec<(DateTime<chrono::Utc>, String)> {
     lines
         .iter()
         .filter_map(|l| {

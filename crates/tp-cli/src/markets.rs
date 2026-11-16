@@ -16,6 +16,7 @@ use tp_data::yahoo::{Interval, fetch_chart};
 
 use super::{CliResult, held_out_start, parse_env, send_telegram};
 use crate::ipo;
+use crate::risk;
 use crate::stock_trades::{self, Stock};
 use crate::stock_watch;
 use crate::stormer_live::{Chart, Role, items_json};
@@ -403,7 +404,29 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             charts: c,
         })
         .collect();
-    let found = stock_trades::run(&stocks, now, &sent, &mut books);
+    // Risks: earnings dates of the next two weeks and the economic agenda.
+    let us_symbols: BTreeSet<String> = stocks.iter().map(|s| s.symbol.to_owned()).collect();
+    let mut reports = Vec::new();
+    for day in risk::weekdays(risk::brasilia_day(now), risk::EARNINGS_DAYS) {
+        match tp_data::earnings::fetch_day(day).await {
+            Ok(rows) => reports.extend(rows),
+            Err(e) => eprintln!("warning: earnings {day}: {e}"),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+    let risks = risk::Risks {
+        agenda: crate::parse_events(&crate::config_lines("config/events.csv")),
+        ..Default::default()
+    }
+    .with_earnings(&reports, &us_symbols);
+    for (symbol, (day, when)) in &risks.earnings {
+        println!(
+            "balanço: {symbol} em {} ({})",
+            day.format("%d/%m"),
+            when.pt()
+        );
+    }
+    let found = stock_trades::run(&stocks, now, &sent, &mut books, &risks);
     let mut events = Vec::new();
     for (name, stage) in found.stages {
         if first_run && !stage.key.ends_with("|sinal") {
@@ -417,6 +440,22 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
             kind: "stormer",
             text: stage.message,
             notify: stage.notify,
+            market: "acoes",
+            ..Default::default()
+        });
+    }
+    let mut risk_keys = Vec::new();
+    for (name, stage) in risk::earnings_alerts(&found.watch, &risks, now, &sent) {
+        println!("{}", stage.message);
+        risk_keys.push(stage.key.clone());
+        events.push(dashboard::Event {
+            id: stage.key,
+            ms: now,
+            asset: name,
+            kind: "risco",
+            text: stage.message,
+            notify: stage.notify,
+            level: 3,
             market: "acoes",
             ..Default::default()
         });
@@ -504,12 +543,18 @@ pub async fn cmd_markets(data_dir: &Path, dry_run: bool, notify: bool) -> CliRes
         out
     });
     smc_live::save(&live_dir, &books, "", &trades)?;
-    if !found.keys.is_empty() {
+    let stock_keys: Vec<&String> = found.keys.iter().chain(&risk_keys).collect();
+    if !stock_keys.is_empty() {
         let mut f = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&sent_path)?;
-        std::io::Write::write_all(&mut f, (found.keys.join("\n") + "\n").as_bytes())?;
+        let text = stock_keys
+            .iter()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::io::Write::write_all(&mut f, (text + "\n").as_bytes())?;
     }
     if !ipo_keys.is_empty() {
         let mut f = std::fs::OpenOptions::new()
