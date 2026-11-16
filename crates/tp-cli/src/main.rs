@@ -4415,8 +4415,9 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         .filter_map(|l| serde_json::from_str(l).ok())
         .filter_map(|v| capitulation_live::Watched::from_json(&v))
         .collect();
-    let (cap_alerts, cap_new) =
+    let (mut cap_alerts, cap_new) =
         capitulation_live::check(&dailies, &fear_readings, now_ms, &cap_sent, &cap_watched);
+    cap_alerts.extend(cycle_view::turn_alerts(&dailies, now_ms, &cap_sent));
     let mut cap_keys = String::new();
     for a in cap_alerts {
         println!("{}", a.text);

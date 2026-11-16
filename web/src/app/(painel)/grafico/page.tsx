@@ -76,7 +76,7 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
           <b className="font-black text-up">Verde</b>: alvo.
         </li>
         <li>
-          <b className="font-black text-[#1f5fd1]">Azul tracejada</b>: o preço que confirma uma varrida que ainda está esperando.
+          <b className="font-black text-[#0e7c86]">Azul-esverdeada tracejada</b>: o preço que confirma uma varrida que ainda está esperando.
         </li>
         <li>
           <b className="font-black">Preta pontilhada</b>: liquidez mais perto (topo ou fundo ainda não tocado, onde ficam stops)
@@ -88,7 +88,7 @@ export default async function ChartPage({ searchParams }: { searchParams: Promis
         <li>
           <b className="font-black text-[#7a2fb5]">Roxa tracejada</b>: até onde as quedas costumam ir a partir do topo (metade, 3 em 4, 9 em 10).{" "}
           <b className="font-black text-[#b5531f]">Laranja tracejada</b>: até onde os repiques no meio de uma queda costumam subir antes de voltar a cair.{" "}
-          <b className="font-black text-up">Verde tracejada</b>: acima dela, o repique virou alta na maioria das vezes. <b className="font-black">Preta</b>: topo da queda.
+          <b className="font-black text-up">Verde tracejada</b>: acima dela, o repique virou alta na maioria das vezes. <b className="font-black">Preta</b>: topo da queda. <b className="font-black text-[#0e7c86]">Azul-esverdeada tracejada</b>: fundo anterior; a queda parar acima dele forma um fundo mais alto.
         </li>
         <li>Setas marcam as varridas; círculo é a entrada; quadrado é a saída (verde no alvo, vermelho no stop).</li>
       </ul>

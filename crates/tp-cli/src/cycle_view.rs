@@ -4,11 +4,14 @@
 //! same in plain sentences. History of the asset itself on daily candles;
 //! not a buy or sell signal.
 
-use chrono::DateTime;
+use std::collections::{BTreeMap, BTreeSet};
+
+use chrono::{DateTime, Datelike, Weekday};
 use serde_json::{Value, json};
 use tp_core::cycle::{Bounce, Now, bounces, falls, now, quantile, zigzag};
 use tp_core::intraday::Bar;
 
+use super::capitulation_live::Alert;
 use super::{count_f64, fmt_pt};
 
 /// A fall or a rise counts from 15%.
@@ -172,16 +175,162 @@ pub fn cycle_json(name: &str, bars: &[Bar]) -> Option<Value> {
     if bottom.is_some() {
         lines.push(json!({ "price": top, "title": "Topo da queda", "kind": "top" }));
     }
+    // The bottom before this fall: staying above it makes a higher low.
+    if let (Some((low, _)), Some(prev)) = (
+        bottom,
+        swings.iter().rev().find(|s| !s.top && s.index < top_i),
+    ) {
+        lines.push(json!({ "price": prev.price, "title": "Fundo anterior", "kind": "prevlow" }));
+        let gap = (low / prev.price - 1.0) * 100.0;
+        let side = if gap >= 0.0 {
+            format!(
+                "está {} acima dele. Se a queda parar aí, forma um fundo mais alto, o primeiro sinal de virada; a virada se confirma quando uma semana fechar acima do topo da queda ({}).",
+                whole(gap / 100.0),
+                fmt_pt(top)
+            )
+        } else {
+            format!(
+                "já está {} abaixo dele: a queda segue fazendo fundos mais baixos, o desenho de tendência de baixa.",
+                whole(-gap / 100.0)
+            )
+        };
+        text.push(format!(
+            "O fundo anterior foi {} ({}). O fundo desta queda, {}, {side}",
+            fmt_pt(prev.price),
+            date(bars, prev.index),
+            fmt_pt(low),
+        ));
+    }
     text.push(format!(
         "É o histórico do próprio {name} em candles diários, para ajudar a ler o gráfico. Não é sinal de compra ou venda e não passou por teste de resultado."
     ));
     Some(json!({ "state": code, "lines": lines, "text": text }))
 }
 
+/// Alerts of a higher low on the daily candles that have closed: when a
+/// bottom confirmed by a 15% rise is above the bottom before it, and then
+/// when a week closes (Sunday's close) above the top between them. A
+/// chart reading with no test behind it.
+#[must_use]
+pub fn turn_alerts(
+    dailies: &BTreeMap<String, Vec<Bar>>,
+    now_ms: i64,
+    sent: &BTreeSet<String>,
+) -> Vec<Alert> {
+    const DAY_MS: i64 = 24 * 3600 * 1000;
+    let mut out = Vec::new();
+    for (asset, all) in dailies {
+        let closed: Vec<Bar> = all
+            .iter()
+            .filter(|b| b.open_time_ms + DAY_MS <= now_ms)
+            .copied()
+            .collect();
+        let Some(last) = closed.last() else {
+            continue;
+        };
+        let (swings, _) = zigzag(&closed, THRESHOLD);
+        let bottoms: Vec<usize> = (0..swings.len()).filter(|i| !swings[*i].top).collect();
+        let [.., b1, b2] = bottoms[..] else {
+            continue;
+        };
+        let (old, new) = (swings[b1], swings[b2]);
+        let Some(top) = swings[b1..b2].iter().find(|s| s.top) else {
+            continue;
+        };
+        // Only a recent bottom, so the first run does not repeat old history.
+        if new.price <= old.price || closed.len() - 1 - new.index > 60 {
+            continue;
+        }
+        let ms = closed[new.index].open_time_ms;
+        let key = format!("{asset}|fundo-mais-alto|{ms}");
+        if !sent.contains(&key) {
+            out.push(Alert {
+                key,
+                asset: asset.clone(),
+                kind: "ciclo",
+                text: format!(
+                    "FUNDO MAIS ALTO NO {asset} (leitura do gráfico, sem teste).\nO {asset} subiu 15% a partir do fundo de {} ({}), que ficou {} acima do fundo anterior, {} ({}). É o primeiro sinal de virada de uma queda.\nA virada se confirma quando uma semana fechar acima do topo da queda, {}. Se o preço voltar abaixo de {}, o sinal cai.",
+                    fmt_pt(new.price),
+                    date(&closed, new.index),
+                    whole(new.price / old.price - 1.0),
+                    fmt_pt(old.price),
+                    date(&closed, old.index),
+                    fmt_pt(top.price),
+                    fmt_pt(new.price),
+                ),
+            });
+        }
+        let weekly_close = DateTime::from_timestamp_millis(last.open_time_ms)
+            .is_some_and(|d| d.weekday() == Weekday::Sun);
+        let key = format!("{asset}|virada|{ms}");
+        if weekly_close && last.close > top.price && !sent.contains(&key) {
+            out.push(Alert {
+                key,
+                asset: asset.clone(),
+                kind: "ciclo",
+                text: format!(
+                    "VIRADA CONFIRMADA NO {asset} (leitura do gráfico, sem teste).\nA semana fechou em {}, acima do topo da queda ({}), depois de um fundo mais alto ({} contra {} do fundo anterior). É o desenho de começo de tendência de alta: fundo mais alto e topo mais alto.\nA entrada testada do painel continua sendo o rompimento da máxima de 20 dias.",
+                    fmt_pt(last.close),
+                    fmt_pt(top.price),
+                    fmt_pt(new.price),
+                    fmt_pt(old.price),
+                ),
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    fn day(d: i64, high: f64, low: f64) -> Bar {
+        Bar {
+            open_time_ms: d * 86_400_000,
+            open: low,
+            high,
+            low,
+            close: f64::midpoint(high, low),
+            volume: 1.0,
+        }
+    }
+
+    #[test]
+    fn a_higher_low_and_then_a_weekly_close_above_the_top_alert() {
+        // Bottom at 70, top at 100, higher bottom at 80, rise to 95.
+        // 1970-01-04 (day 3) was a Sunday: day 3 + 7k are Sundays.
+        let mut bars = vec![
+            day(0, 120.0, 118.0),
+            day(1, 80.0, 70.0),
+            day(2, 100.0, 95.0),
+        ];
+        bars.extend((3..9).map(|d| day(d, 90.0, 85.0)));
+        bars.push(day(9, 84.0, 80.0));
+        bars.push(day(10, 95.0, 92.0));
+        let dailies: BTreeMap<String, Vec<Bar>> = [("BTC".to_owned(), bars.clone())].into();
+        let now = 11 * 86_400_000;
+        let a = turn_alerts(&dailies, now, &BTreeSet::new());
+        assert_eq!(a.len(), 1, "{a:?}");
+        assert!(
+            a[0].text.starts_with("FUNDO MAIS ALTO NO BTC"),
+            "{}",
+            a[0].text
+        );
+        // Sunday (day 17) closing above 100.
+        bars.extend((11..17).map(|d| day(d, 98.0, 94.0)));
+        bars.push(day(17, 106.0, 102.0));
+        let dailies: BTreeMap<String, Vec<Bar>> = [("BTC".to_owned(), bars)].into();
+        let sent: BTreeSet<String> = a.iter().map(|x| x.key.clone()).collect();
+        let v = turn_alerts(&dailies, 18 * 86_400_000, &sent);
+        assert_eq!(v.len(), 1, "{v:?}");
+        assert!(
+            v[0].text.starts_with("VIRADA CONFIRMADA NO BTC"),
+            "{}",
+            v[0].text
+        );
+    }
 
     fn bar(day: i64, high: f64, low: f64, close: f64) -> Bar {
         Bar {

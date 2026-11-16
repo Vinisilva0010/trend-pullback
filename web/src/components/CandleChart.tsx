@@ -58,6 +58,7 @@ const LIGHT = {
   bounce: "#b5531f",
   turn: "#0b8f5a",
   top: "#000000",
+  prevlow: "#0e7c86",
 };
 
 /** Black background: brighter colors so lines and labels stand out. */
@@ -71,6 +72,7 @@ const DARK: typeof LIGHT = {
   bounce: "#ff9a4d",
   turn: "#22d38b",
   top: "#ffffff",
+  prevlow: "#3fd0d9",
 };
 
 const THEME = {

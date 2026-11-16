@@ -6,10 +6,10 @@ import { LEAN_BADGE } from "@/components/TopNews";
 
 const TYPES = [
   { key: "importantes", label: "Importantes", test: (e: AppEvent) => e.level >= 3 },
-  { key: "trades", label: "Trades", test: (e: AppEvent) => ["smc", "stormer", "capitulacao", "reguas"].includes(e.kind) },
+  { key: "trades", label: "Trades", test: (e: AppEvent) => ["smc", "stormer", "capitulacao", "reguas", "ciclo"].includes(e.kind) },
   { key: "ipo", label: "IPOs", test: (e: AppEvent) => e.kind === "ipo" },
   { key: "noticia", label: "Notícias", test: (e: AppEvent) => e.kind === "noticia" },
-  { key: "mercado", label: "Níveis e mercado", test: (e: AppEvent) => !["smc", "stormer", "noticia", "ipo", "capitulacao", "reguas"].includes(e.kind) },
+  { key: "mercado", label: "Níveis e mercado", test: (e: AppEvent) => !["smc", "stormer", "noticia", "ipo", "capitulacao", "reguas", "ciclo"].includes(e.kind) },
   { key: "tudo", label: "Tudo", test: () => true },
 ] as const;
 
@@ -28,6 +28,7 @@ const KIND_LABEL: Record<string, string> = {
   ipo: "IPO",
   capitulacao: "Capitulação",
   reguas: "Três réguas",
+  ciclo: "Ciclo",
   noticia: "Notícia",
   mercado: "Mercado",
   nivel: "Nível",
@@ -40,6 +41,7 @@ const KIND_STYLE: Record<string, string> = {
   ipo: "bg-accent text-ink",
   capitulacao: "bg-accent text-ink",
   reguas: "bg-accent text-ink",
+  ciclo: "bg-accent text-ink",
   smc: "bg-panel text-ink border-2 border-ink",
   noticia: "bg-ink text-paper",
 };

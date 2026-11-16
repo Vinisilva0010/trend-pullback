@@ -128,7 +128,7 @@ export const StormerSchema = z.object({
 export const CycleLineSchema = z.object({
   price: num,
   title: z.string().max(60),
-  kind: z.enum(["fall", "bounce", "turn", "top"]),
+  kind: z.enum(["fall", "bounce", "turn", "top", "prevlow"]),
 });
 
 /** History of the asset's falls and bounces, for reading the chart. */
