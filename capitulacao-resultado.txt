@@ -1,60 +1,66 @@
-Compra na capitulação, em regras fixas. Cada compra é medida 7, 30, 90 e 365 dias depois, já com 0,2% de custo, e comparada com comprar a mesma moeda em qualquer dia do mesmo período. Um caso por moeda a cada 30 dias. Moedas cujo histórico acaba (saíram da corretora) ficam com o último preço, então as que morreram contam como as perdas que foram.
+Compra na capitulação, em regras fixas. Cada compra é medida 7, 30, 90 e 365 dias depois, já com 0,2% de custo, e comparada com o dia típico da mesma moeda no mesmo período (a mediana de comprar em qualquer dia). Um caso por moeda a cada 30 dias. Moedas cujo histórico acaba (saíram da corretora) ficam com o último preço, então as que morreram contam como as perdas que foram.
 Índice de Medo e Ganância (alternative.me): 3207 dias, de 01/02/2018 a 16/11/2026.
 
 PARTE 1: a barra de capitulação, no BTC, ETH, SOL e nas outras 205 moedas do universo (cada uma só nos meses em que estava nele).
 
  Pavio de capitulação: o dia cai 15% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte
    366 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 21,7% abaixo da compra; em 1 de cada 10 casos, mais de 45,5%.
-   7 dias: média +3,1%, caso típico +0,9%, subiu em 52% dos casos. Acima de comprar em qualquer dia: -48,7% até out/2024 (306 casos) e -5,1% depois (60 casos).
-   30 dias: média +1,3%, caso típico -5,9%, subiu em 39% dos casos. Acima de comprar em qualquer dia: -27,9% até out/2024 (306 casos) e -8,9% depois (60 casos).
-   90 dias: média +15,5%, caso típico -7,4%, subiu em 42% dos casos. Acima de comprar em qualquer dia: -12,7% até out/2024 (306 casos) e -16,5% depois (59 casos).
-   365 dias: média +122,8%, caso típico -38,8%, subiu em 36% dos casos. Acima de comprar em qualquer dia: +20,3% até out/2024 (306 casos) e +3,8% depois (48 casos).
-   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+   Os casos caíram em 116 dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.
+   7 dias: caso típico +0,7%, subiu em 52% dos casos. Ganhou do dia típico da mesma moeda em 58% dos casos até out/2024 (306 casos) e em 37% depois (60 casos).
+   30 dias: caso típico -6,1%, subiu em 39% dos casos. Ganhou do dia típico da mesma moeda em 49% dos casos até out/2024 (306 casos) e em 33% depois (60 casos).
+   90 dias: caso típico -7,4%, subiu em 42% dos casos. Ganhou do dia típico da mesma moeda em 57% dos casos até out/2024 (306 casos) e em 39% depois (59 casos).
+   365 dias: caso típico -38,8%, subiu em 36% dos casos. Ganhou do dia típico da mesma moeda em 49% dos casos até out/2024 (306 casos) e em 54% depois (48 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos).
 
  Pavio de capitulação: o dia cai 15% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte — só com o Medo e Ganância em 20 ou menos no dia
    100 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 21,9% abaixo da compra; em 1 de cada 10 casos, mais de 37,6%.
-   7 dias: média +5,9%, caso típico +4,9%, subiu em 64% dos casos. Acima de comprar em qualquer dia: -82,7% até out/2024 (90 casos) e -6,4% depois (10 casos).
-   30 dias: média -2,4%, caso típico -5,5%, subiu em 43% dos casos. Acima de comprar em qualquer dia: -49,8% até out/2024 (90 casos) e -12,3% depois (10 casos).
-   90 dias: média +29,3%, caso típico +21,6%, subiu em 67% dos casos. Acima de comprar em qualquer dia: -7,2% até out/2024 (90 casos) e -3,3% depois (10 casos).
-   365 dias: média +189,0%, caso típico -33,8%, subiu em 36% dos casos. Acima de comprar em qualquer dia: +60,9% até out/2024 (90 casos) e -1,3% depois (1 casos).
-   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+   Os casos caíram em 30 dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.
+   7 dias: caso típico +4,8%, subiu em 64% dos casos. Ganhou do dia típico da mesma moeda em 71% dos casos até out/2024 (90 casos) e em 30% depois (10 casos).
+   30 dias: caso típico -5,7%, subiu em 43% dos casos. Ganhou do dia típico da mesma moeda em 56% dos casos até out/2024 (90 casos) e em 30% depois (10 casos).
+   90 dias: caso típico +21,5%, subiu em 67% dos casos. Ganhou do dia típico da mesma moeda em 84% dos casos até out/2024 (90 casos) e em 80% depois (10 casos). GANHOU COM PROVA.
+   365 dias: caso típico -33,8%, subiu em 36% dos casos. Ganhou do dia típico da mesma moeda em 51% dos casos até out/2024 (90 casos) e em 0% depois (1 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos).
 
  Pavio de capitulação: o dia cai 25% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte
    131 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 22,7% abaixo da compra; em 1 de cada 10 casos, mais de 40,4%.
-   7 dias: média +5,6%, caso típico +0,5%, subiu em 53% dos casos. Acima de comprar em qualquer dia: -32,2% até out/2024 (102 casos) e -4,2% depois (29 casos).
-   30 dias: média +10,0%, caso típico -4,2%, subiu em 44% dos casos. Acima de comprar em qualquer dia: -13,0% até out/2024 (102 casos) e -6,8% depois (29 casos).
-   90 dias: média +36,6%, caso típico -5,9%, subiu em 45% dos casos. Acima de comprar em qualquer dia: +5,2% até out/2024 (102 casos) e -12,1% depois (28 casos).
-   365 dias: média +108,1%, caso típico -43,9%, subiu em 36% dos casos. Acima de comprar em qualquer dia: -13,2% até out/2024 (102 casos) e +8,7% depois (27 casos).
-   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+   Os casos caíram em 36 dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.
+   7 dias: caso típico +0,5%, subiu em 53% dos casos. Ganhou do dia típico da mesma moeda em 65% dos casos até out/2024 (102 casos) e em 38% depois (29 casos).
+   30 dias: caso típico -4,2%, subiu em 44% dos casos. Ganhou do dia típico da mesma moeda em 51% dos casos até out/2024 (102 casos) e em 34% depois (29 casos).
+   90 dias: caso típico -6,1%, subiu em 45% dos casos. Ganhou do dia típico da mesma moeda em 56% dos casos até out/2024 (102 casos) e em 39% depois (28 casos).
+   365 dias: caso típico -43,9%, subiu em 36% dos casos. Ganhou do dia típico da mesma moeda em 51% dos casos até out/2024 (102 casos) e em 70% depois (27 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos).
 
  Pavio de capitulação: o dia cai 25% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte — só com o Medo e Ganância em 20 ou menos no dia
    26 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 25,7% abaixo da compra; em 1 de cada 10 casos, mais de 39,9%.
-   7 dias: média +16,7%, caso típico +15,3%, subiu em 81% dos casos. Acima de comprar em qualquer dia: +16,8% até out/2024 (25 casos) e +3,8% depois (1 casos).
-   30 dias: média +3,8%, caso típico +10,6%, subiu em 54% dos casos. Acima de comprar em qualquer dia: -1,0% até out/2024 (25 casos) e -1,1% depois (1 casos).
-   90 dias: média +65,3%, caso típico +58,4%, subiu em 92% dos casos. Acima de comprar em qualquer dia: +35,8% até out/2024 (25 casos) e +105,3% depois (1 casos).
-   365 dias: média +478,6%, caso típico -14,0%, subiu em 48% dos casos. Acima de comprar em qualquer dia: +289,4% até out/2024 (25 casos) e +0,0% depois (0 casos).
-   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+   Os casos caíram em 6 dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.
+   7 dias: caso típico +14,1%, subiu em 81% dos casos. Ganhou do dia típico da mesma moeda em 80% dos casos até out/2024 (25 casos) e em 100% depois (1 casos).
+   30 dias: caso típico +10,2%, subiu em 54% dos casos. Ganhou do dia típico da mesma moeda em 52% dos casos até out/2024 (25 casos) e em 100% depois (1 casos).
+   90 dias: caso típico +56,7%, subiu em 92% dos casos. Ganhou do dia típico da mesma moeda em 96% dos casos até out/2024 (25 casos) e em 100% depois (1 casos).
+   365 dias: caso típico -14,0%, subiu em 48% dos casos. Ganhou do dia típico da mesma moeda em 64% dos casos até out/2024 (25 casos) e em 0% depois (0 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos).
 
  Queda e recuperação: um dia fecha 12% ou mais em queda e o dia seguinte é verde e devolve 60% ou mais da queda; compra na abertura depois dele
    125 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 23,8% abaixo da compra; em 1 de cada 10 casos, mais de 48,8%.
-   7 dias: média +0,0%, caso típico -1,6%, subiu em 45% dos casos. Acima de comprar em qualquer dia: -84,4% até out/2024 (99 casos) e +4,9% depois (26 casos).
-   30 dias: média -3,8%, caso típico -11,1%, subiu em 23% dos casos. Acima de comprar em qualquer dia: -49,5% até out/2024 (99 casos) e -11,4% depois (26 casos).
-   90 dias: média +11,8%, caso típico +0,5%, subiu em 51% dos casos. Acima de comprar em qualquer dia: -30,6% até out/2024 (99 casos) e +4,6% depois (26 casos).
-   365 dias: média +87,8%, caso típico -31,2%, subiu em 30% dos casos. Acima de comprar em qualquer dia: -33,4% até out/2024 (99 casos) e +1,7% depois (7 casos).
-   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+   Os casos caíram em 53 dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.
+   7 dias: caso típico -1,6%, subiu em 45% dos casos. Ganhou do dia típico da mesma moeda em 39% dos casos até out/2024 (99 casos) e em 77% depois (26 casos).
+   30 dias: caso típico -11,1%, subiu em 23% dos casos. Ganhou do dia típico da mesma moeda em 36% dos casos até out/2024 (99 casos) e em 23% depois (26 casos).
+   90 dias: caso típico +0,5%, subiu em 51% dos casos. Ganhou do dia típico da mesma moeda em 51% dos casos até out/2024 (99 casos) e em 77% depois (26 casos).
+   365 dias: caso típico -31,8%, subiu em 30% dos casos. Ganhou do dia típico da mesma moeda em 42% dos casos até out/2024 (99 casos) e em 43% depois (7 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos).
 
  Queda e recuperação: um dia fecha 12% ou mais em queda e o dia seguinte é verde e devolve 60% ou mais da queda; compra na abertura depois dele — só com o Medo e Ganância em 20 ou menos no dia
    42 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 26,0% abaixo da compra; em 1 de cada 10 casos, mais de 48,8%.
-   7 dias: média +1,9%, caso típico +1,6%, subiu em 67% dos casos. Acima de comprar em qualquer dia: -157,8% até out/2024 (26 casos) e +9,0% depois (16 casos).
-   30 dias: média -11,7%, caso típico -14,3%, subiu em 14% dos casos. Acima de comprar em qualquer dia: -97,3% até out/2024 (26 casos) e -5,7% depois (16 casos).
-   90 dias: média +18,2%, caso típico +11,0%, subiu em 69% dos casos. Acima de comprar em qualquer dia: -40,1% até out/2024 (26 casos) e +21,1% depois (16 casos).
-   365 dias: média +158,6%, caso típico -58,6%, subiu em 23% dos casos. Acima de comprar em qualquer dia: +22,5% até out/2024 (26 casos) e +0,0% depois (0 casos).
-   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+   Os casos caíram em 12 dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.
+   7 dias: caso típico +1,4%, subiu em 67% dos casos. Ganhou do dia típico da mesma moeda em 54% dos casos até out/2024 (26 casos) e em 94% depois (16 casos).
+   30 dias: caso típico -14,7%, subiu em 14% dos casos. Ganhou do dia típico da mesma moeda em 31% dos casos até out/2024 (26 casos) e em 25% depois (16 casos).
+   90 dias: caso típico +10,7%, subiu em 69% dos casos. Ganhou do dia típico da mesma moeda em 62% dos casos até out/2024 (26 casos) e em 100% depois (16 casos).
+   365 dias: caso típico -59,0%, subiu em 23% dos casos. Ganhou do dia típico da mesma moeda em 35% dos casos até out/2024 (26 casos) e em 0% depois (0 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos).
 
 PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
 
  Medo e Ganância em 20 ou menos
-   BTC: 38 casos. Acima de comprar em qualquer dia: -2,5% em 30 dias (38 casos) e -18,3% em 1 ano (31 casos).
+   BTC: 38 casos. Ganhou do dia típico do BTC em 17 de 38 casos em 30 dias e em 12 de 31 em 1 ano.
      03/02/2018: 30 dias +28,9%, 1 ano -61,2%; nos 30 dias seguintes o preço chegou a 32,4% abaixo da compra
      30/03/2018: 30 dias +32,6%, 1 ano -42,3%; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
      28/05/2018: 30 dias -16,6%, 1 ano +18,6%; nos 30 dias seguintes o preço chegou a 21,7% abaixo da compra
@@ -93,7 +99,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      26/03/2026: 30 dias +8,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,9% abaixo da compra
      04/06/2026: 30 dias -1,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,9% abaixo da compra
      09/07/2026: 30 dias +4,1%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 0,9% abaixo da compra
-   ETH: 38 casos. Acima de comprar em qualquer dia: -5,2% em 30 dias (38 casos) e -54,3% em 1 ano (31 casos).
+   ETH: 38 casos. Ganhou do dia típico do ETH em 16 de 38 casos em 30 dias e em 11 de 31 em 1 ano.
      03/02/2018: 30 dias -8,2%, 1 ano -88,6%; nos 30 dias seguintes o preço chegou a 38,3% abaixo da compra
      30/03/2018: 30 dias +79,8%, 1 ano -63,1%; nos 30 dias seguintes o preço chegou a 7,0% abaixo da compra
      28/05/2018: 30 dias -22,8%, 1 ano -52,7%; nos 30 dias seguintes o preço chegou a 26,5% abaixo da compra
@@ -132,7 +138,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      26/03/2026: 30 dias +6,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 10,6% abaixo da compra
      04/06/2026: 30 dias -2,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 17,0% abaixo da compra
      09/07/2026: 30 dias +9,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 1,2% abaixo da compra
-   SOL: 23 casos. Acima de comprar em qualquer dia: -13,8% em 30 dias (23 casos) e -882,4% em 1 ano (16 casos).
+   SOL: 23 casos. Ganhou do dia típico do SOL em 9 de 23 casos em 30 dias e em 3 de 16 em 1 ano.
      17/05/2021: 30 dias -15,4%, 1 ano +21,5%; nos 30 dias seguintes o preço chegou a 59,2% abaixo da compra
      23/06/2021: 30 dias +5,6%, 1 ano +41,3%; nos 30 dias seguintes o preço chegou a 18,0% abaixo da compra
      01/10/2021: 30 dias +43,0%, 1 ano -77,3%; nos 30 dias seguintes o preço chegou a 2,7% abaixo da compra
@@ -158,7 +164,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      09/07/2026: 30 dias -2,5%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
 
  Medo e Ganância em 10 ou menos
-   BTC: 14 casos. Acima de comprar em qualquer dia: +0,1% em 30 dias (14 casos) e +9,7% em 1 ano (10 casos).
+   BTC: 14 casos. Ganhou do dia típico do BTC em 5 de 14 casos em 30 dias e em 3 de 10 em 1 ano.
      07/02/2018: 30 dias +20,3%, 1 ano -55,8%; nos 30 dias seguintes o preço chegou a 6,6% abaixo da compra
      26/11/2018: 30 dias -7,8%, 1 ano +74,8%; nos 30 dias seguintes o preço chegou a 22,8% abaixo da compra
      23/08/2019: 30 dias -0,9%, 1 ano +15,3%; nos 30 dias seguintes o preço chegou a 7,7% abaixo da compra
@@ -173,7 +179,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      07/02/2026: 30 dias -3,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 11,4% abaixo da compra
      10/03/2026: 30 dias +4,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 5,0% abaixo da compra
      09/06/2026: 30 dias +0,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,4% abaixo da compra
-   ETH: 14 casos. Acima de comprar em qualquer dia: -3,4% em 30 dias (14 casos) e +1,5% em 1 ano (10 casos).
+   ETH: 14 casos. Ganhou do dia típico do ETH em 7 de 14 casos em 30 dias e em 4 de 10 em 1 ano.
      07/02/2018: 30 dias -7,4%, 1 ano -86,8%; nos 30 dias seguintes o preço chegou a 12,3% abaixo da compra
      26/11/2018: 30 dias +8,8%, 1 ano +24,1%; nos 30 dias seguintes o preço chegou a 31,1% abaixo da compra
      23/08/2019: 30 dias +10,7%, 1 ano +107,4%; nos 30 dias seguintes o preço chegou a 14,1% abaixo da compra
@@ -188,7 +194,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      07/02/2026: 30 dias -3,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 12,8% abaixo da compra
      10/03/2026: 30 dias +9,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 2,7% abaixo da compra
      09/06/2026: 30 dias +3,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 10,6% abaixo da compra
-   SOL: 10 casos. Acima de comprar em qualquer dia: +3,6% em 30 dias (10 casos) e -846,1% em 1 ano (6 casos).
+   SOL: 10 casos. Ganhou do dia típico do SOL em 3 de 10 casos em 30 dias e em 1 de 6 em 1 ano.
      25/05/2021: 30 dias -1,1%, 1 ano +52,5%; nos 30 dias seguintes o preço chegou a 35,8% abaixo da compra
      22/07/2021: 30 dias +176,1%, 1 ano +51,6%; nos 30 dias seguintes o preço chegou a 3,0% abaixo da compra
      09/01/2022: 30 dias -20,4%, 1 ano -88,8%; nos 30 dias seguintes o preço chegou a 43,1% abaixo da compra
@@ -201,7 +207,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      09/06/2026: 30 dias +16,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 6,7% abaixo da compra
 
  Preço 50% ou mais abaixo da máxima histórica
-   BTC: 53 casos. Acima de comprar em qualquer dia: -1,5% em 30 dias (53 casos) e +23,7% em 1 ano (49 casos).
+   BTC: 53 casos. Ganhou do dia típico do BTC em 29 de 53 casos em 30 dias e em 26 de 49 em 1 ano.
      02/02/2018: 30 dias +24,6%, 1 ano -62,2%; nos 30 dias seguintes o preço chegou a 35,0% abaixo da compra
      09/03/2018: 30 dias -24,5%, 1 ano -57,7%; nos 30 dias seguintes o preço chegou a 30,6% abaixo da compra
      09/04/2018: 30 dias +32,6%, 1 ano -26,7%; nos 30 dias seguintes o preço chegou a 5,7% abaixo da compra
@@ -255,7 +261,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      06/06/2026: 30 dias +4,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 5,3% abaixo da compra
      09/07/2026: 30 dias +4,1%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 0,9% abaixo da compra
      15/08/2026: 30 dias +23,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 0,5% abaixo da compra
-   ETH: 76 casos. Acima de comprar em qualquer dia: +0,1% em 30 dias (75 casos) e +41,1% em 1 ano (67 casos).
+   ETH: 76 casos. Ganhou do dia típico do ETH em 43 de 75 casos em 30 dias e em 42 de 67 em 1 ano.
      06/02/2018: 30 dias -0,6%, 1 ano -85,2%; nos 30 dias seguintes o preço chegou a 18,3% abaixo da compra
      09/03/2018: 30 dias -42,6%, 1 ano -80,5%; nos 30 dias seguintes o preço chegou a 48,7% abaixo da compra
      09/04/2018: 30 dias +87,5%, 1 ano -56,6%; nos 30 dias seguintes o preço chegou a 3,3% abaixo da compra
@@ -332,7 +338,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      06/08/2026: 30 dias +29,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 2,9% abaixo da compra
      10/09/2026: 30 dias +1,4%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 4,4% abaixo da compra
      13/10/2026: 30 dias ainda sem dado, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 11,2% abaixo da compra
-   SOL: 53 casos. Acima de comprar em qualquer dia: -3,6% em 30 dias (52 casos) e +133,9% em 1 ano (41 casos).
+   SOL: 53 casos. Ganhou do dia típico do SOL em 26 de 52 casos em 30 dias e em 23 de 41 em 1 ano.
      09/09/2020: 30 dias +2,4%, 1 ano +7513,3%; nos 30 dias seguintes o preço chegou a 18,5% abaixo da compra
      11/10/2020: 30 dias -5,7%, 1 ano +5934,9%; nos 30 dias seguintes o preço chegou a 46,9% abaixo da compra
      11/11/2020: 30 dias -36,7%, 1 ano +10196,3%; nos 30 dias seguintes o preço chegou a 33,8% abaixo da compra
@@ -388,7 +394,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      21/10/2026: 30 dias ainda sem dado, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 13,3% abaixo da compra
 
  As três juntas: Medo e Ganância em 20 ou menos, 50% ou mais abaixo da máxima e 1 ano ou mais desde ela
-   BTC: 9 casos. Acima de comprar em qualquer dia: -4,6% em 30 dias (9 casos) e +138,5% em 1 ano (9 casos).
+   BTC: 9 casos. Ganhou do dia típico do BTC em 4 de 9 casos em 30 dias e em 7 de 9 em 1 ano.
      18/12/2018: 30 dias +2,9%, 1 ano +107,2%; nos 30 dias seguintes o preço chegou a 2,4% abaixo da compra
      01/02/2019: 30 dias +10,7%, 1 ano +173,1%; nos 30 dias seguintes o preço chegou a 1,8% abaixo da compra
      18/07/2019: 30 dias +5,5%, 1 ano -5,5%; nos 30 dias seguintes o preço chegou a 5,2% abaixo da compra
@@ -398,7 +404,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      10/03/2020: 30 dias -8,4%, 1 ano +604,1%; nos 30 dias seguintes o preço chegou a 52,3% abaixo da compra
      11/04/2020: 30 dias +24,6%, 1 ano +774,6%; nos 30 dias seguintes o preço chegou a 5,7% abaixo da compra
      18/11/2022: 30 dias +0,1%, 1 ano +118,9%; nos 30 dias seguintes o preço chegou a 7,3% abaixo da compra
-   ETH: 10 casos. Acima de comprar em qualquer dia: -5,4% em 30 dias (10 casos) e +161,7% em 1 ano (10 casos).
+   ETH: 10 casos. Ganhou do dia típico do ETH em 3 de 10 casos em 30 dias e em 8 de 10 em 1 ano.
      12/01/2019: 30 dias -3,2%, 1 ano +17,3%; nos 30 dias seguintes o preço chegou a 19,1% abaixo da compra
      16/07/2019: 30 dias -17,8%, 1 ano +4,4%; nos 30 dias seguintes o preço chegou a 19,6% abaixo da compra
      16/08/2019: 30 dias +0,4%, 1 ano +129,8%; nos 30 dias seguintes o preço chegou a 13,0% abaixo da compra
@@ -409,7 +415,7 @@ PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
      18/11/2022: 30 dias -1,6%, 1 ano +63,3%; nos 30 dias seguintes o preço chegou a 10,4% abaixo da compra
      28/02/2025: 30 dias -21,9%, 1 ano -15,1%; nos 30 dias seguintes o preço chegou a 24,0% abaixo da compra
      10/04/2025: 30 dias +54,5%, 1 ano +34,3%; nos 30 dias seguintes o preço chegou a 11,9% abaixo da compra
-   SOL: 6 casos. Acima de comprar em qualquer dia: -7,4% em 30 dias (6 casos) e -666,7% em 1 ano (1 casos).
+   SOL: 6 casos. Ganhou do dia típico do SOL em 2 de 6 casos em 30 dias e em 1 de 1 em 1 ano.
      18/11/2022: 30 dias -9,5%, 1 ano +328,8%; nos 30 dias seguintes o preço chegou a 19,9% abaixo da compra
      23/01/2026: 30 dias -35,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 47,5% abaixo da compra
      23/02/2026: 30 dias +10,5%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,7% abaixo da compra

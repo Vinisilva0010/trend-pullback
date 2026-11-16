@@ -62,6 +62,7 @@ use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
 
+mod capitulation_live;
 mod capitulation_study;
 mod crypto_study;
 mod cycle_view;
@@ -4245,6 +4246,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut stormer_keys = String::new();
     let mut stormer_view = BTreeMap::new();
     let mut cycles: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    let mut dailies: BTreeMap<String, Vec<tp_core::intraday::Bar>> = BTreeMap::new();
     for asset in ["BTCUSDT", "ETHUSDT", "SOLUSDT"] {
         step(&format!("{asset}: buscando dados"));
         // One asset failing (network, bad data) must not silence the others.
@@ -4259,6 +4261,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         if let Some(c) = cycle_view::cycle_json(asset_name(asset), &daily_chart) {
             cycles.insert(asset.to_owned(), c);
         }
+        dailies.insert(asset_name(asset).to_owned(), daily_chart.clone());
         let charts = stormer_live::scan_charts(&daily_chart);
         let (stages, trades) =
             stormer_live::stage_alerts(asset, &charts, now_ms, &stormer_sent, &mut books);
@@ -4369,13 +4372,11 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         &mut new_links,
     ));
     let mood = mood::mood_json(&crypto_news, &stock_news, now);
-    let fear_greed = match tp_data::fear_greed::fetch(31).await {
-        Ok(r) => mood::fear_greed_json(&r),
-        Err(e) => {
-            eprintln!("warning: {e}");
-            serde_json::Value::Null
-        }
-    };
+    let fear_readings = tp_data::fear_greed::fetch(31).await.unwrap_or_else(|e| {
+        eprintln!("warning: {e}");
+        Vec::new()
+    });
+    let fear_greed = mood::fear_greed_json(&fear_readings);
     step("notícias prontas");
     for (i, n) in news.into_iter().enumerate() {
         println!(
@@ -4400,6 +4401,38 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         });
     }
     events.extend(smc_events);
+    // Capitulation alerts (from tp capitulation-study).
+    let cap_sent_path = live_dir.join(capitulation_live::SENT_FILE);
+    let cap_watch_path = live_dir.join(capitulation_live::WATCH_FILE);
+    let cap_sent: BTreeSet<String> = std::fs::read_to_string(&cap_sent_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let cap_watched: Vec<capitulation_live::Watched> = std::fs::read_to_string(&cap_watch_path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .filter_map(|v| capitulation_live::Watched::from_json(&v))
+        .collect();
+    let (cap_alerts, cap_new) =
+        capitulation_live::check(&dailies, &fear_readings, now_ms, &cap_sent, &cap_watched);
+    let mut cap_keys = String::new();
+    for a in cap_alerts {
+        println!("{}", a.text);
+        let _ = writeln!(cap_keys, "{}", a.key);
+        events.push(dashboard::Event {
+            id: a.key,
+            ms: now_ms,
+            asset: a.asset,
+            kind: a.kind,
+            text: a.text,
+            notify: true,
+            level: 3,
+            lean: None,
+            market: "cripto",
+        });
+    }
     step("ações: gatilho, stop e alvo no pregão");
     let stock_sent_path = live_dir.join(stock_trades::SENT_FILE);
     let stock_sent: BTreeSet<String> = std::fs::read_to_string(&stock_sent_path)
@@ -4466,6 +4499,22 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
             .append(true)
             .open(&stock_sent_path)?;
         std::io::Write::write_all(&mut f, stock_keys.as_bytes())?;
+    }
+    if !cap_keys.is_empty() {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&cap_sent_path)?;
+        std::io::Write::write_all(&mut f, cap_keys.as_bytes())?;
+    }
+    if !cap_new.is_empty() {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&cap_watch_path)?;
+        for w in &cap_new {
+            std::io::Write::write_all(&mut f, (w.to_json().to_string() + "\n").as_bytes())?;
+        }
     }
     if !stormer_keys.is_empty() {
         let mut f = std::fs::OpenOptions::new()
