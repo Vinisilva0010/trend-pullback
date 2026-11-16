@@ -62,6 +62,7 @@ use tp_data::universe::{
     ExclusionReason, UniverseResult, UniverseRules, build_and_write, parse_universe_csv,
 };
 
+mod capitulation_study;
 mod crypto_study;
 mod cycle_view;
 mod dashboard;
@@ -197,6 +198,9 @@ enum Command {
     /// Buying at support on the way down (quick bounce, pullback in an uptrend
     /// and two entries in a fall), against buying on any day in the same situation.
     SupportStudy,
+    /// Buying a capitulation: the capitulation candle on every coin of the
+    /// universe, and the Fear & Greed, drawdown and time gauges on BTC, ETH, SOL.
+    CapitulationStudy,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -363,6 +367,9 @@ async fn main() -> ExitCode {
         Command::RefineStudy => refine_study::cmd_refine_study(&cli.data_dir).await,
         Command::CryptoStudy => crypto_study::cmd_crypto_study(&cli.data_dir),
         Command::SupportStudy => support_study::cmd_support_study(&cli.data_dir),
+        Command::CapitulationStudy => {
+            capitulation_study::cmd_capitulation_study(&cli.data_dir).await
+        }
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),
@@ -4362,6 +4369,13 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
         &mut new_links,
     ));
     let mood = mood::mood_json(&crypto_news, &stock_news, now);
+    let fear_greed = match tp_data::fear_greed::fetch(31).await {
+        Ok(r) => mood::fear_greed_json(&r),
+        Err(e) => {
+            eprintln!("warning: {e}");
+            serde_json::Value::Null
+        }
+    };
     step("notícias prontas");
     for (i, n) in news.into_iter().enumerate() {
         println!(
@@ -4480,6 +4494,7 @@ async fn cmd_alerts(data_dir: &Path, notify: bool, dry_run: bool) -> CliResult {
     let mut snapshot =
         dashboard::live_snapshot(&live_dir, now_ms, &smc_assets, &stormer_view, &books);
     snapshot["mood"] = mood;
+    snapshot["fear_greed"] = fear_greed;
     if let Some(list) = snapshot["assets"].as_array_mut() {
         for a in list {
             let symbol = a["symbol"].as_str().unwrap_or_default().to_owned();

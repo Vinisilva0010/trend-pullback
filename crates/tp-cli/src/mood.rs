@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use tp_core::news::{Kind, Lean, classify_headline, classify_stock_headline, lean_of, level_of};
+use tp_data::fear_greed::{Reading, class_pt};
 use tp_data::news::NewsItem;
 
 /// Hours of news the thermometer reads.
@@ -162,10 +163,56 @@ pub fn mood_json(crypto: &[NewsItem], stocks: &[NewsItem], now: DateTime<Utc>) -
     })
 }
 
+/// The Fear & Greed Index for the crypto thermometer: today, a week ago and
+/// a month ago (readings oldest first).
+#[must_use]
+pub fn fear_greed_json(readings: &[Reading]) -> Value {
+    let Some(last) = readings.last() else {
+        return Value::Null;
+    };
+    let ago = |days: i64| {
+        let day = last.date - chrono::Duration::days(days);
+        readings
+            .iter()
+            .rev()
+            .find(|r| r.date <= day)
+            .map(|r| r.value)
+    };
+    json!({
+        "value": last.value,
+        "label": class_pt(&last.class),
+        "ms": last.date.and_hms_opt(0, 0, 0).map_or(0, |t| t.and_utc().timestamp_millis()),
+        "week_ago": ago(7),
+        "month_ago": ago(30),
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fear_and_greed_shows_today_a_week_and_a_month_ago() {
+        let day = |d: i64, value: u8| Reading {
+            date: chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap() + chrono::Duration::days(d),
+            value,
+            class: if value <= 24 {
+                "Extreme Fear".to_owned()
+            } else {
+                "Fear".to_owned()
+            },
+        };
+        let r: Vec<Reading> = (0..=40)
+            .map(|d| day(d, u8::try_from(60 - d).unwrap()))
+            .collect();
+        let v = fear_greed_json(&r);
+        assert_eq!(v["value"], 20);
+        assert_eq!(v["label"], "Medo extremo");
+        assert_eq!(v["week_ago"], 27);
+        assert_eq!(v["month_ago"], 50);
+        assert!(fear_greed_json(&[]).is_null());
+    }
 
     fn item(title: &str, link: &str, hours_ago: i64, now: DateTime<Utc>) -> NewsItem {
         NewsItem {

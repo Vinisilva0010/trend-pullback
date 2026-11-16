@@ -50,6 +50,17 @@ const MarketMoodSchema = z.object({
 
 export const MoodSchema = z.object({ cripto: MarketMoodSchema, acoes: MarketMoodSchema });
 
+const fearValue = z.number().int().min(0).max(100);
+
+/** Crypto Fear & Greed Index (alternative.me), 0 = extreme fear, 100 = extreme greed. */
+export const FearGreedSchema = z.object({
+  value: fearValue,
+  label: z.string().max(30),
+  ms,
+  week_ago: fearValue.nullable(),
+  month_ago: fearValue.nullable(),
+});
+
 const side = z.enum(["long", "short"]);
 
 export const SetupSchema = z.object({
@@ -167,6 +178,7 @@ export const LiveSchema = z.object({
   books: z.array(BookSchema).max(5),
   events: z.array(EventSchema).max(1000),
   mood: MoodSchema.nullable().default(null),
+  fear_greed: FearGreedSchema.nullable().default(null),
 });
 
 const ZoneSchema = z.object({ low: num, high: num, usd: num }).nullable();
@@ -302,6 +314,7 @@ export type Setup = z.infer<typeof SetupSchema>;
 export type Pending = z.infer<typeof PendingSchema>;
 export type Frame = z.infer<typeof FrameSchema>;
 export type Asset = z.infer<typeof AssetSchema>;
+export type FearGreed = z.infer<typeof FearGreedSchema>;
 export type CycleLine = z.infer<typeof CycleLineSchema>;
 export type StormerItem = z.infer<typeof StormerSchema>;
 export type MarketAsset = z.infer<typeof MarketAssetSchema>;

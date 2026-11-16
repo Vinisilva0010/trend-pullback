@@ -2,6 +2,7 @@
 
 pub mod binance;
 pub mod dashboard;
+pub mod fear_greed;
 pub mod funding;
 pub mod history;
 pub mod intraday;

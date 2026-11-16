@@ -95,6 +95,7 @@ export default async function Home() {
           <Thermometer
             title="Cripto"
             mood={live?.mood?.cripto ?? null}
+            fearGreed={live?.fear_greed ?? null}
             price={{
               up: cryptoTrends.filter((d) => d.trend === "alta").length,
               down: cryptoTrends.filter((d) => d.trend === "queda").length,

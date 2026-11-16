@@ -2,7 +2,7 @@
 
 import { useQuote, dayChange } from "@/components/LiveQuotes";
 import { newsReading, priceReading, READING_TEXT, verdict, type Reading } from "@/lib/mood";
-import type { MarketMood } from "@/lib/schema";
+import type { FearGreed, MarketMood } from "@/lib/schema";
 import { pct } from "@/lib/format";
 
 const TONE: Record<string, string> = {
@@ -32,9 +32,31 @@ function Gauge({ label, score, reading, detail }: { label: string; score: number
   );
 }
 
+/** The crypto Fear & Greed Index on a bar from fear (left) to greed (right). */
+function FearGreedBar({ fg }: { fg: FearGreed }) {
+  const before = [fg.week_ago != null ? `há 7 dias, ${fg.week_ago}` : null, fg.month_ago != null ? `há 30 dias, ${fg.month_ago}` : null].filter(Boolean);
+  return (
+    <div className="mt-3">
+      <p className="font-extrabold">
+        Medo e Ganância: <span className="font-black">{fg.value} ({fg.label})</span>
+      </p>
+      <div className="relative mt-1 h-4 rounded border-2 border-ink" style={{ background: "linear-gradient(90deg, #d9304a 0%, #f3f3f3 50%, #0b8f5a 100%)" }}>
+        <span className="absolute -top-1.5 h-6 w-1.5 -translate-x-1/2 rounded bg-ink" style={{ left: `${fg.value}%` }} />
+      </div>
+      <div className="mt-0.5 flex justify-between text-xs font-extrabold">
+        <span>Medo extremo (0)</span>
+        <span>Ganância extrema (100)</span>
+      </div>
+      <p className="text-sm">
+        {before.length ? `Antes: ${before.join("; ")}. ` : ""}Índice diário do alternative.me, feito com volatilidade, volume, redes sociais e domínio do Bitcoin. Medo extremo costuma aparecer perto de fundos, mas sozinho não é sinal de compra.
+      </p>
+    </div>
+  );
+}
+
 export type PriceSide = { up: number; down: number; total: number; change: number | null; scale: number; changeLabel: string; quoteSymbol?: string };
 
-export function Thermometer({ title, mood, price }: { title: string; mood: MarketMood | null; price: PriceSide }) {
+export function Thermometer({ title, mood, price, fearGreed = null }: { title: string; mood: MarketMood | null; price: PriceSide; fearGreed?: FearGreed | null }) {
   const q = useQuote(price.quoteSymbol ?? "");
   const change = price.quoteSymbol ? dayChange(q, price.change) : price.change;
   const n = newsReading(mood);
@@ -52,6 +74,7 @@ export function Thermometer({ title, mood, price }: { title: string; mood: Marke
       </div>
       <Gauge label="Notícias" score={n.score} reading={n.reading} detail={newsDetail} />
       <Gauge label="Preço" score={p.score} reading={p.reading} detail={priceDetail} />
+      {fearGreed ? <FearGreedBar fg={fearGreed} /> : null}
     </section>
   );
 }
