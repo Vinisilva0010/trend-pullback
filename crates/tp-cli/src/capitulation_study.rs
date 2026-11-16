@@ -28,7 +28,7 @@ use tp_data::fear_greed::fetch;
 use tp_data::history::{processed_dir, read_series};
 
 use super::crypto_study::Universe;
-use super::{CliResult, count_f64, daily_bars, held_out_start, r_mean_t};
+use super::{CliResult, count_f64, daily_bars, held_out_start};
 
 const BIG: [&str; 3] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 const DAY_MS: i64 = 24 * 3600 * 1000;
@@ -119,8 +119,25 @@ struct Event {
     worst: f64,
 }
 
-/// Mean forward return of buying any day of each period, per horizon,
-/// only on days `eligible` allows. `(dev, final)`.
+/// The middle value (median), or 0 for none.
+fn median(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut v = values.to_vec();
+    v.sort_by(f64::total_cmp);
+    let n = v.len();
+    if n % 2 == 1 {
+        v[n / 2]
+    } else {
+        f64::midpoint(v[n / 2 - 1], v[n / 2])
+    }
+}
+
+/// Median forward return of buying any day of each period, per horizon,
+/// only on days `eligible` allows. `(dev, final)`. The median, because a
+/// coin that went up 100 times in a year would make the mean of every day
+/// meaningless.
 fn base(
     bars: &[Bar],
     alive: bool,
@@ -143,7 +160,7 @@ fn base(
                     }
                 }
             }
-            (r_mean_t(&dev).0, r_mean_t(&fin).0)
+            (median(&dev), median(&fin))
         })
         .collect()
 }
@@ -198,46 +215,54 @@ fn report(label: &str, events: &[Event], split_ms: i64) -> bool {
         fell(worst[worst.len() / 2]),
         fell(worst[worst.len() / 10]),
     );
+    let mut dates: Vec<i64> = events.iter().map(|e| e.entry_ms / DAY_MS).collect();
+    dates.sort_unstable();
+    dates.dedup();
+    println!(
+        "   Os casos caíram em {} dias diferentes: casos no mesmo dia em moedas diferentes são o mesmo movimento do mercado, não chances independentes.",
+        dates.len()
+    );
     let mut passed = true;
     for (k, h) in HORIZONS.iter().enumerate() {
         let all: Vec<f64> = events.iter().filter_map(|e| e.returns[k]).collect();
-        let part = |late: bool| -> Vec<f64> {
-            events
-                .iter()
-                .filter(|e| (e.entry_ms > split_ms) == late)
-                .filter_map(|e| e.excess[k])
-                .collect()
-        };
-        let (dev, fin) = (part(false), part(true));
         if all.is_empty() {
             continue;
         }
-        let mut sorted = all.clone();
-        sorted.sort_by(f64::total_cmp);
-        let (dev_mean, dev_t) = r_mean_t(&dev);
-        let (fin_mean, _) = r_mean_t(&fin);
-        let wins = all.iter().filter(|r| **r > 0.0).count();
-        let proven =
-            dev.len() >= 30 && dev_t >= 2.0 && dev_mean > 0.0 && fin.len() >= 10 && fin_mean > 0.0;
+        // Share of cases that did better than the coin's typical day.
+        let beat = |late: bool| -> (usize, usize) {
+            let v: Vec<f64> = events
+                .iter()
+                .filter(|e| (e.entry_ms > split_ms) == late)
+                .filter_map(|e| e.excess[k])
+                .collect();
+            (v.iter().filter(|x| **x > 0.0).count(), v.len())
+        };
+        let ((dev_k, dev_n), (fin_k, fin_n)) = (beat(false), beat(true));
+        let share = |k: usize, n: usize| count_f64(k) / count_f64(n.max(1)) * 100.0;
+        // Sign test: how far above half the share is, in standard errors.
+        let z = if dev_n > 0 {
+            (count_f64(dev_k) - count_f64(dev_n) / 2.0) / (count_f64(dev_n) / 4.0).sqrt()
+        } else {
+            0.0
+        };
+        let proven = dev_n >= 30 && z >= 2.0 && fin_n >= 10 && fin_k * 2 > fin_n;
         if *h == 30 || *h == 90 {
             passed &= proven;
         }
+        let wins = all.iter().filter(|r| **r > 0.0).count();
         println!(
-            "   {h} dias: média {}, caso típico {}, subiu em {:.0}% dos casos. Acima de comprar em qualquer dia: {} até out/2024 ({} casos) e {} depois ({} casos).{}",
-            pct(r_mean_t(&all).0),
-            pct(sorted[sorted.len() / 2]),
+            "   {h} dias: caso típico {}, subiu em {:.0}% dos casos. Ganhou do dia típico da mesma moeda em {:.0}% dos casos até out/2024 ({dev_n} casos) e em {:.0}% depois ({fin_n} casos).{}",
+            pct(median(&all)),
             count_f64(wins) / count_f64(all.len()) * 100.0,
-            pct(dev_mean),
-            dev.len(),
-            pct(fin_mean),
-            fin.len(),
+            share(dev_k, dev_n),
+            share(fin_k, fin_n),
             if proven { " GANHOU COM PROVA." } else { "" }
         );
     }
     let verdict = if passed {
         "PASSOU em 30 e 90 dias"
     } else {
-        "não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos)"
+        "não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 30 e 90 dias, nos dois períodos)"
     };
     println!("   {verdict}.");
     passed
@@ -333,7 +358,7 @@ pub async fn cmd_capitulation_study(data_dir: &Path) -> CliResult {
         .and_utc()
         .timestamp_millis();
     println!(
-        "Compra na capitulação, em regras fixas. Cada compra é medida 7, 30, 90 e 365 dias depois, já com 0,2% de custo, e comparada com comprar a mesma moeda em qualquer dia do mesmo período. Um caso por moeda a cada 30 dias. Moedas cujo histórico acaba (saíram da corretora) ficam com o último preço, então as que morreram contam como as perdas que foram."
+        "Compra na capitulação, em regras fixas. Cada compra é medida 7, 30, 90 e 365 dias depois, já com 0,2% de custo, e comparada com o dia típico da mesma moeda no mesmo período (a mediana de comprar em qualquer dia). Um caso por moeda a cada 30 dias. Moedas cujo histórico acaba (saíram da corretora) ficam com o último preço, então as que morreram contam como as perdas que foram."
     );
     let fear: BTreeMap<NaiveDate, u8> = match fetch(0).await {
         Ok(r) => {
@@ -467,17 +492,15 @@ pub async fn cmd_capitulation_study(data_dir: &Path) -> CliResult {
                     )
                 })
                 .collect();
-            let avg = |k: usize| {
+            let beat = |k: usize| {
                 let v: Vec<f64> = events.iter().filter_map(|e| e.excess[k]).collect();
-                (r_mean_t(&v).0, v.len())
+                (v.iter().filter(|x| **x > 0.0).count(), v.len())
             };
-            let (a30, n30) = avg(1);
-            let (a365, n365) = avg(3);
+            let (b30, n30) = beat(1);
+            let (b365, n365) = beat(3);
             println!(
-                "   {short}: {} casos. Acima de comprar em qualquer dia: {} em 30 dias ({n30} casos) e {} em 1 ano ({n365} casos).",
+                "   {short}: {} casos. Ganhou do dia típico do {short} em {b30} de {n30} casos em 30 dias e em {b365} de {n365} em 1 ano.",
                 events.len(),
-                pct(a30),
-                pct(a365)
             );
             for l in lines {
                 println!("     {l}");
@@ -500,7 +523,7 @@ pub async fn cmd_capitulation_study(data_dir: &Path) -> CliResult {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -513,6 +536,13 @@ mod tests {
             close,
             volume: 1.0,
         }
+    }
+
+    #[test]
+    fn the_median_ignores_one_huge_year() {
+        assert_eq!(median(&[1.0, 2.0, 10_000.0]), 2.0);
+        assert_eq!(median(&[1.0, 3.0]), 2.0);
+        assert_eq!(median(&[]), 0.0);
     }
 
     #[test]

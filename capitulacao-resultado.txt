@@ -1,0 +1,422 @@
+Compra na capitulação, em regras fixas. Cada compra é medida 7, 30, 90 e 365 dias depois, já com 0,2% de custo, e comparada com comprar a mesma moeda em qualquer dia do mesmo período. Um caso por moeda a cada 30 dias. Moedas cujo histórico acaba (saíram da corretora) ficam com o último preço, então as que morreram contam como as perdas que foram.
+Índice de Medo e Ganância (alternative.me): 3207 dias, de 01/02/2018 a 16/11/2026.
+
+PARTE 1: a barra de capitulação, no BTC, ETH, SOL e nas outras 205 moedas do universo (cada uma só nos meses em que estava nele).
+
+ Pavio de capitulação: o dia cai 15% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte
+   366 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 21,7% abaixo da compra; em 1 de cada 10 casos, mais de 45,5%.
+   7 dias: média +3,1%, caso típico +0,9%, subiu em 52% dos casos. Acima de comprar em qualquer dia: -48,7% até out/2024 (306 casos) e -5,1% depois (60 casos).
+   30 dias: média +1,3%, caso típico -5,9%, subiu em 39% dos casos. Acima de comprar em qualquer dia: -27,9% até out/2024 (306 casos) e -8,9% depois (60 casos).
+   90 dias: média +15,5%, caso típico -7,4%, subiu em 42% dos casos. Acima de comprar em qualquer dia: -12,7% até out/2024 (306 casos) e -16,5% depois (59 casos).
+   365 dias: média +122,8%, caso típico -38,8%, subiu em 36% dos casos. Acima de comprar em qualquer dia: +20,3% até out/2024 (306 casos) e +3,8% depois (48 casos).
+   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+
+ Pavio de capitulação: o dia cai 15% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte — só com o Medo e Ganância em 20 ou menos no dia
+   100 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 21,9% abaixo da compra; em 1 de cada 10 casos, mais de 37,6%.
+   7 dias: média +5,9%, caso típico +4,9%, subiu em 64% dos casos. Acima de comprar em qualquer dia: -82,7% até out/2024 (90 casos) e -6,4% depois (10 casos).
+   30 dias: média -2,4%, caso típico -5,5%, subiu em 43% dos casos. Acima de comprar em qualquer dia: -49,8% até out/2024 (90 casos) e -12,3% depois (10 casos).
+   90 dias: média +29,3%, caso típico +21,6%, subiu em 67% dos casos. Acima de comprar em qualquer dia: -7,2% até out/2024 (90 casos) e -3,3% depois (10 casos).
+   365 dias: média +189,0%, caso típico -33,8%, subiu em 36% dos casos. Acima de comprar em qualquer dia: +60,9% até out/2024 (90 casos) e -1,3% depois (1 casos).
+   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+
+ Pavio de capitulação: o dia cai 25% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte
+   131 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 22,7% abaixo da compra; em 1 de cada 10 casos, mais de 40,4%.
+   7 dias: média +5,6%, caso típico +0,5%, subiu em 53% dos casos. Acima de comprar em qualquer dia: -32,2% até out/2024 (102 casos) e -4,2% depois (29 casos).
+   30 dias: média +10,0%, caso típico -4,2%, subiu em 44% dos casos. Acima de comprar em qualquer dia: -13,0% até out/2024 (102 casos) e -6,8% depois (29 casos).
+   90 dias: média +36,6%, caso típico -5,9%, subiu em 45% dos casos. Acima de comprar em qualquer dia: +5,2% até out/2024 (102 casos) e -12,1% depois (28 casos).
+   365 dias: média +108,1%, caso típico -43,9%, subiu em 36% dos casos. Acima de comprar em qualquer dia: -13,2% até out/2024 (102 casos) e +8,7% depois (27 casos).
+   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+
+ Pavio de capitulação: o dia cai 25% ou mais abaixo do fechamento anterior e fecha acima da metade da queda; compra na abertura seguinte — só com o Medo e Ganância em 20 ou menos no dia
+   26 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 25,7% abaixo da compra; em 1 de cada 10 casos, mais de 39,9%.
+   7 dias: média +16,7%, caso típico +15,3%, subiu em 81% dos casos. Acima de comprar em qualquer dia: +16,8% até out/2024 (25 casos) e +3,8% depois (1 casos).
+   30 dias: média +3,8%, caso típico +10,6%, subiu em 54% dos casos. Acima de comprar em qualquer dia: -1,0% até out/2024 (25 casos) e -1,1% depois (1 casos).
+   90 dias: média +65,3%, caso típico +58,4%, subiu em 92% dos casos. Acima de comprar em qualquer dia: +35,8% até out/2024 (25 casos) e +105,3% depois (1 casos).
+   365 dias: média +478,6%, caso típico -14,0%, subiu em 48% dos casos. Acima de comprar em qualquer dia: +289,4% até out/2024 (25 casos) e +0,0% depois (0 casos).
+   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+
+ Queda e recuperação: um dia fecha 12% ou mais em queda e o dia seguinte é verde e devolve 60% ou mais da queda; compra na abertura depois dele
+   125 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 23,8% abaixo da compra; em 1 de cada 10 casos, mais de 48,8%.
+   7 dias: média +0,0%, caso típico -1,6%, subiu em 45% dos casos. Acima de comprar em qualquer dia: -84,4% até out/2024 (99 casos) e +4,9% depois (26 casos).
+   30 dias: média -3,8%, caso típico -11,1%, subiu em 23% dos casos. Acima de comprar em qualquer dia: -49,5% até out/2024 (99 casos) e -11,4% depois (26 casos).
+   90 dias: média +11,8%, caso típico +0,5%, subiu em 51% dos casos. Acima de comprar em qualquer dia: -30,6% até out/2024 (99 casos) e +4,6% depois (26 casos).
+   365 dias: média +87,8%, caso típico -31,2%, subiu em 30% dos casos. Acima de comprar em qualquer dia: -33,4% até out/2024 (99 casos) e +1,7% depois (7 casos).
+   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+
+ Queda e recuperação: um dia fecha 12% ou mais em queda e o dia seguinte é verde e devolve 60% ou mais da queda; compra na abertura depois dele — só com o Medo e Ganância em 20 ou menos no dia
+   42 casos. Depois da compra, nos 30 dias seguintes, o preço ainda caiu tipicamente mais 26,0% abaixo da compra; em 1 de cada 10 casos, mais de 48,8%.
+   7 dias: média +1,9%, caso típico +1,6%, subiu em 67% dos casos. Acima de comprar em qualquer dia: -157,8% até out/2024 (26 casos) e +9,0% depois (16 casos).
+   30 dias: média -11,7%, caso típico -14,3%, subiu em 14% dos casos. Acima de comprar em qualquer dia: -97,3% até out/2024 (26 casos) e -5,7% depois (16 casos).
+   90 dias: média +18,2%, caso típico +11,0%, subiu em 69% dos casos. Acima de comprar em qualquer dia: -40,1% até out/2024 (26 casos) e +21,1% depois (16 casos).
+   365 dias: média +158,6%, caso típico -58,6%, subiu em 23% dos casos. Acima de comprar em qualquer dia: +22,5% até out/2024 (26 casos) e +0,0% depois (0 casos).
+   não passou (precisa ganhar de qualquer dia, com prova, em 30 e 90 dias, nos dois períodos).
+
+PARTE 2: as réguas, no BTC, ETH e SOL. Poucos casos: cada um é listado.
+
+ Medo e Ganância em 20 ou menos
+   BTC: 38 casos. Acima de comprar em qualquer dia: -2,5% em 30 dias (38 casos) e -18,3% em 1 ano (31 casos).
+     03/02/2018: 30 dias +28,9%, 1 ano -61,2%; nos 30 dias seguintes o preço chegou a 32,4% abaixo da compra
+     30/03/2018: 30 dias +32,6%, 1 ano -42,3%; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
+     28/05/2018: 30 dias -16,6%, 1 ano +18,6%; nos 30 dias seguintes o preço chegou a 21,7% abaixo da compra
+     28/06/2018: 30 dias +33,9%, 1 ano +101,9%; nos 30 dias seguintes o preço chegou a 5,8% abaixo da compra
+     10/08/2018: 30 dias -4,5%, 1 ano +73,0%; nos 30 dias seguintes o preço chegou a 10,0% abaixo da compra
+     10/09/2018: 30 dias +5,9%, 1 ano +61,3%; nos 30 dias seguintes o preço chegou a 2,1% abaixo da compra
+     12/10/2018: 30 dias +3,0%, 1 ano +32,5%; nos 30 dias seguintes o preço chegou a 0,7% abaixo da compra
+     22/11/2018: 30 dias -15,5%, 1 ano +55,7%; nos 30 dias seguintes o preço chegou a 32,3% abaixo da compra
+     12/01/2019: 30 dias +0,6%, 1 ano +127,1%; nos 30 dias seguintes o preço chegou a 7,0% abaixo da compra
+     16/07/2019: 30 dias -5,2%, 1 ano -15,3%; nos 30 dias seguintes o preço chegou a 16,4% abaixo da compra
+     16/08/2019: 30 dias -0,1%, 1 ano +14,9%; nos 30 dias seguintes o preço chegou a 9,5% abaixo da compra
+     26/09/2019: 30 dias +9,3%, 1 ano +26,6%; nos 30 dias seguintes o preço chegou a 13,4% abaixo da compra
+     23/11/2019: 30 dias +0,5%, 1 ano +153,2%; nos 30 dias seguintes o preço chegou a 11,5% abaixo da compra
+     10/03/2020: 30 dias -8,4%, 1 ano +604,1%; nos 30 dias seguintes o preço chegou a 52,3% abaixo da compra
+     11/04/2020: 30 dias +24,6%, 1 ano +774,6%; nos 30 dias seguintes o preço chegou a 5,7% abaixo da compra
+     17/05/2021: 30 dias -17,6%, 1 ano -34,6%; nos 30 dias seguintes o preço chegou a 35,4% abaixo da compra
+     23/06/2021: 30 dias +3,3%, 1 ano -35,3%; nos 30 dias seguintes o preço chegou a 9,9% abaixo da compra
+     01/10/2021: 30 dias +39,7%, 1 ano -56,1%; nos 30 dias seguintes o preço chegou a 1,2% abaixo da compra
+     06/12/2021: 30 dias -12,2%, 1 ano -65,6%; nos 30 dias seguintes o preço chegou a 8,0% abaixo da compra
+     07/01/2022: 30 dias -1,8%, 1 ano -60,9%; nos 30 dias seguintes o preço chegou a 23,6% abaixo da compra
+     23/02/2022: 30 dias +15,7%, 1 ano -37,6%; nos 30 dias seguintes o preço chegou a 10,2% abaixo da compra
+     13/04/2022: 30 dias -27,1%, 1 ano -24,4%; nos 30 dias seguintes o preço chegou a 33,4% abaixo da compra
+     14/05/2022: 30 dias -23,4%, 1 ano -8,3%; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
+     14/06/2022: 30 dias -8,6%, 1 ano +11,6%; nos 30 dias seguintes o preço chegou a 21,6% abaixo da compra
+     15/07/2022: 30 dias +17,9%, 1 ano +46,9%; nos 30 dias seguintes o preço chegou a 1,0% abaixo da compra
+     02/09/2022: 30 dias -5,5%, 1 ano +28,3%; nos 30 dias seguintes o preço chegou a 10,0% abaixo da compra
+     05/10/2022: 30 dias +3,8%, 1 ano +34,6%; nos 30 dias seguintes o preço chegou a 10,6% abaixo da compra
+     18/11/2022: 30 dias +0,1%, 1 ano +118,9%; nos 30 dias seguintes o preço chegou a 7,3% abaixo da compra
+     07/08/2024: 30 dias -3,9%, 1 ano +109,5%; nos 30 dias seguintes o preço chegou a 2,6% abaixo da compra
+     28/02/2025: 30 dias -2,9%, 1 ano -21,1%; nos 30 dias seguintes o preço chegou a 9,6% abaixo da compra
+     10/04/2025: 30 dias +26,7%, 1 ano -11,9%; nos 30 dias seguintes o preço chegou a 5,0% abaixo da compra
+     09/11/2025: 30 dias -9,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 21,2% abaixo da compra
+     16/12/2025: 30 dias +10,4%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 2,3% abaixo da compra
+     23/01/2026: 30 dias -24,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 33,0% abaixo da compra
+     23/02/2026: 30 dias +5,3%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 7,6% abaixo da compra
+     26/03/2026: 30 dias +8,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,9% abaixo da compra
+     04/06/2026: 30 dias -1,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,9% abaixo da compra
+     09/07/2026: 30 dias +4,1%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 0,9% abaixo da compra
+   ETH: 38 casos. Acima de comprar em qualquer dia: -5,2% em 30 dias (38 casos) e -54,3% em 1 ano (31 casos).
+     03/02/2018: 30 dias -8,2%, 1 ano -88,6%; nos 30 dias seguintes o preço chegou a 38,3% abaixo da compra
+     30/03/2018: 30 dias +79,8%, 1 ano -63,1%; nos 30 dias seguintes o preço chegou a 7,0% abaixo da compra
+     28/05/2018: 30 dias -22,8%, 1 ano -52,7%; nos 30 dias seguintes o preço chegou a 26,5% abaixo da compra
+     28/06/2018: 30 dias +6,1%, 1 ano -29,7%; nos 30 dias seguintes o preço chegou a 8,4% abaixo da compra
+     10/08/2018: 30 dias -46,3%, 1 ano -43,4%; nos 30 dias seguintes o preço chegou a 47,7% abaixo da compra
+     10/09/2018: 30 dias +15,4%, 1 ano -8,5%; nos 30 dias seguintes o preço chegou a 14,7% abaixo da compra
+     12/10/2018: 30 dias +10,8%, 1 ano -6,4%; nos 30 dias seguintes o preço chegou a 0,8% abaixo da compra
+     22/11/2018: 30 dias -16,9%, 1 ano +7,9%; nos 30 dias seguintes o preço chegou a 40,9% abaixo da compra
+     12/01/2019: 30 dias -3,2%, 1 ano +17,3%; nos 30 dias seguintes o preço chegou a 19,1% abaixo da compra
+     16/07/2019: 30 dias -17,8%, 1 ano +4,4%; nos 30 dias seguintes o preço chegou a 19,6% abaixo da compra
+     16/08/2019: 30 dias +0,4%, 1 ano +129,8%; nos 30 dias seguintes o preço chegou a 13,0% abaixo da compra
+     26/09/2019: 30 dias +5,4%, 1 ano +106,9%; nos 30 dias seguintes o preço chegou a 10,5% abaixo da compra
+     23/11/2019: 30 dias -14,7%, 1 ano +274,3%; nos 30 dias seguintes o preço chegou a 22,3% abaixo da compra
+     10/03/2020: 30 dias -16,6%, 1 ano +785,0%; nos 30 dias seguintes o preço chegou a 57,6% abaixo da compra
+     11/04/2020: 30 dias +17,5%, 1 ano +1263,1%; nos 30 dias seguintes o preço chegou a 6,0% abaixo da compra
+     17/05/2021: 30 dias -34,1%, 1 ano -41,8%; nos 30 dias seguintes o preço chegou a 51,7% abaixo da compra
+     23/06/2021: 30 dias +12,8%, 1 ano -39,3%; nos 30 dias seguintes o preço chegou a 9,2% abaixo da compra
+     01/10/2021: 30 dias +42,7%, 1 ano -56,5%; nos 30 dias seguintes o preço chegou a 1,1% abaixo da compra
+     06/12/2021: 30 dias -15,8%, 1 ano -69,9%; nos 30 dias seguintes o preço chegou a 14,6% abaixo da compra
+     07/01/2022: 30 dias -10,5%, 1 ano -63,1%; nos 30 dias seguintes o preço chegou a 36,6% abaixo da compra
+     23/02/2022: 30 dias +17,5%, 1 ano -37,6%; nos 30 dias seguintes o preço chegou a 12,8% abaixo da compra
+     13/04/2022: 30 dias -33,8%, 1 ano -33,7%; nos 30 dias seguintes o preço chegou a 40,5% abaixo da compra
+     14/05/2022: 30 dias -40,0%, 1 ano -10,7%; nos 30 dias seguintes o preço chegou a 29,2% abaixo da compra
+     14/06/2022: 30 dias -1,5%, 1 ano +36,3%; nos 30 dias seguintes o preço chegou a 27,1% abaixo da compra
+     15/07/2022: 30 dias +62,0%, 1 ano +61,6%; nos 30 dias seguintes o preço chegou a 1,0% abaixo da compra
+     02/09/2022: 30 dias -19,7%, 1 ano +3,0%; nos 30 dias seguintes o preço chegou a 23,1% abaixo da compra
+     05/10/2022: 30 dias +20,6%, 1 ano +18,2%; nos 30 dias seguintes o preço chegou a 12,6% abaixo da compra
+     18/11/2022: 30 dias -1,6%, 1 ano +63,3%; nos 30 dias seguintes o preço chegou a 10,4% abaixo da compra
+     07/08/2024: 30 dias -9,8%, 1 ano +58,7%; nos 30 dias seguintes o preço chegou a 6,3% abaixo da compra
+     28/02/2025: 30 dias -21,9%, 1 ano -15,1%; nos 30 dias seguintes o preço chegou a 24,0% abaixo da compra
+     10/04/2025: 30 dias +54,5%, 1 ano +34,3%; nos 30 dias seguintes o preço chegou a 11,9% abaixo da compra
+     09/11/2025: 30 dias -2,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 22,9% abaixo da compra
+     16/12/2025: 30 dias +11,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 6,4% abaixo da compra
+     23/01/2026: 30 dias -33,9%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 40,8% abaixo da compra
+     23/02/2026: 30 dias +10,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,1% abaixo da compra
+     26/03/2026: 30 dias +6,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 10,6% abaixo da compra
+     04/06/2026: 30 dias -2,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 17,0% abaixo da compra
+     09/07/2026: 30 dias +9,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 1,2% abaixo da compra
+   SOL: 23 casos. Acima de comprar em qualquer dia: -13,8% em 30 dias (23 casos) e -882,4% em 1 ano (16 casos).
+     17/05/2021: 30 dias -15,4%, 1 ano +21,5%; nos 30 dias seguintes o preço chegou a 59,2% abaixo da compra
+     23/06/2021: 30 dias +5,6%, 1 ano +41,3%; nos 30 dias seguintes o preço chegou a 18,0% abaixo da compra
+     01/10/2021: 30 dias +43,0%, 1 ano -77,3%; nos 30 dias seguintes o preço chegou a 2,7% abaixo da compra
+     06/12/2021: 30 dias -21,6%, 1 ano -92,9%; nos 30 dias seguintes o preço chegou a 24,7% abaixo da compra
+     07/01/2022: 30 dias -23,5%, 1 ano -91,5%; nos 30 dias seguintes o preço chegou a 46,2% abaixo da compra
+     23/02/2022: 30 dias +13,9%, 1 ano -72,5%; nos 30 dias seguintes o preço chegou a 12,8% abaixo da compra
+     13/04/2022: 30 dias -52,8%, 1 ano -76,5%; nos 30 dias seguintes o preço chegou a 63,8% abaixo da compra
+     14/05/2022: 30 dias -41,7%, 1 ano -57,4%; nos 30 dias seguintes o preço chegou a 37,5% abaixo da compra
+     14/06/2022: 30 dias +29,7%, 1 ano -49,6%; nos 30 dias seguintes o preço chegou a 9,5% abaixo da compra
+     15/07/2022: 30 dias +20,6%, 1 ano -26,3%; nos 30 dias seguintes o preço chegou a 6,7% abaixo da compra
+     02/09/2022: 30 dias +1,2%, 1 ano -38,5%; nos 30 dias seguintes o preço chegou a 5,1% abaixo da compra
+     05/10/2022: 30 dias -1,3%, 1 ano -33,6%; nos 30 dias seguintes o preço chegou a 21,3% abaixo da compra
+     18/11/2022: 30 dias -9,5%, 1 ano +328,8%; nos 30 dias seguintes o preço chegou a 19,9% abaixo da compra
+     07/08/2024: 30 dias -13,6%, 1 ano +21,2%; nos 30 dias seguintes o preço chegou a 15,1% abaixo da compra
+     28/02/2025: 30 dias -9,5%, 1 ano -38,9%; nos 30 dias seguintes o preço chegou a 18,7% abaixo da compra
+     10/04/2025: 30 dias +49,2%, 1 ano -28,9%; nos 30 dias seguintes o preço chegou a 9,1% abaixo da compra
+     09/11/2025: 30 dias -12,9%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 23,0% abaixo da compra
+     16/12/2025: 30 dias +11,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,6% abaixo da compra
+     23/01/2026: 30 dias -35,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 47,5% abaixo da compra
+     23/02/2026: 30 dias +10,5%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,7% abaixo da compra
+     26/03/2026: 30 dias -6,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 16,4% abaixo da compra
+     04/06/2026: 30 dias +14,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 16,0% abaixo da compra
+     09/07/2026: 30 dias -2,5%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
+
+ Medo e Ganância em 10 ou menos
+   BTC: 14 casos. Acima de comprar em qualquer dia: +0,1% em 30 dias (14 casos) e +9,7% em 1 ano (10 casos).
+     07/02/2018: 30 dias +20,3%, 1 ano -55,8%; nos 30 dias seguintes o preço chegou a 6,6% abaixo da compra
+     26/11/2018: 30 dias -7,8%, 1 ano +74,8%; nos 30 dias seguintes o preço chegou a 22,8% abaixo da compra
+     23/08/2019: 30 dias -0,9%, 1 ano +15,3%; nos 30 dias seguintes o preço chegou a 7,7% abaixo da compra
+     14/03/2020: 30 dias +22,4%, 1 ano +957,3%; nos 30 dias seguintes o preço chegou a 20,3% abaixo da compra
+     25/05/2021: 30 dias -10,9%, 1 ano -24,1%; nos 30 dias seguintes o preço chegou a 25,8% abaixo da compra
+     22/07/2021: 30 dias +51,7%, 1 ano -29,6%; nos 30 dias seguintes o preço chegou a 1,4% abaixo da compra
+     09/01/2022: 30 dias +5,5%, 1 ano -59,0%; nos 30 dias seguintes o preço chegou a 21,0% abaixo da compra
+     11/05/2022: 30 dias -6,4%, 1 ano -13,3%; nos 30 dias seguintes o preço chegou a 13,9% abaixo da compra
+     15/06/2022: 30 dias -6,1%, 1 ano +15,4%; nos 30 dias seguintes o preço chegou a 20,4% abaixo da compra
+     28/02/2025: 30 dias -2,9%, 1 ano -21,1%; nos 30 dias seguintes o preço chegou a 9,6% abaixo da compra
+     16/11/2025: 30 dias -8,3%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 15,7% abaixo da compra
+     07/02/2026: 30 dias -3,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 11,4% abaixo da compra
+     10/03/2026: 30 dias +4,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 5,0% abaixo da compra
+     09/06/2026: 30 dias +0,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,4% abaixo da compra
+   ETH: 14 casos. Acima de comprar em qualquer dia: -3,4% em 30 dias (14 casos) e +1,5% em 1 ano (10 casos).
+     07/02/2018: 30 dias -7,4%, 1 ano -86,8%; nos 30 dias seguintes o preço chegou a 12,3% abaixo da compra
+     26/11/2018: 30 dias +8,8%, 1 ano +24,1%; nos 30 dias seguintes o preço chegou a 31,1% abaixo da compra
+     23/08/2019: 30 dias +10,7%, 1 ano +107,4%; nos 30 dias seguintes o preço chegou a 14,1% abaixo da compra
+     14/03/2020: 30 dias +16,4%, 1 ano +1278,4%; nos 30 dias seguintes o preço chegou a 24,6% abaixo da compra
+     25/05/2021: 30 dias -25,1%, 1 ano -26,8%; nos 30 dias seguintes o preço chegou a 35,8% abaixo da compra
+     22/07/2021: 30 dias +61,3%, 1 ano -23,3%; nos 30 dias seguintes o preço chegou a 2,4% abaixo da compra
+     09/01/2022: 30 dias +1,0%, 1 ano -57,3%; nos 30 dias seguintes o preço chegou a 29,9% abaixo da compra
+     11/05/2022: 30 dias -29,2%, 1 ano -23,6%; nos 30 dias seguintes o preço chegou a 27,3% abaixo da compra
+     15/06/2022: 30 dias +1,6%, 1 ano +37,7%; nos 30 dias seguintes o preço chegou a 27,1% abaixo da compra
+     28/02/2025: 30 dias -21,9%, 1 ano -15,1%; nos 30 dias seguintes o preço chegou a 24,0% abaixo da compra
+     16/11/2025: 30 dias -6,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 17,2% abaixo da compra
+     07/02/2026: 30 dias -3,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 12,8% abaixo da compra
+     10/03/2026: 30 dias +9,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 2,7% abaixo da compra
+     09/06/2026: 30 dias +3,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 10,6% abaixo da compra
+   SOL: 10 casos. Acima de comprar em qualquer dia: +3,6% em 30 dias (10 casos) e -846,1% em 1 ano (6 casos).
+     25/05/2021: 30 dias -1,1%, 1 ano +52,5%; nos 30 dias seguintes o preço chegou a 35,8% abaixo da compra
+     22/07/2021: 30 dias +176,1%, 1 ano +51,6%; nos 30 dias seguintes o preço chegou a 3,0% abaixo da compra
+     09/01/2022: 30 dias -20,4%, 1 ano -88,8%; nos 30 dias seguintes o preço chegou a 43,1% abaixo da compra
+     11/05/2022: 30 dias -44,6%, 1 ano -70,1%; nos 30 dias seguintes o preço chegou a 46,6% abaixo da compra
+     15/06/2022: 30 dias +26,1%, 1 ano -50,3%; nos 30 dias seguintes o preço chegou a 9,5% abaixo da compra
+     28/02/2025: 30 dias -9,5%, 1 ano -38,9%; nos 30 dias seguintes o preço chegou a 18,7% abaixo da compra
+     16/11/2025: 30 dias -7,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 12,9% abaixo da compra
+     07/02/2026: 30 dias -3,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 13,5% abaixo da compra
+     10/03/2026: 30 dias -2,1%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,7% abaixo da compra
+     09/06/2026: 30 dias +16,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 6,7% abaixo da compra
+
+ Preço 50% ou mais abaixo da máxima histórica
+   BTC: 53 casos. Acima de comprar em qualquer dia: -1,5% em 30 dias (53 casos) e +23,7% em 1 ano (49 casos).
+     02/02/2018: 30 dias +24,6%, 1 ano -62,2%; nos 30 dias seguintes o preço chegou a 35,0% abaixo da compra
+     09/03/2018: 30 dias -24,5%, 1 ano -57,7%; nos 30 dias seguintes o preço chegou a 30,6% abaixo da compra
+     09/04/2018: 30 dias +32,6%, 1 ano -26,7%; nos 30 dias seguintes o preço chegou a 5,7% abaixo da compra
+     10/05/2018: 30 dias -19,7%, 1 ano -31,7%; nos 30 dias seguintes o preço chegou a 24,5% abaixo da compra
+     10/06/2018: 30 dias -16,1%, 1 ano +6,4%; nos 30 dias seguintes o preço chegou a 23,2% abaixo da compra
+     11/07/2018: 30 dias -2,6%, 1 ano +79,9%; nos 30 dias seguintes o preço chegou a 3,6% abaixo da compra
+     11/08/2018: 30 dias +2,5%, 1 ano +87,7%; nos 30 dias seguintes o preço chegou a 4,4% abaixo da compra
+     11/09/2018: 30 dias -1,1%, 1 ano +60,7%; nos 30 dias seguintes o preço chegou a 3,0% abaixo da compra
+     12/10/2018: 30 dias +3,0%, 1 ano +32,5%; nos 30 dias seguintes o preço chegou a 0,7% abaixo da compra
+     12/11/2018: 30 dias -46,8%, 1 ano +36,6%; nos 30 dias seguintes o preço chegou a 50,1% abaixo da compra
+     13/12/2018: 30 dias +3,8%, 1 ano +110,4%; nos 30 dias seguintes o preço chegou a 8,4% abaixo da compra
+     13/01/2019: 30 dias +1,1%, 1 ano +126,1%; nos 30 dias seguintes o preço chegou a 6,5% abaixo da compra
+     13/02/2019: 30 dias +7,8%, 1 ano +181,5%; nos 30 dias seguintes o preço chegou a 1,7% abaixo da compra
+     16/03/2019: 30 dias +27,8%, 1 ano +36,4%; nos 30 dias seguintes o preço chegou a 1,1% abaixo da compra
+     16/04/2019: 30 dias +56,4%, 1 ano +31,6%; nos 30 dias seguintes o preço chegou a 0,4% abaixo da compra
+     17/05/2019: 30 dias +13,6%, 1 ano +19,0%; nos 30 dias seguintes o preço chegou a 12,1% abaixo da compra
+     17/06/2019: 30 dias +7,8%, 1 ano +6,2%; nos 30 dias seguintes o preço chegou a 0,0% abaixo da compra
+     18/07/2019: 30 dias +5,5%, 1 ano -5,5%; nos 30 dias seguintes o preço chegou a 5,2% abaixo da compra
+     29/08/2019: 30 dias -15,9%, 1 ano +18,4%; nos 30 dias seguintes o preço chegou a 20,3% abaixo da compra
+     29/09/2019: 30 dias +14,5%, 1 ano +30,3%; nos 30 dias seguintes o preço chegou a 11,0% abaixo da compra
+     30/10/2019: 30 dias -17,9%, 1 ano +42,8%; nos 30 dias seguintes o preço chegou a 30,7% abaixo da compra
+     30/11/2019: 30 dias -6,6%, 1 ano +134,7%; nos 30 dias seguintes o preço chegou a 16,9% abaixo da compra
+     31/12/2019: 30 dias +31,1%, 1 ano +298,3%; nos 30 dias seguintes o preço chegou a 5,2% abaixo da compra
+     31/01/2020: 30 dias -10,5%, 1 ano +260,0%; nos 30 dias seguintes o preço chegou a 11,2% abaixo da compra
+     02/03/2020: 30 dias -22,3%, 1 ano +467,7%; nos 30 dias seguintes o preço chegou a 55,7% abaixo da compra
+     02/04/2020: 30 dias +34,9%, 1 ano +787,2%; nos 30 dias seguintes o preço chegou a 2,6% abaixo da compra
+     03/05/2020: 30 dias +5,9%, 1 ano +537,0%; nos 30 dias seguintes o preço chegou a 9,5% abaixo da compra
+     03/06/2020: 30 dias -5,0%, 1 ano +312,1%; nos 30 dias seguintes o preço chegou a 7,2% abaixo da compra
+     04/07/2020: 30 dias +23,7%, 1 ano +289,4%; nos 30 dias seguintes o preço chegou a 1,8% abaixo da compra
+     22/06/2021: 30 dias +1,9%, 1 ano -37,0%; nos 30 dias seguintes o preço chegou a 8,9% abaixo da compra
+     23/07/2021: 30 dias +52,3%, 1 ano -30,7%; nos 30 dias seguintes o preço chegou a 1,1% abaixo da compra
+     09/05/2022: 30 dias -11,5%, 1 ano -19,0%; nos 30 dias seguintes o preço chegou a 21,6% abaixo da compra
+     09/06/2022: 30 dias -28,7%, 1 ano -12,5%; nos 30 dias seguintes o preço chegou a 41,7% abaixo da compra
+     10/07/2022: 30 dias +7,0%, 1 ano +40,6%; nos 30 dias seguintes o preço chegou a 12,4% abaixo da compra
+     10/08/2022: 30 dias -7,9%, 1 ano +27,0%; nos 30 dias seguintes o preço chegou a 20,0% abaixo da compra
+     10/09/2022: 30 dias -10,6%, 1 ano +20,8%; nos 30 dias seguintes o preço chegou a 15,1% abaixo da compra
+     11/10/2022: 30 dias -8,2%, 1 ano +40,3%; nos 30 dias seguintes o preço chegou a 18,5% abaixo da compra
+     11/11/2022: 30 dias -3,1%, 1 ano +110,7%; nos 30 dias seguintes o preço chegou a 12,1% abaixo da compra
+     12/12/2022: 30 dias +4,8%, 1 ano +142,7%; nos 30 dias seguintes o preço chegou a 4,9% abaixo da compra
+     12/01/2023: 30 dias +21,6%, 1 ano +138,2%; nos 30 dias seguintes o preço chegou a 0,3% abaixo da compra
+     12/02/2023: 30 dias +12,6%, 1 ano +128,1%; nos 30 dias seguintes o preço chegou a 10,6% abaixo da compra
+     15/03/2023: 30 dias +23,3%, 1 ano +189,2%; nos 30 dias seguintes o preço chegou a 3,1% abaixo da compra
+     15/04/2023: 30 dias -11,0%, 1 ano +115,3%; nos 30 dias seguintes o preço chegou a 15,3% abaixo da compra
+     16/05/2023: 30 dias -6,0%, 1 ano +143,5%; nos 30 dias seguintes o preço chegou a 8,6% abaixo da compra
+     16/06/2023: 30 dias +17,9%, 1 ano +158,5%; nos 30 dias seguintes o preço chegou a 1,7% abaixo da compra
+     17/07/2023: 30 dias -5,2%, 1 ano +114,9%; nos 30 dias seguintes o preço chegou a 5,4% abaixo da compra
+     17/08/2023: 30 dias -7,8%, 1 ano +104,7%; nos 30 dias seguintes o preço chegou a 13,3% abaixo da compra
+     17/09/2023: 30 dias +6,7%, 1 ano +119,0%; nos 30 dias seguintes o preço chegou a 2,1% abaixo da compra
+     18/10/2023: 30 dias +28,7%, 1 ano +137,2%; nos 30 dias seguintes o preço chegou a 1,0% abaixo da compra
+     06/02/2026: 30 dias +4,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 4,6% abaixo da compra
+     06/06/2026: 30 dias +4,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 5,3% abaixo da compra
+     09/07/2026: 30 dias +4,1%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 0,9% abaixo da compra
+     15/08/2026: 30 dias +23,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 0,5% abaixo da compra
+   ETH: 76 casos. Acima de comprar em qualquer dia: +0,1% em 30 dias (75 casos) e +41,1% em 1 ano (67 casos).
+     06/02/2018: 30 dias -0,6%, 1 ano -85,2%; nos 30 dias seguintes o preço chegou a 18,3% abaixo da compra
+     09/03/2018: 30 dias -42,6%, 1 ano -80,5%; nos 30 dias seguintes o preço chegou a 48,7% abaixo da compra
+     09/04/2018: 30 dias +87,5%, 1 ano -56,6%; nos 30 dias seguintes o preço chegou a 3,3% abaixo da compra
+     12/05/2018: 30 dias -21,7%, 1 ano -72,4%; nos 30 dias seguintes o preço chegou a 26,0% abaixo da compra
+     12/06/2018: 30 dias -19,0%, 1 ano -51,0%; nos 30 dias seguintes o preço chegou a 23,8% abaixo da compra
+     13/07/2018: 30 dias -26,5%, 1 ano -37,9%; nos 30 dias seguintes o preço chegou a 29,4% abaixo da compra
+     13/08/2018: 30 dias -42,6%, 1 ano -34,4%; nos 30 dias seguintes o preço chegou a 44,6% abaixo da compra
+     13/09/2018: 30 dias +9,7%, 1 ano -1,4%; nos 30 dias seguintes o preço chegou a 0,0% abaixo da compra
+     14/10/2018: 30 dias +4,0%, 1 ano -7,5%; nos 30 dias seguintes o preço chegou a 4,2% abaixo da compra
+     14/11/2018: 30 dias -60,3%, 1 ano -12,1%; nos 30 dias seguintes o preço chegou a 60,9% abaixo da compra
+     15/12/2018: 30 dias +51,3%, 1 ano +69,8%; nos 30 dias seguintes o preço chegou a 2,4% abaixo da compra
+     15/01/2019: 30 dias -5,3%, 1 ano +30,9%; nos 30 dias seguintes o preço chegou a 20,5% abaixo da compra
+     15/02/2019: 30 dias +14,9%, 1 ano +119,7%; nos 30 dias seguintes o preço chegou a 0,2% abaixo da compra
+     18/03/2019: 30 dias +19,3%, 1 ano -16,8%; nos 30 dias seguintes o preço chegou a 5,4% abaixo da compra
+     18/04/2019: 30 dias +40,7%, 1 ano +2,8%; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
+     19/05/2019: 30 dias +13,1%, 1 ano -8,2%; nos 30 dias seguintes o preço chegou a 3,0% abaixo da compra
+     19/06/2019: 30 dias -16,8%, 1 ano -12,8%; nos 30 dias seguintes o preço chegou a 27,5% abaixo da compra
+     20/07/2019: 30 dias -8,6%, 1 ano +8,1%; nos 30 dias seguintes o preço chegou a 19,4% abaixo da compra
+     20/08/2019: 30 dias +8,7%, 1 ano +101,3%; nos 30 dias seguintes o preço chegou a 19,1% abaixo da compra
+     20/09/2019: 30 dias -20,6%, 1 ano +74,7%; nos 30 dias seguintes o preço chegou a 31,9% abaixo da compra
+     21/10/2019: 30 dias -0,5%, 1 ano +110,2%; nos 30 dias seguintes o preço chegou a 12,4% abaixo da compra
+     21/11/2019: 30 dias -27,5%, 1 ano +191,7%; nos 30 dias seguintes o preço chegou a 33,5% abaixo da compra
+     22/12/2019: 30 dias +33,3%, 1 ano +378,2%; nos 30 dias seguintes o preço chegou a 4,0% abaixo da compra
+     22/01/2020: 30 dias +56,3%, 1 ano +555,3%; nos 30 dias seguintes o preço chegou a 8,2% abaixo da compra
+     22/02/2020: 30 dias -49,0%, 1 ano +628,6%; nos 30 dias seguintes o preço chegou a 67,6% abaixo da compra
+     24/03/2020: 30 dias +36,3%, 1 ano +1063,9%; nos 30 dias seguintes o preço chegou a 8,9% abaixo da compra
+     24/04/2020: 30 dias +7,5%, 1 ano +1092,5%; nos 30 dias seguintes o preço chegou a 5,2% abaixo da compra
+     25/05/2020: 30 dias +17,1%, 1 ano +1253,0%; nos 30 dias seguintes o preço chegou a 1,5% abaixo da compra
+     25/06/2020: 30 dias +29,9%, 1 ano +670,9%; nos 30 dias seguintes o preço chegou a 7,9% abaixo da compra
+     26/07/2020: 30 dias +25,2%, 1 ano +629,6%; nos 30 dias seguintes o preço chegou a 2,1% abaixo da compra
+     26/08/2020: 30 dias -8,3%, 1 ano +707,6%; nos 30 dias seguintes o preço chegou a 19,5% abaixo da compra
+     26/09/2020: 30 dias +11,3%, 1 ano +769,1%; nos 30 dias seguintes o preço chegou a 5,6% abaixo da compra
+     27/10/2020: 30 dias +32,2%, 1 ano +899,0%; nos 30 dias seguintes o preço chegou a 5,7% abaixo da compra
+     27/11/2020: 30 dias +31,6%, 1 ano +687,6%; nos 30 dias seguintes o preço chegou a 5,0% abaixo da compra
+     28/12/2020: 30 dias +80,7%, 1 ano +453,4%; nos 30 dias seguintes o preço chegou a 0,6% abaixo da compra
+     24/05/2021: 30 dias -6,3%, 1 ano -5,8%; nos 30 dias seguintes o preço chegou a 18,9% abaixo da compra
+     24/06/2021: 30 dias +10,8%, 1 ano -38,0%; nos 30 dias seguintes o preço chegou a 13,3% abaixo da compra
+     25/07/2021: 30 dias +44,9%, 1 ano -34,3%; nos 30 dias seguintes o preço chegou a 3,6% abaixo da compra
+     23/01/2022: 30 dias +9,1%, 1 ano -32,8%; nos 30 dias seguintes o preço chegou a 10,5% abaixo da compra
+     10/05/2022: 30 dias -19,9%, 1 ano -17,6%; nos 30 dias seguintes o preço chegou a 23,6% abaixo da compra
+     10/06/2022: 30 dias -34,9%, 1 ano -2,3%; nos 30 dias seguintes o preço chegou a 50,7% abaixo da compra
+     11/07/2022: 30 dias +58,4%, 1 ano +60,6%; nos 30 dias seguintes o preço chegou a 13,9% abaixo da compra
+     11/08/2022: 30 dias -4,5%, 1 ano -0,5%; nos 30 dias seguintes o preço chegou a 23,3% abaixo da compra
+     11/09/2022: 30 dias -28,0%, 1 ano -12,7%; nos 30 dias seguintes o preço chegou a 31,2% abaixo da compra
+     12/10/2022: 30 dias +0,5%, 1 ano +20,1%; nos 30 dias seguintes o preço chegou a 16,1% abaixo da compra
+     12/11/2022: 30 dias -1,3%, 1 ano +58,4%; nos 30 dias seguintes o preço chegou a 16,6% abaixo da compra
+     13/12/2022: 30 dias +10,8%, 1 ano +77,0%; nos 30 dias seguintes o preço chegou a 9,8% abaixo da compra
+     13/01/2023: 30 dias +6,8%, 1 ano +81,9%; nos 30 dias seguintes o preço chegou a 1,1% abaixo da compra
+     13/02/2023: 30 dias +8,7%, 1 ano +74,1%; nos 30 dias seguintes o preço chegou a 9,7% abaixo da compra
+     16/03/2023: 30 dias +26,5%, 1 ano +126,6%; nos 30 dias seguintes o preço chegou a 1,1% abaixo da compra
+     16/04/2023: 30 dias -12,9%, 1 ano +48,2%; nos 30 dias seguintes o preço chegou a 16,8% abaixo da compra
+     17/05/2023: 30 dias -6,0%, 1 ano +61,2%; nos 30 dias seguintes o preço chegou a 10,9% abaixo da compra
+     17/06/2023: 30 dias +11,1%, 1 ano +110,8%; nos 30 dias seguintes o preço chegou a 1,2% abaixo da compra
+     18/07/2023: 30 dias -12,2%, 1 ano +77,0%; nos 30 dias seguintes o preço chegou a 5,9% abaixo da compra
+     18/08/2023: 30 dias -3,7%, 1 ano +55,3%; nos 30 dias seguintes o preço chegou a 8,9% abaixo da compra
+     18/09/2023: 30 dias -3,8%, 1 ano +44,1%; nos 30 dias seguintes o preço chegou a 6,3% abaixo da compra
+     19/10/2023: 30 dias +25,3%, 1 ano +68,8%; nos 30 dias seguintes o preço chegou a 1,4% abaixo da compra
+     19/11/2023: 30 dias +10,8%, 1 ano +63,2%; nos 30 dias seguintes o preço chegou a 1,7% abaixo da compra
+     20/12/2023: 30 dias +14,2%, 1 ano +56,7%; nos 30 dias seguintes o preço chegou a 3,6% abaixo da compra
+     23/01/2024: 30 dias +28,2%, 1 ano +39,9%; nos 30 dias seguintes o preço chegou a 6,3% abaixo da compra
+     06/08/2024: 30 dias -2,3%, 1 ano +52,0%; nos 30 dias seguintes o preço chegou a 4,7% abaixo da compra
+     06/09/2024: 30 dias +2,8%, 1 ano +80,2%; nos 30 dias seguintes o preço chegou a 9,2% abaixo da compra
+     08/10/2024: 30 dias +19,3%, 1 ano +86,6%; nos 30 dias seguintes o preço chegou a 3,8% abaixo da compra
+     27/02/2025: 30 dias -22,0%, 1 ano -17,6%; nos 30 dias seguintes o preço chegou a 24,9% abaixo da compra
+     30/03/2025: 30 dias -1,9%, 1 ano +10,7%; nos 30 dias seguintes o preço chegou a 24,2% abaixo da compra
+     30/04/2025: 30 dias +40,6%, 1 ano +25,4%; nos 30 dias seguintes o preço chegou a 3,7% abaixo da compra
+     06/06/2025: 30 dias +6,3%, 1 ano -35,2%; nos 30 dias seguintes o preço chegou a 12,5% abaixo da compra
+     01/02/2026: 30 dias -19,3%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 28,7% abaixo da compra
+     04/03/2026: 30 dias +3,4%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 3,4% abaixo da compra
+     04/04/2026: 30 dias +14,1%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 1,6% abaixo da compra
+     05/05/2026: 30 dias -24,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 24,6% abaixo da compra
+     05/06/2026: 30 dias +0,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 15,0% abaixo da compra
+     06/07/2026: 30 dias +6,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 4,0% abaixo da compra
+     06/08/2026: 30 dias +29,7%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 2,9% abaixo da compra
+     10/09/2026: 30 dias +1,4%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 4,4% abaixo da compra
+     13/10/2026: 30 dias ainda sem dado, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 11,2% abaixo da compra
+   SOL: 53 casos. Acima de comprar em qualquer dia: -3,6% em 30 dias (52 casos) e +133,9% em 1 ano (41 casos).
+     09/09/2020: 30 dias +2,4%, 1 ano +7513,3%; nos 30 dias seguintes o preço chegou a 18,5% abaixo da compra
+     11/10/2020: 30 dias -5,7%, 1 ano +5934,9%; nos 30 dias seguintes o preço chegou a 46,9% abaixo da compra
+     11/11/2020: 30 dias -36,7%, 1 ano +10196,3%; nos 30 dias seguintes o preço chegou a 33,8% abaixo da compra
+     12/12/2020: 30 dias +115,7%, 1 ano +11926,5%; nos 30 dias seguintes o preço chegou a 28,3% abaixo da compra
+     24/05/2021: 30 dias +25,5%, 1 ano +102,3%; nos 30 dias seguintes o preço chegou a 17,7% abaixo da compra
+     26/06/2021: 30 dias -1,7%, 1 ano +37,4%; nos 30 dias seguintes o preço chegou a 22,8% abaixo da compra
+     27/07/2021: 30 dias +165,6%, 1 ano +42,5%; nos 30 dias seguintes o preço chegou a 4,6% abaixo da compra
+     21/01/2022: 30 dias -29,1%, 1 ano -80,9%; nos 30 dias seguintes o preço chegou a 36,6% abaixo da compra
+     21/02/2022: 30 dias +4,4%, 1 ano -72,7%; nos 30 dias seguintes o preço chegou a 16,9% abaixo da compra
+     24/03/2022: 30 dias +5,9%, 1 ano -78,4%; nos 30 dias seguintes o preço chegou a 1,7% abaixo da compra
+     24/04/2022: 30 dias -50,8%, 1 ano -79,0%; nos 30 dias seguintes o preço chegou a 62,9% abaixo da compra
+     25/05/2022: 30 dias -15,8%, 1 ano -61,4%; nos 30 dias seguintes o preço chegou a 47,9% abaixo da compra
+     25/06/2022: 30 dias -12,8%, 1 ano -59,7%; nos 30 dias seguintes o preço chegou a 26,2% abaixo da compra
+     26/07/2022: 30 dias -4,0%, 1 ano -31,5%; nos 30 dias seguintes o preço chegou a 8,0% abaixo da compra
+     26/08/2022: 30 dias -8,5%, 1 ano -42,7%; nos 30 dias seguintes o preço chegou a 14,9% abaixo da compra
+     26/09/2022: 30 dias -3,4%, 1 ano -41,3%; nos 30 dias seguintes o preço chegou a 17,0% abaixo da compra
+     27/10/2022: 30 dias -54,9%, 1 ano +1,2%; nos 30 dias seguintes o preço chegou a 65,0% abaixo da compra
+     27/11/2022: 30 dias -21,9%, 1 ano +288,4%; nos 30 dias seguintes o preço chegou a 21,9% abaixo da compra
+     28/12/2022: 30 dias +119,9%, 1 ano +816,9%; nos 30 dias seguintes o preço chegou a 27,9% abaixo da compra
+     28/01/2023: 30 dias -7,4%, 1 ano +292,7%; nos 30 dias seguintes o preço chegou a 19,4% abaixo da compra
+     28/02/2023: 30 dias -9,6%, 1 ano +424,6%; nos 30 dias seguintes o preço chegou a 29,5% abaixo da compra
+     31/03/2023: 30 dias +10,5%, 1 ano +844,8%; nos 30 dias seguintes o preço chegou a 3,4% abaixo da compra
+     01/05/2023: 30 dias -8,6%, 1 ano +457,5%; nos 30 dias seguintes o preço chegou a 17,9% abaixo da compra
+     01/06/2023: 30 dias -10,4%, 1 ano +695,4%; nos 30 dias seguintes o preço chegou a 38,5% abaixo da compra
+     02/07/2023: 30 dias +28,4%, 1 ano +684,1%; nos 30 dias seguintes o preço chegou a 2,0% abaixo da compra
+     02/08/2023: 30 dias -19,9%, 1 ano +595,4%; nos 30 dias seguintes o preço chegou a 19,6% abaixo da compra
+     02/09/2023: 30 dias +20,7%, 1 ano +564,6%; nos 30 dias seguintes o preço chegou a 10,3% abaixo da compra
+     03/10/2023: 30 dias +71,9%, 1 ano +499,4%; nos 30 dias seguintes o preço chegou a 10,5% abaixo da compra
+     03/11/2023: 30 dias +56,3%, 1 ano +312,7%; nos 30 dias seguintes o preço chegou a 5,6% abaixo da compra
+     04/12/2023: 30 dias +56,2%, 1 ano +271,2%; nos 30 dias seguintes o preço chegou a 6,2% abaixo da compra
+     04/01/2024: 30 dias -0,8%, 1 ano +121,1%; nos 30 dias seguintes o preço chegou a 19,8% abaixo da compra
+     04/02/2024: 30 dias +27,7%, 1 ano +120,6%; nos 30 dias seguintes o preço chegou a 5,2% abaixo da compra
+     06/03/2024: 30 dias +39,0%, 1 ano +14,2%; nos 30 dias seguintes o preço chegou a 4,2% abaixo da compra
+     01/05/2024: 30 dias +30,5%, 1 ano +18,8%; nos 30 dias seguintes o preço chegou a 6,5% abaixo da compra
+     24/06/2024: 30 dias +38,2%, 1 ano +13,2%; nos 30 dias seguintes o preço chegou a 6,0% abaixo da compra
+     06/08/2024: 30 dias -0,5%, 1 ano +29,3%; nos 30 dias seguintes o preço chegou a 5,5% abaixo da compra
+     06/09/2024: 30 dias +13,0%, 1 ano +54,5%; nos 30 dias seguintes o preço chegou a 7,3% abaixo da compra
+     25/02/2025: 30 dias -2,6%, 1 ano -38,1%; nos 30 dias seguintes o preço chegou a 21,0% abaixo da compra
+     28/03/2025: 30 dias +6,7%, 1 ano -40,9%; nos 30 dias seguintes o preço chegou a 31,2% abaixo da compra
+     29/04/2025: 30 dias +12,6%, 1 ano -44,0%; nos 30 dias seguintes o preço chegou a 5,1% abaixo da compra
+     06/06/2025: 30 dias +5,1%, 1 ano -57,1%; nos 30 dias seguintes o preço chegou a 12,7% abaixo da compra
+     14/11/2025: 30 dias -10,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 15,9% abaixo da compra
+     15/12/2025: 30 dias +13,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,7% abaixo da compra
+     15/01/2026: 30 dias -40,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 54,0% abaixo da compra
+     15/02/2026: 30 dias +7,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 14,1% abaixo da compra
+     18/03/2026: 30 dias -6,4%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 18,9% abaixo da compra
+     18/04/2026: 30 dias -4,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,3% abaixo da compra
+     19/05/2026: 30 dias -18,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 29,6% abaixo da compra
+     19/06/2026: 30 dias +9,4%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,1% abaixo da compra
+     20/07/2026: 30 dias +11,6%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 7,6% abaixo da compra
+     20/08/2026: 30 dias +29,9%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 1,6% abaixo da compra
+     20/09/2026: 30 dias -4,3%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,6% abaixo da compra
+     21/10/2026: 30 dias ainda sem dado, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 13,3% abaixo da compra
+
+ As três juntas: Medo e Ganância em 20 ou menos, 50% ou mais abaixo da máxima e 1 ano ou mais desde ela
+   BTC: 9 casos. Acima de comprar em qualquer dia: -4,6% em 30 dias (9 casos) e +138,5% em 1 ano (9 casos).
+     18/12/2018: 30 dias +2,9%, 1 ano +107,2%; nos 30 dias seguintes o preço chegou a 2,4% abaixo da compra
+     01/02/2019: 30 dias +10,7%, 1 ano +173,1%; nos 30 dias seguintes o preço chegou a 1,8% abaixo da compra
+     18/07/2019: 30 dias +5,5%, 1 ano -5,5%; nos 30 dias seguintes o preço chegou a 5,2% abaixo da compra
+     30/08/2019: 30 dias -15,5%, 1 ano +20,5%; nos 30 dias seguintes o preço chegou a 18,4% abaixo da compra
+     25/10/2019: 30 dias -7,1%, 1 ano +76,7%; nos 30 dias seguintes o preço chegou a 8,4% abaixo da compra
+     26/11/2019: 30 dias +1,1%, 1 ano +163,1%; nos 30 dias seguintes o preço chegou a 9,5% abaixo da compra
+     10/03/2020: 30 dias -8,4%, 1 ano +604,1%; nos 30 dias seguintes o preço chegou a 52,3% abaixo da compra
+     11/04/2020: 30 dias +24,6%, 1 ano +774,6%; nos 30 dias seguintes o preço chegou a 5,7% abaixo da compra
+     18/11/2022: 30 dias +0,1%, 1 ano +118,9%; nos 30 dias seguintes o preço chegou a 7,3% abaixo da compra
+   ETH: 10 casos. Acima de comprar em qualquer dia: -5,4% em 30 dias (10 casos) e +161,7% em 1 ano (10 casos).
+     12/01/2019: 30 dias -3,2%, 1 ano +17,3%; nos 30 dias seguintes o preço chegou a 19,1% abaixo da compra
+     16/07/2019: 30 dias -17,8%, 1 ano +4,4%; nos 30 dias seguintes o preço chegou a 19,6% abaixo da compra
+     16/08/2019: 30 dias +0,4%, 1 ano +129,8%; nos 30 dias seguintes o preço chegou a 13,0% abaixo da compra
+     26/09/2019: 30 dias +5,4%, 1 ano +106,9%; nos 30 dias seguintes o preço chegou a 10,5% abaixo da compra
+     23/11/2019: 30 dias -14,7%, 1 ano +274,3%; nos 30 dias seguintes o preço chegou a 22,3% abaixo da compra
+     10/03/2020: 30 dias -16,6%, 1 ano +785,0%; nos 30 dias seguintes o preço chegou a 57,6% abaixo da compra
+     11/04/2020: 30 dias +17,5%, 1 ano +1263,1%; nos 30 dias seguintes o preço chegou a 6,0% abaixo da compra
+     18/11/2022: 30 dias -1,6%, 1 ano +63,3%; nos 30 dias seguintes o preço chegou a 10,4% abaixo da compra
+     28/02/2025: 30 dias -21,9%, 1 ano -15,1%; nos 30 dias seguintes o preço chegou a 24,0% abaixo da compra
+     10/04/2025: 30 dias +54,5%, 1 ano +34,3%; nos 30 dias seguintes o preço chegou a 11,9% abaixo da compra
+   SOL: 6 casos. Acima de comprar em qualquer dia: -7,4% em 30 dias (6 casos) e -666,7% em 1 ano (1 casos).
+     18/11/2022: 30 dias -9,5%, 1 ano +328,8%; nos 30 dias seguintes o preço chegou a 19,9% abaixo da compra
+     23/01/2026: 30 dias -35,8%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 47,5% abaixo da compra
+     23/02/2026: 30 dias +10,5%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 8,7% abaixo da compra
+     26/03/2026: 30 dias -6,2%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 16,4% abaixo da compra
+     04/06/2026: 30 dias +14,0%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 16,0% abaixo da compra
+     09/07/2026: 30 dias -2,5%, 1 ano ainda sem dado; nos 30 dias seguintes o preço chegou a 9,3% abaixo da compra
+
+RESUMO: barras de capitulação que passaram em 30 e 90 dias
+ Nenhuma.
+As réguas da parte 2 têm poucos casos e não dão prova; servem para ver como foram as outras vezes.
