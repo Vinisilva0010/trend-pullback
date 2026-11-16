@@ -75,6 +75,7 @@ mod refine_study;
 mod risk;
 mod runner_study;
 mod smc_live;
+mod sp200_study;
 mod stock_trades;
 mod stock_watch;
 mod stormer_live;
@@ -203,6 +204,9 @@ enum Command {
     /// Buying a capitulation: the capitulation candle on every coin of the
     /// universe, and the Fear & Greed, drawdown and time gauges on BTC, ETH, SOL.
     CapitulationStudy,
+    /// Buying the S&P 500 (since 1950) and the US stocks of the trade list
+    /// when the price comes back to its 200-day average in an uptrend.
+    Sp200Study,
     /// Hourly alerts: tells when BTC, ETH or SOL breaks its 20- or 60-day high or
     /// low, with the next liquidity levels and their historical odds.
     Alerts {
@@ -372,6 +376,7 @@ async fn main() -> ExitCode {
         Command::CapitulationStudy => {
             capitulation_study::cmd_capitulation_study(&cli.data_dir).await
         }
+        Command::Sp200Study => sp200_study::cmd_sp200_study(&cli.data_dir).await,
         Command::Alerts { notify, dry_run } => cmd_alerts(&cli.data_dir, notify, dry_run).await,
         Command::Levels { final_period } => cmd_levels(&cli.data_dir, final_period),
         Command::Range { final_period } => cmd_range(&cli.data_dir, final_period),

@@ -18,6 +18,8 @@ const MORE: Item[] = [
   { href: "/setups", label: "Sinais cripto" },
   { href: "/grafico", label: "Gráfico cripto" },
   { href: "/contas", label: "Contas fictícias" },
+  { href: "/placar", label: "Placar" },
+  { href: "/meus-trades", label: "Meus trades" },
   { href: "/relatorio", label: "Relatório do dia" },
 ];
 const DESKTOP: Item[] = [MAIN[0]!, MAIN[1]!, MAIN[2]!, ...MORE, MAIN[3]!];

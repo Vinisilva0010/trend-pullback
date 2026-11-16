@@ -1,0 +1,129 @@
+Compra quando o preço volta para a média de 200 dias com a tendência de alta. Cada compra é no fechamento do dia do sinal, medida 1 semana, 1, 3 e 6 meses depois, já com 0,1% de custo, e comparada com o dia típico do mesmo ativo no mesmo período (a mediana de comprar em qualquer dia). Um caso por ativo a cada 20 pregões.
+S&P 500 (^GSPC, Yahoo): 169 pregões, de 01/12/1984 a 13/11/2026. Antes de 1962 o índice só tem o fechamento, então ali o toque é medido pelo fechamento.
+
+PARTE 1: o próprio S&P 500, desde 1950.
+
+ Toca e segura: média de 200 dias subindo, preço fechou acima dela nos 20 dias antes, a mínima do dia chega a 1% da média ou abaixo e o fechamento fica acima; compra no fechamento
+   Nenhum caso.
+
+ Rompe para baixo: a mesma situação, mas o dia fecha abaixo da média; compra no fechamento
+   Nenhum caso.
+
+ Volta para cima: média subindo, os 5 fechamentos antes abaixo dela e o dia fecha acima; compra no fechamento
+   Nenhum caso.
+
+PARTE 2: cada ação e ETF dos EUA da lista de trade, na sua própria média de 200 dias, 10 anos.
+S&P 500 (SPY) (SPY): 2514 dias, 522 semanas
+Nasdaq 100 (QQQ) (QQQ): 2514 dias, 522 semanas
+Dow Jones (DIA) (DIA): 2514 dias, 522 semanas
+Russell 2000 (IWM) (IWM): 2514 dias, 522 semanas
+Tecnologia (XLK) (XLK): 2514 dias, 522 semanas
+Financeiro (XLF) (XLF): 2514 dias, 522 semanas
+Energia (XLE) (XLE): 2514 dias, 522 semanas
+Saúde (XLV) (XLV): 2514 dias, 522 semanas
+Consumo básico (XLP) (XLP): 2514 dias, 522 semanas
+Consumo discricionário (XLY) (XLY): 2514 dias, 522 semanas
+Indústria (XLI) (XLI): 2514 dias, 522 semanas
+Utilidades (XLU) (XLU): 2514 dias, 522 semanas
+Materiais (XLB) (XLB): 2514 dias, 522 semanas
+Semicondutores (SMH) (SMH): 2514 dias, 522 semanas
+Ouro (GLD) (GLD): 2514 dias, 522 semanas
+Prata (SLV) (SLV): 2514 dias, 522 semanas
+Brasil em dólar (EWZ) (EWZ): 2514 dias, 522 semanas
+Apple (AAPL): 2514 dias, 522 semanas
+Microsoft (MSFT): 2514 dias, 522 semanas
+Nvidia (NVDA): 2514 dias, 522 semanas
+Amazon (AMZN): 2514 dias, 522 semanas
+Google (GOOGL): 2514 dias, 522 semanas
+Meta (META): 2514 dias, 522 semanas
+Tesla (TSLA): 2514 dias, 522 semanas
+Broadcom (AVGO): 2514 dias, 522 semanas
+AMD (AMD): 2514 dias, 522 semanas
+Oracle (ORCL): 2514 dias, 522 semanas
+Salesforce (CRM): 2514 dias, 522 semanas
+Adobe (ADBE): 2514 dias, 522 semanas
+Netflix (NFLX): 2514 dias, 522 semanas
+Intel (INTC): 2514 dias, 522 semanas
+Cisco (CSCO): 2514 dias, 522 semanas
+Qualcomm (QCOM): 2514 dias, 522 semanas
+Texas Instruments (TXN): 2514 dias, 522 semanas
+IBM (IBM): 2514 dias, 522 semanas
+Palantir (PLTR): 1539 dias, 320 semanas
+Shopify (SHOP): 2514 dias, 522 semanas
+JPMorgan (JPM): 2514 dias, 522 semanas
+Bank of America (BAC): 2514 dias, 522 semanas
+Goldman Sachs (GS): 2514 dias, 522 semanas
+Morgan Stanley (MS): 2514 dias, 522 semanas
+Visa (V): 2514 dias, 522 semanas
+Mastercard (MA): 2514 dias, 522 semanas
+American Express (AXP): 2514 dias, 522 semanas
+BlackRock (BLK): 2514 dias, 522 semanas
+Berkshire Hathaway (BRK-B): 2514 dias, 522 semanas
+Interactive Brokers (IBKR): 2514 dias, 522 semanas
+ExxonMobil (XOM): 2514 dias, 522 semanas
+Chevron (CVX): 2514 dias, 522 semanas
+Eli Lilly (LLY): 2514 dias, 522 semanas
+UnitedHealth (UNH): 2514 dias, 522 semanas
+Johnson & Johnson (JNJ): 2514 dias, 522 semanas
+AbbVie (ABBV): 2514 dias, 522 semanas
+Merck (MRK): 2514 dias, 522 semanas
+Pfizer (PFE): 2514 dias, 522 semanas
+Thermo Fisher (TMO): 2514 dias, 522 semanas
+Abbott (ABT): 2514 dias, 522 semanas
+Amgen (AMGN): 2514 dias, 522 semanas
+Intuitive Surgical (ISRG): 2514 dias, 522 semanas
+Procter & Gamble (PG): 2514 dias, 522 semanas
+Coca-Cola (KO): 2514 dias, 522 semanas
+PepsiCo (PEP): 2514 dias, 522 semanas
+Walmart (WMT): 2514 dias, 522 semanas
+Costco (COST): 2514 dias, 522 semanas
+Home Depot (HD): 2514 dias, 522 semanas
+McDonald's (MCD): 2514 dias, 522 semanas
+Nike (NKE): 2514 dias, 522 semanas
+Starbucks (SBUX): 2514 dias, 522 semanas
+Disney (DIS): 2514 dias, 522 semanas
+AT&T (T): 2514 dias, 522 semanas
+Verizon (VZ): 2514 dias, 522 semanas
+Caterpillar (CAT): 2514 dias, 522 semanas
+Deere (DE): 2514 dias, 522 semanas
+GE Aerospace (GE): 2514 dias, 522 semanas
+Honeywell (HON): 2514 dias, 522 semanas
+Boeing (BA): 2514 dias, 522 semanas
+Lockheed Martin (LMT): 2514 dias, 522 semanas
+Union Pacific (UNP): 2514 dias, 522 semanas
+UPS (UPS): 2514 dias, 522 semanas
+NextEra Energy (NEE): 2514 dias, 522 semanas
+Linde (LIN): 2514 dias, 522 semanas
+AngloGold Ashanti (AU): 2514 dias, 522 semanas
+Gold Fields (GFI): 2514 dias, 522 semanas
+Newmont (NEM): 2514 dias, 522 semanas
+
+ Toca e segura: média de 200 dias subindo, preço fechou acima dela nos 20 dias antes, a mínima do dia chega a 1% da média ou abaixo e o fechamento fica acima; compra no fechamento
+   872 casos (662 até out/2024, 210 depois). Nos 20 pregões depois da compra o preço ainda caiu tipicamente 3,9% abaixo da compra; em 1 de cada 10 casos, mais de 13,9%. Em 52% dos casos o preço fechou mais de 5% abaixo da média nos 3 meses seguintes (a média não segurou).
+   1 semana (5 pregões): caso típico +0,3%, subiu em 54% dos casos. Ganhou do dia típico em 53% dos casos até out/2024 (662 casos) e em 43% depois (210 casos).
+   1 mês (20 pregões): caso típico +1,1%, subiu em 55% dos casos. Ganhou do dia típico em 52% dos casos até out/2024 (662 casos) e em 43% depois (201 casos).
+   3 meses (60 pregões): caso típico +3,4%, subiu em 62% dos casos. Ganhou do dia típico em 51% dos casos até out/2024 (662 casos) e em 53% depois (176 casos).
+   6 meses (120 pregões): caso típico +5,4%, subiu em 64% dos casos. Ganhou do dia típico em 49% dos casos até out/2024 (662 casos) e em 62% depois (155 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 1 e 3 meses).
+   Os casos são de 84 ativos e caíram em 548 dias diferentes; ações no mesmo dia costumam ser o mesmo movimento do mercado.
+
+ Rompe para baixo: a mesma situação, mas o dia fecha abaixo da média; compra no fechamento
+   863 casos (644 até out/2024, 219 depois). Nos 20 pregões depois da compra o preço ainda caiu tipicamente 4,4% abaixo da compra; em 1 de cada 10 casos, mais de 14,7%. Em 68% dos casos o preço fechou mais de 5% abaixo da média nos 3 meses seguintes (a média não segurou).
+   1 semana (5 pregões): caso típico +0,5%, subiu em 56% dos casos. Ganhou do dia típico em 57% dos casos até out/2024 (644 casos) e em 47% depois (219 casos). Ganhou com prova até out/2024.
+   1 mês (20 pregões): caso típico +0,8%, subiu em 56% dos casos. Ganhou do dia típico em 50% dos casos até out/2024 (644 casos) e em 44% depois (208 casos).
+   3 meses (60 pregões): caso típico +3,7%, subiu em 62% dos casos. Ganhou do dia típico em 51% dos casos até out/2024 (644 casos) e em 58% depois (190 casos).
+   6 meses (120 pregões): caso típico +6,6%, subiu em 66% dos casos. Ganhou do dia típico em 52% dos casos até out/2024 (644 casos) e em 63% depois (167 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 1 e 3 meses).
+   Os casos são de 84 ativos e caíram em 496 dias diferentes; ações no mesmo dia costumam ser o mesmo movimento do mercado.
+
+ Volta para cima: média subindo, os 5 fechamentos antes abaixo dela e o dia fecha acima; compra no fechamento
+   544 casos (405 até out/2024, 139 depois). Nos 20 pregões depois da compra o preço ainda caiu tipicamente 3,8% abaixo da compra; em 1 de cada 10 casos, mais de 13,6%. Em 53% dos casos o preço fechou mais de 5% abaixo da média nos 3 meses seguintes (a média não segurou).
+   1 semana (5 pregões): caso típico +0,3%, subiu em 54% dos casos. Ganhou do dia típico em 50% dos casos até out/2024 (405 casos) e em 50% depois (138 casos).
+   1 mês (20 pregões): caso típico +1,1%, subiu em 57% dos casos. Ganhou do dia típico em 49% dos casos até out/2024 (405 casos) e em 55% depois (134 casos).
+   3 meses (60 pregões): caso típico +3,3%, subiu em 60% dos casos. Ganhou do dia típico em 48% dos casos até out/2024 (405 casos) e em 56% depois (126 casos).
+   6 meses (120 pregões): caso típico +3,4%, subiu em 59% dos casos. Ganhou do dia típico em 43% dos casos até out/2024 (405 casos) e em 59% depois (106 casos).
+   não passou (precisa ganhar do dia típico na maioria dos casos, com prova, em 1 e 3 meses).
+   Os casos são de 83 ativos e caíram em 422 dias diferentes; ações no mesmo dia costumam ser o mesmo movimento do mercado.
+
+RESUMO
+ Nenhuma regra ganhou do dia típico com prova.

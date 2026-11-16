@@ -209,6 +209,21 @@ pub async fn fetch_chart(
     Ok(closed_only(parse_chart(&text)?, interval, now_ms))
 }
 
+/// Every daily candle Yahoo has for `symbol` (for `^GSPC`, since 1927), for
+/// studies that need more than ten years.
+///
+/// # Errors
+///
+/// Returns [`YahooError`] for a bad symbol, a network failure, a non-success
+/// answer or an unexpected body.
+pub async fn fetch_daily_max(symbol: &str, now_ms: i64) -> Result<Vec<Bar>, YahooError> {
+    if !is_valid_symbol(symbol) {
+        return Err(YahooError::Symbol);
+    }
+    let text = get_text(&format!("{}?range=max&interval=1d", encode(symbol))).await?;
+    Ok(closed_only(parse_chart(&text)?, Interval::Day, now_ms))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {

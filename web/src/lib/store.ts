@@ -122,5 +122,7 @@ export const KEYS = {
   watchLast: "tp:watch:last",
   staleFor: "tp:watch:stale",
   cloudEvents: "tp:cloud:events",
+  journal: "tp:journal",
+  journalHits: "tp:journal:hits",
   loginFails: (ip: string) => `tp:login:fail:${ip}`,
 } as const;
