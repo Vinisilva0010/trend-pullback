@@ -43,6 +43,50 @@ pub struct Event {
     pub market: &'static str,
 }
 
+/// Limits of the dashboard for an event's fields, counted the way it
+/// counts (UTF-16 units). The title is cut well below its limit of 500.
+const TITLE_MAX: usize = 300;
+const TEXT_MAX: usize = 8000;
+const ASSET_MAX: usize = 60;
+const ID_MAX: usize = 300;
+
+/// `text` cut to at most `max` UTF-16 units, with "…" when cut.
+fn clamp(text: &str, max: usize) -> String {
+    if text.encode_utf16().count() <= max {
+        return text.to_owned();
+    }
+    let mut out = String::new();
+    let mut units = 1; // the "…"
+    for c in text.chars() {
+        units += c.len_utf16();
+        if units > max {
+            break;
+        }
+        out.push(c);
+    }
+    out.push('…');
+    out
+}
+
+/// Brings a saved event inside the dashboard's limits. One event over a
+/// limit makes the dashboard refuse the whole snapshot.
+fn within_limits(mut event: Value) -> Value {
+    for (field, max) in [
+        ("title", TITLE_MAX),
+        ("text", TEXT_MAX),
+        ("asset", ASSET_MAX),
+        ("id", ID_MAX),
+    ] {
+        if let Some(v) = event.get(field).and_then(Value::as_str) {
+            let cut = clamp(v, max);
+            if cut != v {
+                event[field] = Value::String(cut);
+            }
+        }
+    }
+    event
+}
+
 impl Event {
     #[must_use]
     pub fn level(&self) -> u8 {
@@ -57,7 +101,7 @@ impl Event {
     #[must_use]
     pub fn to_json(&self) -> Value {
         let title = self.text.lines().next().unwrap_or("").to_owned();
-        json!({
+        within_limits(json!({
             "id": self.id,
             "ms": self.ms,
             "asset": self.asset,
@@ -68,7 +112,7 @@ impl Event {
             "level": self.level(),
             "lean": self.lean,
             "market": if self.market.is_empty() { "cripto" } else { self.market },
-        })
+        }))
     }
 }
 
@@ -100,6 +144,7 @@ pub fn recent_events(live_dir: &Path, limit: usize) -> Vec<Value> {
         .lines()
         .rev()
         .filter_map(|l| serde_json::from_str(l).ok())
+        .map(within_limits)
         .take(limit)
         .collect();
     out.shrink_to_fit();
@@ -310,6 +355,35 @@ pub async fn save_and_publish(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_first_line_does_not_break_the_snapshot() {
+        let long = "é".repeat(700);
+        let e = Event {
+            id: "x".to_owned(),
+            asset: "BTC".to_owned(),
+            kind: "smc",
+            text: format!("{long}\nsegunda linha"),
+            ..Default::default()
+        };
+        let v = e.to_json();
+        let title = v["title"].as_str().unwrap();
+        assert_eq!(title.encode_utf16().count(), TITLE_MAX);
+        assert!(title.ends_with('…'));
+        // The text keeps everything; an event saved before the limit is cut on the way out.
+        assert!(v["text"].as_str().unwrap().ends_with("segunda linha"));
+        let old = json!({ "id": "y", "title": "t".repeat(900), "text": "ok" });
+        assert_eq!(
+            within_limits(old)["title"]
+                .as_str()
+                .unwrap()
+                .encode_utf16()
+                .count(),
+            TITLE_MAX
+        );
+        // Emoji count as two units, as the dashboard counts them.
+        assert!(clamp(&"😀".repeat(200), 300).encode_utf16().count() <= 300);
+    }
 
     #[test]
     fn events_keep_only_the_last_ones_and_come_back_newest_first() {

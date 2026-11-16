@@ -10,8 +10,8 @@ pub enum PublishError {
     Url,
     #[error("DASHBOARD_TOKEN must be 32 to 256 letters, digits, '-' or '_'")]
     Token,
-    #[error("the dashboard answered with HTTP status {0}")]
-    Status(u16),
+    #[error("the dashboard answered with HTTP status {0}: {1}")]
+    Status(u16, String),
     #[error("network error while publishing to the dashboard: {0}")]
     Network(reqwest::Error),
 }
@@ -70,7 +70,15 @@ pub async fn publish(url: &str, token: &str, body: String) -> Result<(), Publish
     if status.is_success() {
         Ok(())
     } else {
-        Err(PublishError::Status(status.as_u16()))
+        // The answer says which field was refused: keep the start of it.
+        let answer: String = response
+            .text()
+            .await
+            .unwrap_or_default()
+            .chars()
+            .take(600)
+            .collect();
+        Err(PublishError::Status(status.as_u16(), answer))
     }
 }
 
